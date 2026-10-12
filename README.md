@@ -6,7 +6,9 @@ A small Windows program that keeps your PC tidy. It moves files that have been s
 
 PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-droid/downloads-sorter), with the same look and everything it could do, plus the pages added since. On first start it brings along Downloads Sorter's settings, history and vault (it copies them; the old program keeps working).
 
-![PC Butler](docs/screenshot.png)
+![PC Butler: the Home page](docs/screenshot.png)
+
+![PC Butler: the Sorter page](docs/screenshot-sorter.png)
 
 ## Features
 
