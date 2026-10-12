@@ -78,6 +78,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 #endif
 
 [Registry]
+; File Explorer's right-click entry is written by the program itself (see ExplorerMenu); uninstalling takes it away.
+Root: HKCU; Subkey: "Software\Classes\*\shell\PCButler"; Flags: dontcreatekey uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\PCButler"; Flags: dontcreatekey uninsdeletekey
 #ifndef TestBuild
 Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValue}"; \
     ValueData: """{app}\{#AppExe}"" --background"; Check: WantAutostart

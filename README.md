@@ -27,6 +27,8 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Auto clean-up.** Optionally recycle old files in a category (for example installers after 90 days). Only files the program itself moved are touched.
 - **Never-move list.** Protect files by name or pattern (`*.torrent`). Files you put back with Undo are not moved again automatically.
 - **Several folders.** Sort Desktop or any other folder with the same rules.
+- **File Explorer menu.** Right-click a file or folder and choose *Process with PC Butler* to sort it, sort a folder's loose files, or send a file to the Recycle Bin without opening the program. On Windows 11 the entry is under *Show more options*.
+- **What's new.** After each update a window lists what changed; the full list is in [CHANGELOG.md](CHANGELOG.md).
 - **English and Arabic.** The interface follows Windows' language, or you pick one in Settings.
 - **Updates.** Checks this repository's releases, notifies you when a new version is out, and updates with one click (or automatically, if you turn that on).
 - **Safe by design.** Unfinished downloads and shortcuts are skipped, nothing is ever overwritten, and deletions go to the Recycle Bin unless you choose to delete for good.
@@ -111,6 +113,8 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 - **التنظيف التلقائي.** خيار لإرسال الملفات القديمة في تصنيف معيّن إلى سلة المحذوفات (مثل ملفات التثبيت بعد 90 يومًا). لا يمسّ إلا الملفات التي نقلها البرنامج نفسه.
 - **قائمة «لا تنقل أبدًا».** احمِ ملفات معيّنة بالاسم أو بالنمط (مثل `*.torrent`). الملفات التي أعدتها بالتراجع لا تُنقل تلقائيًا مرة أخرى.
 - **عدة مجلدات.** افرز سطح المكتب أو أي مجلد آخر بالقواعد نفسها.
+- **قائمة File Explorer.** انقر بالزر الأيمن على ملف أو مجلد واختر «معالجة بـ PC Butler» لفرزه، أو فرز الملفات السائبة في المجلد، أو إرسال الملف إلى سلة المحذوفات دون فتح البرنامج. في ويندوز 11 تجد الخيار تحت *Show more options*.
+- **ما الجديد.** بعد كل تحديث تظهر نافذة بما تغيّر، والقائمة الكاملة في [CHANGELOG.ar.md](CHANGELOG.ar.md).
 - **العربية والإنجليزية.** الواجهة تتبع لغة ويندوز، أو تختار اللغة من الإعدادات.
 - **التحديثات.** يتحقق من إصدارات هذا المستودع، وينبّهك عند صدور نسخة جديدة، ويحدّث نفسه بضغطة واحدة (أو تلقائيًا إذا فعّلت ذلك).
 - **آمن في تصميمه.** يتجاوز التنزيلات غير المكتملة والاختصارات، ولا يستبدل أي ملف موجود، والحذف يكون إلى سلة المحذوفات إلا إذا اخترت الحذف النهائي.

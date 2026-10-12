@@ -31,7 +31,8 @@ public sealed class AboutPage : Page
         description.MaxWidth = 620;
         description.HorizontalAlignment = HorizontalAlignment.Left;
         tab.Children.Add(description);
-        tab.Children.Add(Ui.Row(6, Ui.Button(Ui.T("GitHub page"), () => Shell.Open($"https://github.com/{AppInfo.Repo}")),
+        tab.Children.Add(Ui.Row(6, Ui.Button(Ui.T("What's new"), () => new WhatsNewWindow { Owner = Main }.Show()),
+                                Ui.Button(Ui.T("GitHub page"), () => Shell.Open($"https://github.com/{AppInfo.Repo}")),
                                 Ui.Button(Ui.T("Open settings and log folder"), OpenDataFolder),
                                 // Shown again on request, it stays until clicked (or for half a minute).
                                 Ui.Button(Ui.T("View splash screen"), () => new SplashWindow(seconds: 30).Show())).Margin(0, 14));
@@ -50,6 +51,21 @@ public sealed class AboutPage : Page
                                    on => Main.UpdateConfig(config => config.AutoUpdate = on)));
         var note = Ui.Muted(Ui.T("Off: you get a notification and choose when to update. On: while automatic sorting is running, "
                                  + "new versions install by themselves when no PC Butler window is open."), wrap: true).Margin(0, 4);
+        note.MaxWidth = 620;
+        note.HorizontalAlignment = HorizontalAlignment.Left;
+        tab.Children.Add(note);
+
+        section = Ui.Text(Ui.T("File Explorer"), 16, weight: FontWeights.Bold).Margin(0, 18, 0, 6);
+        section.FontFamily = Ui.DisplayFont;
+        tab.Children.Add(section);
+        tab.Children.Add(Ui.Switch(Ui.T("Show “Process with PC Butler” when I right-click a file or folder"), main.Config.ExplorerMenu, on =>
+        {
+            Main.UpdateConfig(config => config.ExplorerMenu = on);
+            if (App.SyncExplorerMenu(on) is { } error)
+                Ui.Warn("File Explorer", error);
+        }));
+        note = Ui.Muted(Ui.T("Sort the file into its category folder, sort a folder's loose files, or send a file to the Recycle Bin, "
+                             + "without opening PC Butler. On Windows 11 the entry is under “Show more options”."), wrap: true).Margin(0, 4);
         note.MaxWidth = 620;
         note.HorizontalAlignment = HorizontalAlignment.Left;
         tab.Children.Add(note);

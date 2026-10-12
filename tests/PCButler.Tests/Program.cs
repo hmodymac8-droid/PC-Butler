@@ -322,6 +322,35 @@ Check(SpeedTest.History().Count == 0, "and can be cleared");
 var (gpuDegrees, gpuFan) = GpuSensors.Read();
 Check(gpuDegrees is null or (> 0 and < 150) && gpuFan is null or (> 0 and < 20000), $"graphics-card sensors read without error ({gpuDegrees?.ToString() ?? "none"} °C)");
 
+// ---------------------------------------------------------------- what's new
+Section("changelog");
+var changes = Changelog.Entries(arabic: false);
+var changesAr = Changelog.Entries(arabic: true);
+Check(changes.Count > 5 && changes[0].Version == AppInfo.Version && changes.All(c => c.Changes.Count > 0), $"this version ({AppInfo.Version}) is on top of CHANGELOG.md");
+Check(changesAr.Select(c => (c.Version, c.Changes.Count)).SequenceEqual(changes.Select(c => (c.Version, c.Changes.Count))), "CHANGELOG.ar.md lists the same versions and changes");
+Check(Changelog.ShouldShow("1.0.0", firstStart: false) && Changelog.ShouldShow("", false) && !Changelog.ShouldShow(AppInfo.Version, false)
+      && !Changelog.ShouldShow("", firstStart: true), "shown once after an update, not on a first start");
+
+// ---------------------------------------------------------------- File Explorer's right-click entry
+Section("explorer menu");
+ExplorerMenu.Remove();
+Check(ExplorerMenu.InstalledCommand() is null, "no entry to begin with");
+Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", "Process with PC Butler") is null
+      && ExplorerMenu.InstalledCommand() == "\"C:\\Apps\\PC Butler\\PCButler.exe\" --process \"%1\"", "the entry runs the program with the clicked item");
+using (var folderEntry = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell\PCButler"))
+    Check(folderEntry?.GetValue("") as string == "Process with PC Butler" && folderEntry.OpenSubKey("command") is not null, "folders get it too");
+Check(ExplorerMenu.Sync(false, "x", "x") is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
+var clicked = Path.Combine(temp, "Clicked");
+Directory.CreateDirectory(clicked);
+foreach (var name in new[] { "report.pdf", "tune.mp3", "strange.xyz123" }) File.WriteAllText(Path.Combine(clicked, name), "x");
+var rules = new Config { OtherFolder = "" };
+var filePlan = ExplorerMenu.Plan(Path.Combine(clicked, "report.pdf"), rules);
+Check(!filePlan.IsFolder && filePlan.Destination == Path.Combine(clicked, "Documents"), "a file is planned into its category beside it");
+Check(ExplorerMenu.Plan(Path.Combine(clicked, "strange.xyz123"), rules).Destination == "", "a file no category takes is left alone");
+var folderPlan = ExplorerMenu.Plan(clicked, rules);
+Check(folderPlan.IsFolder && folderPlan.Moves.Count == 2, $"a folder's loose files are planned ({folderPlan.Moves.Count})");
+Check(Sorter.MoveFiles(filePlan.Moves).Count == 1 && File.Exists(Path.Combine(clicked, "Documents", "report.pdf")), "and sorting it moves it there");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.

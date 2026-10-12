@@ -17,6 +17,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Translations\ar.json" LogicalName="PCButler.Core.ar.json" />
+    <!-- The list of changes shown in the What's new window. -->
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="PCButler.Core.CHANGELOG.md" />
+    <EmbeddedResource Include="..\..\CHANGELOG.ar.md" LogicalName="PCButler.Core.CHANGELOG.ar.md" WithCulture="false" />
   </ItemGroup>
 
 </Project>

@@ -39,6 +39,7 @@ public partial class App : Application
     /// <summary>Processor and memory readings for the Home page and the tray icon.</summary>
     public UsageMonitor Usage { get; } = new();
     private string trayState = "";
+    private bool firstStart;
     /// <summary>The main window while it is open.</summary>
     public MainWindow? Workspace => window;
 
@@ -46,10 +47,20 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var arguments = e.Args;
+        // Nothing saved yet means a first start: there is no update to announce (see ShowWhatsNew).
+        firstStart = !File.Exists(AppInfo.ConfigFile);
         if (arguments.Length >= 3 && arguments[0] == "--sensors")
         {
             // The helper that reads temperatures as administrator (see Sensors): no window, no tray icon.
             Sensors.RunHelper(arguments[1], int.TryParse(arguments[2], out var parent) ? parent : 0);
+            Shutdown();
+            return;
+        }
+        if (arguments.Length >= 2 && arguments[0] == "--process")
+        {
+            // File Explorer's right-click entry: one small window in a process of its own, whether or not PC Butler is running.
+            Tr.Language = ConfigStore.Load().EffectiveLanguage();
+            new ProcessWindow(arguments[1]).ShowDialog();
             Shutdown();
             return;
         }
@@ -84,6 +95,7 @@ public partial class App : Application
             e.SetObserved();
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
+        SyncExplorerMenu(ConfigStore.Load().ExplorerMenu);
 
         StartTray();
         StartBackground();
@@ -129,10 +141,38 @@ public partial class App : Application
         }
         window = new MainWindow();
         window.Closed += (_, _) => window = null;
+        var opened = window;
         if (splash)
-            new SplashWindow(onClose: window.Reveal).Show();
+            new SplashWindow(onClose: () => { opened.Reveal(); ShowWhatsNew(opened); }).Show();
         else
-            window.Reveal();
+        {
+            opened.Reveal();
+            ShowWhatsNew(opened);
+        }
+    }
+
+    /// <summary>
+    /// Add or remove File Explorer's right-click entry. Only an installed copy adds it, so a
+    /// copy run from a build folder never leaves an entry pointing at a file that may move.
+    /// </summary>
+    public static string? SyncExplorerMenu(bool wanted) =>
+        !AppInfo.IsInstalled ? null
+            : ExplorerMenu.Sync(wanted, Environment.ProcessPath!, Ui.T($"Process with {AppInfo.Name}"));
+
+    /// <summary>Once after each update, when the window first opens: the list of what changed.</summary>
+    private void ShowWhatsNew(MainWindow owner)
+    {
+        var seen = ConfigStore.Load().LastSeenVersion;
+        if (seen == AppInfo.Version)
+            return;
+        owner.UpdateConfig(config => config.LastSeenVersion = AppInfo.Version);
+        if (!Changelog.ShouldShow(seen, firstStart))
+            return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (IsOpen(owner))
+                new WhatsNewWindow { Owner = owner }.Show();
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>Close the window and open it again, e.g. in a new language.</summary>

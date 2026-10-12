@@ -1,13 +1,15 @@
 {
- "Graphics card: {0} °C": "كرت الشاشة: {0} °م",
- "fan {0} RPM": "المروحة {0} دورة/د",
- "Processor: {0} °C (from {1})": "المعالج: {0} °م (من {1})",
- "Motherboard sensor: {0} °C": "حساس اللوحة الأم: {0} °م",
- "A processor's own temperature can only be read by a hardware-monitor driver, which PC Butler does not install. If LibreHardwareMonitor is running, its processor temperature and fan speeds appear here.": "حرارة المعالج نفسه لا يقرؤها إلا تعريف (driver) خاص بمراقبة العتاد، و PC Butler لا يثبّت تعريفات. إذا كان LibreHardwareMonitor يعمل فستظهر هنا حرارة المعالج وسرعة المراوح منه.",
- "Read the motherboard's sensors too (asks for administrator rights)": "قراءة حساسات اللوحة الأم أيضًا (يطلب صلاحيات مسؤول)",
- "Clear all {0} speed-test results?": "مسح كل نتائج قياس السرعة ({0})؟",
- "Drive": "القرص",
- "All drives": "كل الأقراص",
- "Drive {0}": "القرص {0}",
- "{0} has nothing to open, or PC Butler could not find what starts it.": "{0} ليس له ما يُفتح، أو لم يجد PC Butler ما يشغّله."
+ "Process with PC Butler": "معالجة بـ PC Butler",
+ "It is no longer there.": "لم يعد موجودًا.",
+ "Sort its {0} loose file(s) into category folders": "فرز ملفاته السائبة ({0}) إلى مجلدات التصنيف",
+ "Nothing to sort: no loose files here match a category": "لا شيء للفرز: لا ملفات سائبة هنا تطابق تصنيفًا",
+ "Sort it into “{0}”": "فرزه إلى «{0}»",
+ "Nothing to sort: no category takes this kind of file": "لا شيء للفرز: لا تصنيف يأخذ هذا النوع من الملفات",
+ "Move it to the Recycle Bin": "نقله إلى سلة المحذوفات",
+ "What you do here is logged in History and can be undone there.": "ما تفعله هنا يُسجَّل في السجل ويمكن التراجع عنه هناك.",
+ "Sorted {0} file(s).": "فُرز {0} ملف.",
+ "It could not be moved to the Recycle Bin.": "تعذّر نقله إلى سلة المحذوفات.",
+ "File Explorer": "File Explorer",
+ "Show “Process with PC Butler” when I right-click a file or folder": "إظهار «معالجة بـ PC Butler» عند النقر بالزر الأيمن على ملف أو مجلد",
+ "Sort the file into its category folder, sort a folder's loose files, or send a file to the Recycle Bin, without opening PC Butler. On Windows 11 the entry is under “Show more options”.": "افرز الملف إلى مجلد تصنيفه، أو افرز الملفات السائبة في مجلد، أو أرسل ملفًا إلى سلة المحذوفات، دون فتح PC Butler. في ويندوز 11 تجد الخيار تحت “Show more options”."
 }

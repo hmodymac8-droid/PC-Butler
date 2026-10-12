@@ -117,6 +117,10 @@ public sealed class Config
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
+    /// <summary>Show "Process with PC Butler" when a file or folder is right-clicked in File Explorer.</summary>
+    [JsonPropertyName("explorer_menu")] public bool ExplorerMenu { get; set; } = true;
+    /// <summary>The version whose What's new list was last shown; a different one means the program was updated.</summary>
+    [JsonPropertyName("last_seen_version")] public string LastSeenVersion { get; set; } = "";
     /// <summary>The main window's last size and position, as "WIDTHxHEIGHT+LEFT+TOP".</summary>
     [JsonPropertyName("window_geometry")] public string WindowGeometry { get; set; } = "";
     /// <summary>true = install new versions by itself; false = notify and offer.</summary>

@@ -142,6 +142,10 @@ Each was asked for by the owner, has engine tests, and was published as its own 
 | 1.6 | Programs (uninstall with leftovers, winget updates), internet speed test, Clear history | `Programs.cs`, `SpeedTest.cs`, `History.Clear` | `Pages/ProgramsPage.cs`, `Pages/InternetPage.cs`, `Pages/HistoryPage.cs` |
 
 | 1.7 | Graphics-card temperature from Windows (no rights needed), readings from LibreHardwareMonitor when it runs, window always opens maximized, speed-test history with Clear, Programs: drive column and filter, double-click runs | `GpuSensors.cs`, `Sensors.MonitorApp`, `SpeedTest.History`, `Programs.FindLauncher` | `Pages/HomePage.cs`, `Pages/InternetPage.cs`, `Pages/ProgramsPage.cs`, `MainWindow.Reveal` |
+| 1.8 | What's new window after an update (from `CHANGELOG.md` / `CHANGELOG.ar.md`, built into the program), File Explorer's right-click entry "Process with PC Butler" | `Changelog.cs`, `ExplorerMenu.cs` | `WhatsNewWindow.cs`, `ProcessWindow.cs`, `App.xaml.cs` (`--process <path>`), `Pages/AboutPage.cs` |
+
+Every release needs a new `## x.y.z` section at the top of both changelog files; a test fails if the
+current version is not on top or the two files differ in shape.
 
 Rules the owner set for these, which still hold:
 
@@ -156,8 +160,7 @@ Rules the owner set for these, which still hold:
 - No invented numbers: Boost shows what it measured (memory freed, programs changed), not an
   estimated speed-up.
 
-Asked for and not built yet: a "Process with PC Butler" entry in File Explorer's right-click menu
-for files and folders; a manager for the right-click menu's entries (disable, not delete); a file
+Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); a file
 shredder; clipboard history (encrypted, off by default); global hotkeys; a drop zone; unpacking
 archives and cleaning names; a grouped Sorter preview; a per-file history; and a per-program
 network-usage monitor (view only, through the administrator helper).
