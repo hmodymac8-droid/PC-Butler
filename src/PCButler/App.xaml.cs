@@ -73,6 +73,7 @@ public partial class App : Application
         }
 
         AppInfo.ImportLegacyData();
+        BoostMode.Recover(); // if the program was closed the hard way while Boost was on
         Tr.Language = ConfigStore.Load().EffectiveLanguage();
         DispatcherUnhandledException += OnUnhandledException;
         // Errors on other threads can't be shown, but they are logged.
@@ -261,6 +262,23 @@ public partial class App : Application
             if (ConfigStore.Load().UsageAlerts)
                 Notify(message, arguments);
         });
+        // The same two-second tick watches for the programs that switch Boost on by themselves.
+        var ticks = 0;
+        Usage.Updated += _ =>
+        {
+            if (++ticks % 3 != 0 || exiting)
+                return;
+            var change = BoostMode.AutoCheck(ConfigStore.Load().Boost);
+            if (change is null)
+                return;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (change.Length > 0)
+                    Notify("Boost is on for {0}.", [change]);
+                else
+                    Notify("Boost is off: everything is back as it was.", []);
+            });
+        };
         Usage.Start();
         background.DataChanged += () => Dispatcher.BeginInvoke(() => window?.DataChanged());
         background.UpdateFound += () => Dispatcher.BeginInvoke(() => window?.UpdateFound(background.Update));
@@ -310,6 +328,8 @@ public partial class App : Application
         foreach (var open in Windows.OfType<Window>().ToList())
             open.Close();
         Background.Stop();
+        Usage.Stop();
+        BoostMode.Stop(); // Boost only lasts while PC Butler is running
         if (tray is not null)
         {
             tray.Visible = false;

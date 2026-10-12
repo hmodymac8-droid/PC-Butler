@@ -196,6 +196,41 @@ Check(Booster.EndProgram(programs.First(p => p.Protected)) is { Length: > 0 }, "
 Check(Booster.PowerPlans().Count(p => p.Active) == 1, "power plans");
 Check(Booster.StartupItems() is { } startup && startup.All(i => i.Name.Length > 0 && i.Where.Length > 0), "startup apps can be listed");
 
+// ---------------------------------------------------------------- boost (on two programs started here)
+Section("boost");
+System.Diagnostics.Process Idle(string tool, string arguments) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+    tool, arguments) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true })!;
+using (var game = Idle("ping", "-n 60 127.0.0.1"))
+using (var other = Idle("waitfor", "/t 60 pcbutlertest"))
+{
+    var mine = new[] { game.Id, other.Id };
+    var boost = new BoostSettings { PowerPlan = false, TrimMemory = true };
+    var state = BoostMode.Start(boost, game.Id, only: p => mine.Contains(p.Id));
+    game.Refresh(); other.Refresh();
+    Check(game.PriorityClass == System.Diagnostics.ProcessPriorityClass.High
+          && other.PriorityClass == System.Diagnostics.ProcessPriorityClass.BelowNormal, "the chosen program is raised, the other lowered");
+    Check(state.Processes.Count == 2 && state.Lowered == 1 && state.Trimmed == 1
+          && state.Favoured.Equals("ping.exe", StringComparison.OrdinalIgnoreCase),
+          $"what was changed is recorded ({state.Processes.Count} priorities, {state.Trimmed} trimmed)");
+    Check(File.Exists(BoostMode.StatePath) && BoostMode.Active is not null, "the changes are saved for undoing");
+    // As after a crash: the program forgot, the file remembers.
+    typeof(BoostMode).GetProperty("Active")!.SetValue(null, null);
+    Check(BoostMode.Recover(), "a Boost left on is noticed at startup");
+    game.Refresh(); other.Refresh();
+    Check(game.PriorityClass == System.Diagnostics.ProcessPriorityClass.Normal
+          && other.PriorityClass == System.Diagnostics.ProcessPriorityClass.Normal && !File.Exists(BoostMode.StatePath), "everything is put back");
+    Check(BoostMode.Stop() is null && !BoostMode.Recover(), "stopping twice does nothing");
+
+    // The automatic list. Only the power plan and priorities of ping.exe's siblings could be touched; both are off here.
+    var auto = new BoostSettings { PowerPlan = false, Priorities = false, AutoApps = ["ping.exe"] };
+    Check("ping.exe".Equals(BoostMode.AutoCheck(auto), StringComparison.OrdinalIgnoreCase) && BoostMode.Active is { Auto: true }, "a listed program switches Boost on");
+    Check(BoostMode.AutoCheck(auto) is null, "and it stays on while it runs");
+    game.Kill(); other.Kill(); game.WaitForExit(); other.WaitForExit();
+    Check(BoostMode.AutoCheck(auto) == "" && BoostMode.Active is null, "and off when it closes");
+    Check(BoostMode.AutoCheck(new BoostSettings()) is null, "an empty list does nothing");
+}
+Check(BoostMode.WindowedPrograms().All(p => p.Pid != Environment.ProcessId && !Booster.ProtectedNames.Contains(p.Name)), "programs to choose from");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.

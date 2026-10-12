@@ -9,7 +9,7 @@ using PCButler.Core;
 
 namespace PCButler;
 
-/// <summary>Startup apps, the programs using the most memory, and the power plan.</summary>
+/// <summary>Boost, startup apps, the programs using the most memory, and the power plan.</summary>
 public sealed class BoosterPage : Page
 {
     private readonly StatCard[] stats;
@@ -17,11 +17,50 @@ public sealed class BoosterPage : Page
     private readonly TextBlock startupSummary = Ui.Muted("").Margin(10);
     private readonly ListView programList;
     private readonly StackPanel powerList = new() { Margin = new Thickness(0, 10, 0, 10) };
+    private readonly TextBlock boostStatus = Ui.Text("", 18, weight: FontWeights.SemiBold);
+    private readonly TextBlock boostDetail = Ui.Muted("", wrap: true);
+    private readonly ComboBox favoured = new() { Width = 380 };
+    private readonly Button boostButton;
+    private readonly TextBox autoApps;
+    private string shownBoost = "?";
 
     public BoosterPage(MainWindow main) : base(main, "Booster", "A lighter startup. A smoother day.")
     {
         stats = AddStats(("Memory in use", "\uE950"), ("Startup apps", "\uE7E8"), ("Power plan", "\uE945"));
         var tabs = new TabControl();
+
+        // Boost: one program gets the PC's attention; everything is put back when it is switched off.
+        var settings = main.Config.Boost;
+        var boost = new StackPanel { Margin = new Thickness(14), MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
+        boost.Children.Add(boostStatus);
+        boost.Children.Add(boostDetail.Margin(0, 4, 0, 12));
+        boost.Children.Add(Ui.Text(Ui.T("Boost gives one program the PC's attention: it runs at high priority while the programs behind it "
+                                        + "step back. Nothing is closed, Windows' own programs are never touched, and switching Boost off "
+                                        + "puts everything back."), wrap: true));
+        boost.Children.Add(Ui.Muted(Ui.T("Program to speed up")).Margin(0, 14, 0, 4));
+        boost.Children.Add(Ui.Row(6, favoured, Ui.Button(Ui.T("Refresh"), RefreshFavoured)));
+        boost.Children.Add(Ui.Switch(Ui.T("Lower the priority of background programs"), settings.Priorities,
+                                     on => Main.UpdateConfig(config => config.Boost.Priorities = on)).Margin(0, 14, 0, 0));
+        boost.Children.Add(Ui.Switch(Ui.T("Use the high-performance power plan while Boost is on"), settings.PowerPlan,
+                                     on => Main.UpdateConfig(config => config.Boost.PowerPlan = on)).Margin(0, 8, 0, 0));
+        boost.Children.Add(Ui.Switch(Ui.T("Trim the memory of background programs"), settings.TrimMemory,
+                                     on => Main.UpdateConfig(config => config.Boost.TrimMemory = on)).Margin(0, 8, 0, 0));
+        boost.Children.Add(Ui.Muted(Ui.T("Trimming frees memory at once, but those programs load it back when you return to them, so they "
+                                         + "feel slower for a moment. Worth it only when memory is nearly full."), 12, wrap: true).Margin(0, 2, 0, 0));
+        boostButton = Ui.Button(Ui.T("Boost"), ToggleBoost, accent: true);
+        boostButton.MinWidth = 140;
+        boost.Children.Add(Ui.Row(6, boostButton).Margin(0, 14, 0, 0));
+        boost.Children.Add(Ui.Muted(Ui.T("Boost by itself while these programs are running")).Margin(0, 20, 0, 4));
+        autoApps = Ui.Field(string.Join(", ", settings.AutoApps), 380, "game.exe, editor.exe");
+        autoApps.LostFocus += (_, _) => SaveAutoApps();
+        boost.Children.Add(Ui.Row(6, autoApps, Ui.Button(Ui.T("Add the chosen program"), AddChosenToAuto)));
+        boost.Children.Add(Ui.Muted(Ui.T("PC Butler must be running (it can stay in the tray). Boost goes off when the program closes."), 12,
+                                    wrap: true).Margin(0, 2, 0, 0));
+        tabs.Items.Add(new TabItem
+        {
+            Header = Ui.T("Boost"),
+            Content = new ScrollViewer { Content = boost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+        });
 
         // Startup apps: fewer of them means a faster sign-in and less running in the background.
         var bar = new DockPanel { LastChildFill = false };
@@ -70,8 +109,14 @@ public sealed class BoosterPage : Page
             RefreshStartup();
             RefreshPrograms();
             RefreshPower();
+            RefreshFavoured();
         };
         later.Start();
+        // Boost can also be switched on and off by the automatic list, so the page keeps looking.
+        var watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        watch.Tick += (_, _) => ShowBoost();
+        watch.Start();
+        ShowBoost();
     }
 
     private static TabItem Tab(string title, ListView list, DockPanel bar)
@@ -88,6 +133,99 @@ public sealed class BoosterPage : Page
         var used = total - available;
         var parts = Ui.FormatSize(used).Split(' ');
         stats[0].Set(parts[0], parts[1], Ui.T("{0}% of {1} total", used * 100 / Math.Max(total, 1), Ui.FormatSize(total)));
+    }
+
+    // --- boost ---
+
+    private void RefreshFavoured()
+    {
+        var chosen = (favoured.SelectedItem as ComboBoxItem)?.Tag as int? ?? 0;
+        favoured.Items.Clear();
+        favoured.Items.Add(new ComboBoxItem { Content = Ui.T("None: only quieten the background"), Tag = 0 });
+        foreach (var program in BoostMode.WindowedPrograms())
+        {
+            var title = program.Title.Length > 44 ? program.Title[..44] + "…" : program.Title;
+            favoured.Items.Add(new ComboBoxItem { Content = $"{program.Name}  ·  {title}", Tag = program.Pid, ToolTip = program.Name });
+        }
+        favoured.SelectedIndex = Math.Max(0, favoured.Items.OfType<ComboBoxItem>().ToList().FindIndex(item => (int)item.Tag == chosen));
+    }
+
+    private void ShowBoost()
+    {
+        var state = BoostMode.Active;
+        var key = state is null ? "" : state.Started + state.Processes.Count + state.Auto;
+        if (key == shownBoost)
+            return;
+        shownBoost = key;
+        boostButton.Content = Ui.T(state is null ? "Boost" : "Stop Boost");
+        if (state is null)
+        {
+            boostStatus.Text = Ui.T("Boost is off");
+            boostDetail.Text = Ui.T("Choose a program, then press Boost.");
+            return;
+        }
+        boostStatus.Text = Ui.T("Boost is on (since {0})", state.Started[^5..]);
+        var lines = new List<string>();
+        if (state.Processes.Any(process => process.Raised))
+            lines.Add(Ui.T("{0} is running at high priority.", state.Favoured));
+        if (state.Lowered > 0)
+            lines.Add(Ui.T("{0} background program(s) stepped back.", state.Lowered));
+        if (state.PlanName.Length > 0)
+            lines.Add(Ui.T("Power plan: {0}.", state.PlanName));
+        if (state.Trimmed > 0)
+            lines.Add(Ui.T("{0} of memory freed by trimming {1} program(s).", Ui.FormatSize(state.Freed), state.Trimmed));
+        if (state.Auto)
+            lines.Add(Ui.T("Switched on by itself; it goes off when {0} closes.", state.Favoured));
+        if (lines.Count == 0)
+            lines.Add(Ui.T("Nothing needed changing."));
+        boostDetail.Text = string.Join("  ", lines);
+    }
+
+    private async void ToggleBoost()
+    {
+        boostButton.IsEnabled = false;
+        try
+        {
+            if (BoostMode.Active is not null)
+            {
+                await Task.Run(BoostMode.Stop);
+            }
+            else
+            {
+                var settings = Main.Config.Boost;
+                var pid = (favoured.SelectedItem as ComboBoxItem)?.Tag as int? ?? 0;
+                await Task.Run(() => BoostMode.Start(settings, pid));
+            }
+        }
+        finally
+        {
+            boostButton.IsEnabled = true;
+        }
+        ShowBoost();
+        RefreshPower();
+        RefreshMemory();
+    }
+
+    private void SaveAutoApps()
+    {
+        var apps = autoApps.Text.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(app => app.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? app : app + ".exe")
+            .Where(app => !Booster.ProtectedNames.Contains(app))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        autoApps.Text = string.Join(", ", apps);
+        if (!apps.SequenceEqual(Main.Config.Boost.AutoApps))
+            Main.UpdateConfig(config => config.Boost.AutoApps = apps);
+    }
+
+    private void AddChosenToAuto()
+    {
+        if ((favoured.SelectedItem as ComboBoxItem)?.ToolTip is not string name)
+        {
+            Ui.Info("Boost", Ui.T("Choose the program in the list above first (it must be open)."));
+            return;
+        }
+        autoApps.Text = autoApps.Text.Trim().Length > 0 ? $"{autoApps.Text}, {name}" : name;
+        SaveAutoApps();
     }
 
     // --- startup apps ---
