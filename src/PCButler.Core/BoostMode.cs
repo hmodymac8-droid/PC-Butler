@@ -16,6 +16,8 @@ public sealed class BoostSettings
     [JsonPropertyName("power_plan")] public bool PowerPlan { get; set; } = true;
     /// <summary>Push background programs' memory out to the page file. Off by default: they reload it later.</summary>
     [JsonPropertyName("trim_memory")] public bool TrimMemory { get; set; }
+    /// <summary>Pause a few Windows services while Boost is on. Only works while the administrator helper runs.</summary>
+    [JsonPropertyName("services")] public bool Services { get; set; }
     /// <summary>Program file names (game.exe) that switch Boost on while they are running.</summary>
     [JsonPropertyName("auto_apps")] public List<string> AutoApps { get; set; } = [];
 }
@@ -46,6 +48,8 @@ public sealed class BoostState
     /// <summary>Bytes of memory that became available, measured right after trimming.</summary>
     [JsonPropertyName("freed")] public long Freed { get; set; }
     [JsonPropertyName("trimmed")] public int Trimmed { get; set; }
+    /// <summary>Windows services paused through the administrator helper.</summary>
+    [JsonPropertyName("paused_services")] public List<string> PausedServices { get; set; } = [];
 
     [JsonIgnore] public int Lowered => Processes.Count(process => !process.Raised);
 }
@@ -205,6 +209,12 @@ public static class BoostMode
                 Thread.Sleep(300); // Windows takes a moment to count the memory as available
                 state.Freed = Math.Max(0, Booster.MemoryStatus().Available - before);
             }
+            if (settings.Services && only is null && AdminHelper.Running)
+            {
+                var running = AdminHelper.PausableServices.Select(service => service.Key).Where(AdminHelper.IsRunning).ToList();
+                if (running.Count > 0)
+                    state.PausedServices = AdminHelper.Send("stop_services", running) ?? [];
+            }
             Save(state);
             Log.Info($"Boost on: {state.Processes.Count} priorities changed, plan {(state.PlanName.Length > 0 ? state.PlanName : "unchanged")}, "
                      + $"{state.Trimmed} trimmed");
@@ -246,8 +256,11 @@ public static class BoostMode
                 if (previous is not null && plans.Any(plan => plan.Active && plan.Guid.Equals(state.BoostPlan, StringComparison.OrdinalIgnoreCase)))
                     Booster.SetPowerPlan(previous);
             }
+            // If the helper has gone, it already resumed them itself on its way out.
+            if (state.PausedServices.Count > 0 && AdminHelper.Running)
+                AdminHelper.Send("start_services", state.PausedServices);
             DeleteState();
-            Log.Info("Boost off: priorities and power plan put back");
+            Log.Info("Boost off: priorities, power plan and services put back");
             return state;
         }
     }

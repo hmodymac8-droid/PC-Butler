@@ -231,6 +231,34 @@ using (var other = Idle("waitfor", "/t 60 pcbutlertest"))
 }
 Check(BoostMode.WindowedPrograms().All(p => p.Pid != Environment.ProcessId && !Booster.ProtectedNames.Contains(p.Name)), "programs to choose from");
 
+// ---------------------------------------------------------------- the administrator helper's requests (no rights needed here)
+Section("helper");
+var helperDir = Path.Combine(temp, "helper");
+Directory.CreateDirectory(helperDir);
+var paused = new List<string>();
+var asked = new List<string>();
+using (var helperStop = new CancellationTokenSource())
+{
+    // Stands in for the helper: answers requests, "changing" services by writing them down.
+    var helper = Task.Run(() =>
+    {
+        while (!helperStop.IsCancellationRequested)
+        {
+            AdminHelper.Poll(helperDir, paused, (service, stop) => { asked.Add((stop ? "stop " : "start ") + service); return true; });
+            Thread.Sleep(50);
+        }
+    });
+    var done = AdminHelper.Send("stop_services", ["spooler", "SysMain", "WinDefend", "..\\evil"], 10, helperDir);
+    Check(done is not null && done.SequenceEqual(["Spooler", "SysMain"]) && paused.Count == 2, "only the listed services can be paused");
+    Check(AdminHelper.Send("start_services", ["DiagTrack", "Spooler"], 10, helperDir) is { } resumed && resumed.SequenceEqual(["Spooler"])
+          && paused.SequenceEqual(["SysMain"]), "only what was paused is resumed");
+    Check(AdminHelper.Send("delete_everything", ["Spooler"], 1, helperDir) is null, "other requests are ignored");
+    helperStop.Cancel();
+    helper.Wait();
+}
+Check(asked.SequenceEqual(["stop Spooler", "stop SysMain", "start Spooler"]), "the helper did exactly that");
+Check(AdminHelper.PausableServices.Length == 3 && AdminHelper.IsRunning("RpcSs") && !AdminHelper.IsRunning("no-such-service"), "service state can be read");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.

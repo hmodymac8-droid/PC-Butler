@@ -74,8 +74,16 @@ public static class Sensors
     /// <summary>The helper's whole life: read, write, repeat until the main program is gone.</summary>
     public static void RunHelper(string file, int parentId)
     {
-        while (ParentAlive(parentId))
+        var directory = Path.GetDirectoryName(Path.GetFullPath(file))!;
+        var stopped = new List<string>(); // services paused for Boost (see AdminHelper)
+        for (var tick = 0; ParentAlive(parentId); tick++)
         {
+            AdminHelper.Poll(directory, stopped);
+            if (tick % IntervalSeconds != 0)
+            {
+                Thread.Sleep(1000);
+                continue;
+            }
             var reading = Read();
             try
             {
@@ -86,8 +94,9 @@ public static class Sensors
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
             }
-            Thread.Sleep(TimeSpan.FromSeconds(IntervalSeconds));
+            Thread.Sleep(1000);
         }
+        AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
         try
         {
             File.Delete(file);

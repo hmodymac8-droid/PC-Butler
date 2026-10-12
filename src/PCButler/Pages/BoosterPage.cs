@@ -21,6 +21,7 @@ public sealed class BoosterPage : Page
     private readonly TextBlock boostDetail = Ui.Muted("", wrap: true);
     private readonly ComboBox favoured = new() { Width = 380 };
     private readonly Button boostButton;
+    private readonly CheckBox servicesSwitch;
     private readonly TextBox autoApps;
     private string shownBoost = "?";
 
@@ -47,6 +48,10 @@ public sealed class BoosterPage : Page
                                      on => Main.UpdateConfig(config => config.Boost.TrimMemory = on)).Margin(0, 8, 0, 0));
         boost.Children.Add(Ui.Muted(Ui.T("Trimming frees memory at once, but those programs load it back when you return to them, so they "
                                          + "feel slower for a moment. Worth it only when memory is nearly full."), 12, wrap: true).Margin(0, 2, 0, 0));
+        servicesSwitch = Ui.Switch(Ui.T("Pause background services (needs administrator rights)"), settings.Services, SetServices);
+        boost.Children.Add(servicesSwitch.Margin(0, 8, 0, 0));
+        boost.Children.Add(Ui.Muted(Ui.T("Print Spooler (no printing while paused), Telemetry and SysMain. They are started again when Boost "
+                                         + "goes off or PC Butler closes."), 12, wrap: true).Margin(0, 2, 0, 0));
         boostButton = Ui.Button(Ui.T("Boost"), ToggleBoost, accent: true);
         boostButton.MinWidth = 140;
         boost.Children.Add(Ui.Row(6, boostButton).Margin(0, 14, 0, 0));
@@ -174,11 +179,29 @@ public sealed class BoosterPage : Page
             lines.Add(Ui.T("Power plan: {0}.", state.PlanName));
         if (state.Trimmed > 0)
             lines.Add(Ui.T("{0} of memory freed by trimming {1} program(s).", Ui.FormatSize(state.Freed), state.Trimmed));
+        if (state.PausedServices.Count > 0)
+            lines.Add(Ui.T("{0} service(s) paused.", state.PausedServices.Count));
         if (state.Auto)
             lines.Add(Ui.T("Switched on by itself; it goes off when {0} closes.", state.Favoured));
         if (lines.Count == 0)
             lines.Add(Ui.T("Nothing needed changing."));
         boostDetail.Text = string.Join("  ", lines);
+    }
+
+    /// <summary>Pausing services is done by the administrator helper, so switching it on offers to start it.</summary>
+    private void SetServices(bool on)
+    {
+        if (on && !AdminHelper.Running)
+        {
+            if (!Ui.Ask("Boost", Ui.T("Pausing services needs administrator rights. PC Butler starts a small helper for it; Windows will "
+                                      + "ask for your permission. Without it, Boost still does everything else.\n\nStart the helper now?"))
+                || !Sensors.StartHelper())
+            {
+                servicesSwitch.IsChecked = false;
+                return;
+            }
+        }
+        Main.UpdateConfig(config => config.Boost.Services = on);
     }
 
     private async void ToggleBoost()
