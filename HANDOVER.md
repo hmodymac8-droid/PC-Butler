@@ -141,6 +141,8 @@ Each was asked for by the owner, has engine tests, and was published as its own 
 | 1.5 | Boost can pause three services through the administrator helper | `AdminHelper.cs`, `Sensors.RunHelper` | Boost tab |
 | 1.6 | Programs (uninstall with leftovers, winget updates), internet speed test, Clear history | `Programs.cs`, `SpeedTest.cs`, `History.Clear` | `Pages/ProgramsPage.cs`, `Pages/InternetPage.cs`, `Pages/HistoryPage.cs` |
 
+| 1.7 | Graphics-card temperature from Windows (no rights needed), readings from LibreHardwareMonitor when it runs, window always opens maximized, speed-test history with Clear, Programs: drive column and filter, double-click runs | `GpuSensors.cs`, `Sensors.MonitorApp`, `SpeedTest.History`, `Programs.FindLauncher` | `Pages/HomePage.cs`, `Pages/InternetPage.cs`, `Pages/ProgramsPage.cs`, `MainWindow.Reveal` |
+
 Rules the owner set for these, which still hold:
 
 - PC Butler itself never runs as administrator. What needs those rights goes through the helper

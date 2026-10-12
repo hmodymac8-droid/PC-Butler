@@ -10,7 +10,7 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 
 ## Features
 
-- **Home.** The PC at a glance: processor, memory and graphics-card use, free space on every drive, and a neatness score out of 100 with the reasons it lost points. The tray icon shows processor and memory use and warns when they stay nearly full.
+- **Home.** The PC at a glance: processor, memory and graphics-card use, the graphics card's temperature, free space on every drive, and a neatness score out of 100 with the reasons it lost points. The tray icon shows processor and memory use and warns when they stay nearly full.
 - **Sorts by age and type.** Files older than a set number of days (7 by default) move into category folders by file extension. Each category can have its own age.
 - **Preview first.** See exactly which files will move and where before anything happens, and exclude the ones you want to keep.
 - **Automatic mode.** Runs in the background with a tray icon, checks on a schedule (every so many minutes, daily or weekly at a time you set), and starts when you sign in. Cleaning can be scheduled the same way. After each run a report window lets you approve or undo what moved.
@@ -19,8 +19,8 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Cleaner.** Finds temporary files, browser caches, crash reports and other junk, and can clear traces such as the recent-files list. Nothing is deleted until you click Clean, and everything cleaned is listed in History.
 - **Storage.** A map of what fills a folder or a drive, and a list of large files that have not been touched for a long time.
 - **Booster.** Turns startup apps off and on (they stay installed), ends programs that use a lot of memory, and switches the power plan. Boost gives one program the PC's attention (high priority for it, lower for the background, high-performance power plan) and puts everything back when switched off; it can switch on by itself while chosen programs run. Optionally it also trims the memory of background programs and pauses three Windows services (see *Administrator rights* below).
-- **Programs.** Every installed program in one list. Uninstall runs the program's own uninstaller and then shows what it left behind (folders, shortcuts, its own registry key) for you to tick: folders go to the Recycle Bin, registry keys are saved to a `.reg` file first. Updates come from winget, Windows' package manager.
-- **Internet.** A speed test: download, upload and response time, measured against Cloudflare's speed-test servers.
+- **Programs.** Every installed program in one list, with the drive it is on and a filter by drive; double-click one to open it. Uninstall runs the program's own uninstaller and then shows what it left behind (folders, shortcuts, its own registry key) for you to tick: folders go to the Recycle Bin, registry keys are saved to a `.reg` file first. Updates come from winget, Windows' package manager.
+- **Internet.** A speed test: download, upload and response time, measured against Cloudflare's speed-test servers, with a history of earlier results.
 - **Vault.** Password-protected storage: files you add are encrypted (AES-256) and removed from where they were.
 - **Auto clean-up.** Optionally recycle old files in a category (for example installers after 90 days). Only files the program itself moved are touched.
 - **Never-move list.** Protect files by name or pattern (`*.torrent`). Files you put back with Undo are not moved again automatically.
@@ -31,7 +31,7 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 
 ## Administrator rights
 
-PC Butler never runs as administrator. Two things need those rights, and both are optional: reading the temperature and fan sensors (Home page), and pausing services while Boost is on. For those, PC Butler starts a small helper, a second copy of itself, only when you ask and only after Windows' permission prompt. The helper can read the sensors and pause or resume three named services (Print Spooler, Connected User Experiences and Telemetry, SysMain), nothing else, and it resumes them and ends when PC Butler closes.
+PC Butler never runs as administrator. The graphics card's temperature needs no special rights. A processor's own temperature can only be read by a hardware-monitor driver, which PC Butler does not install; if LibreHardwareMonitor is running, PC Butler shows its readings. Two things need administrator rights, and both are optional: reading the motherboard's temperature and fan sensors (Home page), and pausing services while Boost is on. For those, PC Butler starts a small helper, a second copy of itself, only when you ask and only after Windows' permission prompt. The helper can read the sensors and pause or resume three named services (Print Spooler, Connected User Experiences and Telemetry, SysMain), nothing else, and it resumes them and ends when PC Butler closes.
 
 ## Install
 
@@ -94,7 +94,7 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 
 ### المميزات
 
-- **الرئيسية.** جهازك في لمحة: استهلاك المعالج والذاكرة وكرت الشاشة، والمساحة الحرة في كل قرص، ونقاط ترتيب من 100 مع أسباب الخصم. أيقونة البرنامج بجانب الساعة تعرض استهلاك المعالج والذاكرة وتنبّه عند امتلائهما المستمر.
+- **الرئيسية.** جهازك في لمحة: استهلاك المعالج والذاكرة وكرت الشاشة، وحرارة كرت الشاشة، والمساحة الحرة في كل قرص، ونقاط ترتيب من 100 مع أسباب الخصم. أيقونة البرنامج بجانب الساعة تعرض استهلاك المعالج والذاكرة وتنبّه عند امتلائهما المستمر.
 - **الفرز حسب العمر والنوع.** الملفات الأقدم من عدد محدد من الأيام (7 افتراضيًا) تُنقل إلى مجلدات التصنيف حسب امتداد الملف، ويمكن تحديد عمر مختلف لكل تصنيف.
 - **المعاينة أولًا.** شاهد الملفات التي ستُنقل ووجهتها قبل أي تنفيذ، واستثنِ ما تريد إبقاءه.
 - **الوضع التلقائي.** يعمل في الخلفية مع أيقونة بجانب الساعة، ويفحص المجلد وفق جدول زمني (كل عدد من الدقائق، أو يوميًا أو أسبوعيًا في وقت تحدده)، ويبدأ مع تسجيل الدخول. ويمكن جدولة التنظيف بالطريقة نفسها. بعد كل عملية تظهر نافذة تقرير للموافقة على ما نُقل أو التراجع عنه.
@@ -103,8 +103,8 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 - **المنظّف.** يعثر على الملفات المؤقتة وذاكرة المتصفحات المؤقتة وتقارير الأعطال وغيرها، ويمسح آثارًا مثل قائمة الملفات الأخيرة. لا يُحذف شيء حتى تضغط «تنظيف»، وكل ما يُنظَّف يظهر في السجل.
 - **التخزين.** خريطة لما يملأ مجلدًا أو قرصًا، وقائمة بالملفات الكبيرة التي لم تُستخدم منذ مدة طويلة.
 - **المسرّع.** يوقف برامج بدء التشغيل أو يشغّلها (تبقى مثبّتة)، وينهي البرامج التي تستهلك الكثير من الذاكرة، ويبدّل خطة الطاقة. «التعزيز» يعطي برنامجًا واحدًا تركيز الجهاز (أولوية عالية له، وأقل لبرامج الخلفية، وخطة طاقة الأداء العالي) ويعيد كل شيء عند إيقافه، ويمكنه أن يشتغل تلقائيًا ما دامت برامج تختارها تعمل. واختياريًا يفرّغ ذاكرة برامج الخلفية ويوقف ثلاث خدمات من ويندوز مؤقتًا (انظر «صلاحيات المسؤول» أدناه).
-- **البرامج.** كل البرامج المثبّتة في قائمة واحدة. إلغاء التثبيت يشغّل برنامج الإزالة الخاص بالبرنامج ثم يعرض ما تركه خلفه (مجلدات، اختصارات، مفتاحه في السجل) لتختار منه: المجلدات تذهب إلى سلة المحذوفات، ومفاتيح السجل تُحفظ أولًا في ملف `.reg`. التحديثات تأتي من winget، مدير الحزم الخاص بويندوز.
-- **الإنترنت.** قياس السرعة: التنزيل والرفع وزمن الاستجابة، مقابل خوادم Cloudflare لقياس السرعة.
+- **البرامج.** كل البرامج المثبّتة في قائمة واحدة، مع القرص الذي عليه كل برنامج وفلتر حسب القرص، والنقر المزدوج يفتح البرنامج. إلغاء التثبيت يشغّل برنامج الإزالة الخاص بالبرنامج ثم يعرض ما تركه خلفه (مجلدات، اختصارات، مفتاحه في السجل) لتختار منه: المجلدات تذهب إلى سلة المحذوفات، ومفاتيح السجل تُحفظ أولًا في ملف `.reg`. التحديثات تأتي من winget، مدير الحزم الخاص بويندوز.
+- **الإنترنت.** قياس السرعة: التنزيل والرفع وزمن الاستجابة، مقابل خوادم Cloudflare لقياس السرعة، مع سجل للنتائج السابقة.
 - **الخزنة.** مساحة محمية بكلمة مرور: الملفات التي تضيفها تُشفَّر (AES-256) وتُزال من مكانها الأصلي.
 - **التنظيف التلقائي.** خيار لإرسال الملفات القديمة في تصنيف معيّن إلى سلة المحذوفات (مثل ملفات التثبيت بعد 90 يومًا). لا يمسّ إلا الملفات التي نقلها البرنامج نفسه.
 - **قائمة «لا تنقل أبدًا».** احمِ ملفات معيّنة بالاسم أو بالنمط (مثل `*.torrent`). الملفات التي أعدتها بالتراجع لا تُنقل تلقائيًا مرة أخرى.
@@ -115,7 +115,7 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 
 ### صلاحيات المسؤول
 
-PC Butler لا يعمل أبدًا بصلاحيات المسؤول. أمران فقط يحتاجانها وكلاهما اختياري: قراءة حساسات الحرارة والمراوح (الصفحة الرئيسية)، وإيقاف الخدمات مؤقتًا أثناء التعزيز. لهما يشغّل PC Butler مساعدًا صغيرًا، نسخة ثانية منه، فقط عندما تطلب وبعد موافقتك على نافذة ويندوز. المساعد يقرأ الحساسات ويوقف أو يشغّل ثلاث خدمات محددة (Print Spooler و Connected User Experiences and Telemetry و SysMain) ولا شيء غيرها، ويعيد تشغيلها وينتهي عند إغلاق PC Butler.
+PC Butler لا يعمل أبدًا بصلاحيات المسؤول. حرارة كرت الشاشة لا تحتاج أي صلاحيات. أما حرارة المعالج نفسه فلا يقرؤها إلا تعريف (driver) لمراقبة العتاد و PC Butler لا يثبّت تعريفات؛ إذا كان LibreHardwareMonitor يعمل يعرض PC Butler قراءاته. أمران فقط يحتاجان صلاحيات المسؤول وكلاهما اختياري: قراءة حساسات اللوحة الأم للحرارة والمراوح (الصفحة الرئيسية)، وإيقاف الخدمات مؤقتًا أثناء التعزيز. لهما يشغّل PC Butler مساعدًا صغيرًا، نسخة ثانية منه، فقط عندما تطلب وبعد موافقتك على نافذة ويندوز. المساعد يقرأ الحساسات ويوقف أو يشغّل ثلاث خدمات محددة (Print Spooler و Connected User Experiences and Telemetry و SysMain) ولا شيء غيرها، ويعيد تشغيلها وينتهي عند إغلاق PC Butler.
 
 ### التثبيت
 
