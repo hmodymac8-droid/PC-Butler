@@ -3,6 +3,10 @@
 يُعرض هذا الملف داخل البرنامج (المساعدة وحول، ومرة بعد كل تحديث).
 كل نسخة عنوان يبدأ بـ `##` تليه أسطر تبدأ بـ `- `.
 
+## 1.11.2
+
+- البرامج: أُعيد ترتيب قائمتي التطبيقات الأساسية والموصى بها. الأساسية: Chrome وWinRAR وVisual C++ Redistributable و.NET Desktop Runtime 8 وDiscord وSteam وGit وMPC-HC وVisual Studio Code وTeraCopy وWizTree. والموصى بها أُضيف إليها GitHub Desktop وMSI Afterburner.
+
 ## 1.11.1
 
 - التطبيقات الموصى بها: أُضيف WinRAR وGoogle Chrome وGit (مع Git Bash) وMedia Player Classic (MPC-HC) وWizTree. والقائمة تبدأ الآن بـ WinRAR وVisual Studio Code وDiscord وChrome وSteam وGit وMPC-HC وTeraCopy وWizTree.

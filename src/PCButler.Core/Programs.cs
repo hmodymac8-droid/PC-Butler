@@ -467,32 +467,32 @@ public static partial class Programs
 
     // --- apps to install, through winget ---
 
-    /// <summary>Apps most PCs need: a browser, archives, video, PDF and the runtimes other programs rely on.</summary>
+    /// <summary>Apps most PCs need: a browser, archives, chat, games, video, the runtimes other programs rely on and a few tools.</summary>
     public static readonly CatalogApp[] EssentialApps =
     [
         new("Google Chrome", "Google.Chrome", "Google Chrome", "Web browser"),
-        new("Mozilla Firefox", "Mozilla.Firefox", "Mozilla Firefox", "Web browser"),
-        new("7-Zip", "7zip.7zip", "7-Zip", "Opens and makes zip, rar and 7z archives"),
-        new("VLC media player", "VideoLAN.VLC", "VLC media player", "Plays almost any video or audio file"),
-        new("Adobe Acrobat Reader", "Adobe.Acrobat.Reader.64-bit", "Adobe Acrobat", "Opens and fills in PDF files"),
-        new("Notepad++", "Notepad++.Notepad++", "Notepad++", "A better text editor"),
+        new("WinRAR", "RARLab.WinRAR", "WinRAR", "Opens and makes rar and zip archives"),
         new("Visual C++ Redistributable", "Microsoft.VCRedist.2015+.x64", "Microsoft Visual C++ 2015-2022 Redistributable (x64)",
             "Needed by many programs and games"),
         new(".NET Desktop Runtime 8", "Microsoft.DotNet.DesktopRuntime.8", "Microsoft Windows Desktop Runtime - 8", "Needed by many Windows programs"),
-    ];
-
-    /// <summary>Apps worth having: well-known, free and useful on most PCs.</summary>
-    public static readonly CatalogApp[] RecommendedApps =
-    [
-        new("WinRAR", "RARLab.WinRAR", "WinRAR", "Opens and makes rar and zip archives"),
-        new("Visual Studio Code", "Microsoft.VisualStudioCode", "Microsoft Visual Studio Code", "Code and text editor"),
         new("Discord", "Discord.Discord", "Discord", "Voice, video and text chat"),
-        new("Google Chrome", "Google.Chrome", "Google Chrome", "Web browser"),
         new("Steam", "Valve.Steam", "Steam", "Games store and launcher"),
         new("Git (with Git Bash)", "Git.Git", "Git", "Version control, with the Git Bash terminal"),
         new("Media Player Classic (MPC-HC)", "clsid2.mpc-hc", "MPC-HC", "A light video player that plays almost anything"),
+        new("Visual Studio Code", "Microsoft.VisualStudioCode", "Microsoft Visual Studio Code", "Code and text editor"),
         new("TeraCopy", "CodeSector.TeraCopy", "TeraCopy", "Faster, safer file copying"),
         new("WizTree", "AntibodySoftware.WizTree", "WizTree", "Shows what fills your drives, in seconds"),
+    ];
+
+    /// <summary>Apps worth having: well-known, free and useful on many PCs.</summary>
+    public static readonly CatalogApp[] RecommendedApps =
+    [
+        new("7-Zip", "7zip.7zip", "7-Zip", "Opens and makes zip, rar and 7z archives"),
+        new("Mozilla Firefox", "Mozilla.Firefox", "Mozilla Firefox", "Web browser"),
+        new("VLC media player", "VideoLAN.VLC", "VLC media player", "Plays almost any video or audio file"),
+        new("Adobe Acrobat Reader", "Adobe.Acrobat.Reader.64-bit", "Adobe Acrobat", "Opens and fills in PDF files"),
+        new("GitHub Desktop", "GitHub.GitHubDesktop", "GitHub Desktop", "Work with GitHub repositories without the command line"),
+        new("MSI Afterburner", "Guru3D.Afterburner", "MSI Afterburner", "Watches and tunes your graphics card"),
         new("Everything", "voidtools.Everything", "Everything", "Finds any file on your PC the moment you type"),
         new("Microsoft PowerToys", "Microsoft.PowerToys", "PowerToys", "Extra tools for Windows from Microsoft"),
         new("ShareX", "ShareX.ShareX", "ShareX", "Screenshots and screen recordings"),

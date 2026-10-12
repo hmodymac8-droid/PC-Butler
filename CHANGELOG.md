@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.11.2
+
+- Programs: the Essential apps and Recommended apps lists are rearranged. Essential: Chrome, WinRAR, Visual C++ Redistributable, .NET Desktop Runtime 8, Discord, Steam, Git, MPC-HC, Visual Studio Code, TeraCopy and WizTree. Recommended adds GitHub Desktop and MSI Afterburner.
+
 ## 1.11.1
 
 - Recommended apps: added WinRAR, Google Chrome, Git (with Git Bash), Media Player Classic (MPC-HC) and WizTree. The list now starts with WinRAR, Visual Studio Code, Discord, Chrome, Steam, Git, MPC-HC, TeraCopy and WizTree.

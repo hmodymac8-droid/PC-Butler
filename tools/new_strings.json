@@ -1,6 +1,4 @@
 {
- "Opens and makes rar and zip archives": "يفتح ملفات rar وzip المضغوطة وينشئها",
- "Version control, with the Git Bash terminal": "إدارة نسخ الشيفرة، مع طرفية Git Bash",
- "A light video player that plays almost anything": "مشغّل فيديو خفيف يشغّل كل شيء تقريبًا",
- "Shows what fills your drives, in seconds": "يعرض ما يملأ أقراصك في ثوانٍ"
+ "Work with GitHub repositories without the command line": "تعامل مع مستودعات GitHub من غير سطر الأوامر",
+ "Watches and tunes your graphics card": "يراقب كرت الشاشة ويضبطه"
 }

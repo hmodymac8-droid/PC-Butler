@@ -262,7 +262,7 @@ Check(AdminHelper.PausableServices.Length == 3 && AdminHelper.IsRunning("RpcSs")
 // ---------------------------------------------------------------- installed programs
 Section("programs");
 var installed = Programs.Installed();
-var git = Programs.RecommendedApps.First(app => app.Id == "Git.Git");
+var git = Programs.EssentialApps.First(app => app.Id == "Git.Git");
 Check(Programs.IsInstalled(git, [new InstalledProgram { Name = "Git", Hive = "HKCU", Key = "x" }]) && !Programs.IsInstalled(git, [new InstalledProgram { Name = "GitHub Desktop", Hive = "HKCU", Key = "x" }])
       && Programs.IsInstalled(Programs.EssentialApps.First(app => app.Id == "Microsoft.DotNet.DesktopRuntime.8"),
                               [new InstalledProgram { Name = "Microsoft Windows Desktop Runtime - 8.0.11 (x64)", Hive = "HKCU", Key = "x" }]), "app lists match whole names");
