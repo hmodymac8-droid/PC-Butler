@@ -7,7 +7,8 @@ decided, what exists, what is missing, and how to build and release.
 
 Rebuild the Python/Tkinter program **Downloads Sorter** in **C#** as **PC Butler**:
 
-- Same features, same behaviour, same look. Nothing added, nothing dropped.
+- Same features, same behaviour, same look. That was version 1.0; the owner has asked for new
+  features since (see "Added after 1.0" below).
 - New name: **PC Butler** (the owner first said "PC Keeper"; that is an existing commercial
   product, PCKeeper, so "PC Butler" was chosen instead and matches this repository's name).
 - New repository: `hmodymac8-droid/PC-Butler` (this one).
@@ -125,9 +126,44 @@ All of it is written in WPF (`net10.0-windows`), built from code; the only XAML 
 - `build.ps1 -Test` built a TestBuild installer. It installed silently into a scratch folder,
   the installed program started without the .NET SDK, and it uninstalled cleanly.
 
+### Added after 1.0
+
+Each was asked for by the owner, has engine tests, and was published as its own release.
+
+| Version | What | Engine | Window |
+|---|---|---|---|
+| 1.0.1 | Arabic flips the whole layout right-to-left | | `Ui.StyleWindow`, `Theme.xaml` |
+| 1.0.3 | Every list sorts by clicking a column heading | | `SortableList` in `Ui.cs` |
+| 1.1 | Storage: treemap of a folder, large and old files | `Storage.cs` | `Pages/StoragePage.cs` |
+| 1.2 | Daily/weekly schedules for sorting and cleaning; privacy categories in the Cleaner | `ScheduleSettings` in `Config.cs`, `Updater.cs`, `Cleaner.cs` | `Pages/SettingsPage.cs` |
+| 1.3 | Home page, neatness score, tray usage monitor, optional sensors helper | `SystemMonitor.cs`, `Sensors.cs` | `Pages/HomePage.cs`, `App.xaml.cs` |
+| 1.4 | Boost: priorities, power plan, optional memory trim, automatic for listed programs | `BoostMode.cs` | Boost tab in `Pages/BoosterPage.cs` |
+| 1.5 | Boost can pause three services through the administrator helper | `AdminHelper.cs`, `Sensors.RunHelper` | Boost tab |
+| 1.6 | Programs (uninstall with leftovers, winget updates), internet speed test, Clear history | `Programs.cs`, `SpeedTest.cs`, `History.Clear` | `Pages/ProgramsPage.cs`, `Pages/InternetPage.cs`, `Pages/HistoryPage.cs` |
+
+Rules the owner set for these, which still hold:
+
+- PC Butler itself never runs as administrator. What needs those rights goes through the helper
+  (`PCButler.exe --sensors <file> <parent pid>`, started with the "runas" verb), is optional, and is
+  switched on by the user. The main program leaves requests in `helper-command.json`; the helper
+  only accepts what `AdminHelper` lists, because any program can write that file.
+- Boost writes everything it changes to `boost.json` before changing it; `BoostMode.Recover` puts
+  it back at the next start, and the helper resumes services when the main program is gone.
+- Nothing is deleted without the user choosing it. Leftovers are matched by exact name only, a
+  folder another program lives in is never offered, and registry keys are exported before removal.
+- No invented numbers: Boost shows what it measured (memory freed, programs changed), not an
+  estimated speed-up.
+
+Asked for and not built yet: a "Process with PC Butler" entry in File Explorer's right-click menu
+for files and folders; a manager for the right-click menu's entries (disable, not delete); a file
+shredder; clipboard history (encrypted, off by default); global hotkeys; a drop zone; unpacking
+archives and cleaning names; a grouped Sorter preview; a per-file history; and a per-program
+network-usage monitor (view only, through the administrator helper).
+
 ### Still to do
 
-1. Try the tray menu by hand, and the update path once a second release exists.
+1. Try by hand what tests cannot reach: the Windows permission prompt for the helper (sensors and
+   pausing services), a real uninstall with leftovers, and a winget update.
 2. The copyright line stays `hmodymac8-droid` (the owner's decision).
 
 ## The design to match
