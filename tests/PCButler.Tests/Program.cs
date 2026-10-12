@@ -281,6 +281,50 @@ if (args.Length >= 2)
 }
 
 // ---------------------------------------------------------------- translations and updates
+// ---------------------------------------------------------------- storage
+Section("storage");
+var disk = Path.Combine(temp, "Disk");
+void Sized(string folder, string name, int bytes, int ageDays = 0)
+{
+    Directory.CreateDirectory(folder);
+    var path = Path.Combine(folder, name);
+    File.WriteAllBytes(path, new byte[bytes]);
+    if (ageDays > 0)
+    {
+        File.SetLastWriteTime(path, DateTime.Now.AddDays(-ageDays));
+        File.SetLastAccessTime(path, DateTime.Now.AddDays(-ageDays));
+    }
+}
+Sized(Path.Combine(disk, "Movies"), "film.mkv", 3000, ageDays: 400);
+Sized(Path.Combine(disk, "Movies", "Old"), "clip.mp4", 1000);
+Sized(Path.Combine(disk, "Docs"), "a.txt", 10);
+Sized(disk, "loose.bin", 500);
+Directory.CreateDirectory(Path.Combine(disk, "Empty"));
+for (var i = 0; i < 45; i++)
+    Sized(Path.Combine(disk, "Many"), $"f{i:00}.dat", 100 + i);
+var scanResult = Storage.Scan(disk, CancellationToken.None);
+var diskRoot = scanResult.Root;
+Check(diskRoot.Size == 3000 + 1000 + 10 + 500 + Enumerable.Range(0, 45).Sum(i => 100 + i) && diskRoot.Files == 49, $"totals ({diskRoot.Size} bytes, {diskRoot.Files} files)");
+Check(diskRoot.Children.Select(c => c.Name).SequenceEqual(["Many", "Movies", "loose.bin", "Docs"]), "biggest first, empty folders left out: " + string.Join(", ", diskRoot.Children.Select(c => c.Name)));
+var movies = diskRoot.Children.First(c => c.Name == "Movies");
+Check(movies.IsFolder && movies.Size == 4000 && movies.Files == 2 && movies.Parent == diskRoot && movies.Children[0].Name == "film.mkv" && movies.Children[1] is { Name: "Old", IsFolder: true, Size: 1000 }, "folders add up their contents");
+var many = diskRoot.Children.First(c => c.Name == "Many");
+Check(many.Children.Count == 41 && many.Children.Count(c => c.Path.Length == 0) == 1 && many.Children.First(c => c.Path.Length == 0).Files == 5 && many.Children.Sum(c => c.Size) == many.Size, "a folder's small files are grouped into one entry");
+Check(scanResult.BigFiles.Count == 0 && scanResult.Skipped == 0, "nothing here counts as a big file");
+scanResult.BigFiles.AddRange([new BigFile(@"C:\x\old-big.iso", 3L << 30, DateTime.Now.AddMonths(-8)), new BigFile(@"C:\x\new-big.iso", 2L << 30, DateTime.Now.AddDays(-2)), new BigFile(@"C:\x\old-small.zip", 200L << 20, DateTime.Now.AddMonths(-20))]);
+Check(Storage.LargeAndOld(scanResult, 1L << 30, 6).Select(f => f.Name).SequenceEqual(["old-big.iso"]) && Storage.LargeAndOld(scanResult, 1L << 30, 0).Count == 2 && Storage.LargeAndOld(scanResult, 100L << 20, 12).Select(f => f.Name).SequenceEqual(["old-small.zip"]), "large and old filter");
+using (var stopScan = new CancellationTokenSource())
+{
+    stopScan.Cancel();
+    var stoppedScan = false;
+    try { Storage.Scan(disk, stopScan.Token); } catch (OperationCanceledException) { stoppedScan = true; }
+    Check(stoppedScan, "a storage scan can be cancelled");
+}
+var boxes = Storage.Treemap([6, 6, 4, 3, 2, 2, 1], 600, 400);
+Check(boxes.Count == 7 && Math.Abs(boxes.Sum(b => b.Width * b.Height) - 600 * 400) < 1 && boxes.All(b => b.X >= -0.01 && b.Y >= -0.01 && b.X + b.Width <= 600.01 && b.Y + b.Height <= 400.01), "treemap fills the area exactly and stays inside it");
+Check(Math.Abs(boxes[0].Width * boxes[0].Height / (600.0 * 400) - 6.0 / 24) < 0.001 && boxes.All(b => Math.Max(b.Width / b.Height, b.Height / b.Width) < 4.5), "treemap areas match the sizes and the boxes stay roughly square");
+Check(Storage.Treemap([], 100, 100).Count == 0 && Storage.Treemap([5], 100, 50) is [(0, 0, 100, 50)], "treemap edge cases");
+
 Section("translations, updates");
 Tr.Language = "ar";
 Check(Tr.T("Settings") != "Settings" && Tr.T("Moved {0} file(s).", 3).Contains('3') && !Tr.T("Moved {0} file(s).", 3).Contains("Moved"), "Arabic lookups");

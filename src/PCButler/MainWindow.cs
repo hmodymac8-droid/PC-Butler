@@ -86,6 +86,7 @@ public sealed partial class MainWindow : Window
                      ("preview", "\uE8FD", "Sorter", Sorter, false),
                      ("duplicates", "\uE8C8", "Duplicates", Duplicates, false),
                      ("cleaner", "\uE74D", "Cleaner", new CleanerPage(this), false),
+                     ("storage", "\uEDA2", "Storage", new StoragePage(this), false),
                      ("booster", "\uE945", "Booster", new BoosterPage(this), false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
