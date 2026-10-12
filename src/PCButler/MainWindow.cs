@@ -22,8 +22,9 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock bannerLabel = Ui.Text("");
     private readonly TextBlock statusGlyph = Ui.Glyph("\uE895", 16);
     private readonly TextBlock backgroundLabel = Ui.Text("");
-    /// <summary>Turns automatic sorting on or off. It lives on the Settings page; its text follows the state.</summary>
-    public Button BackgroundButton { get; }
+    /// <summary>Turns automatic sorting on or off. It lives on the Settings page and follows the state.</summary>
+    public CheckBox AutoSortSwitch { get; }
+    private bool showingState; // set while the switch is moved to match the state, not by a click
     private readonly Button pauseButton;
     private readonly DispatcherTimer statusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool? compact;
@@ -66,7 +67,11 @@ public sealed partial class MainWindow : Window
 
         // The status bar. Its buttons come first so a narrow window cuts the text, not them.
         var bar = new DockPanel { Margin = new Thickness(30, 12, 30, 12) };
-        BackgroundButton = Ui.Button("", ToggleBackground);
+        AutoSortSwitch = Ui.Switch("", false, on =>
+        {
+            if (!showingState)
+                SetAutoSort(on);
+        });
         pauseButton = Ui.Button("", TogglePause).Margin(0, 0, 6, 0).Dock(Dock.Right);
         bar.Children.Add(new Border { Background = Ui.Paint("Secondary"), Padding = new Thickness(8, 4, 8, 4), Child = statusGlyph,
                                       Margin = new Thickness(0, 0, 12, 0) }.Dock(Dock.Left));
@@ -298,7 +303,9 @@ public sealed partial class MainWindow : Window
         var color = running && paused ? Ui.Paint("Amber") : running ? Ui.Paint("Primary") : Ui.Paint("ControlLine");
         statusGlyph.Foreground = color;
         topBar.SetStatus(Ui.T(running && paused ? "Automatic sorting paused" : running ? "Automatic sorting on" : "Automatic sorting off"), color);
-        BackgroundButton.Content = Ui.T(running ? "Turn off automatic sorting" : "Turn on automatic sorting");
+        showingState = true;
+        AutoSortSwitch.IsChecked = running;
+        showingState = false;
         pauseButton.Content = Ui.T(paused ? "Resume" : "Pause for today");
         pauseButton.IsEnabled = running;
     }
@@ -309,13 +316,16 @@ public sealed partial class MainWindow : Window
         RefreshBackgroundStatus();
     }
 
-    private void ToggleBackground()
+    /// <summary>Automatic sorting only; starting with Windows is a switch of its own.</summary>
+    private void SetAutoSort(bool on)
     {
-        if (Config.AutoSortOn)
+        if (on == Config.AutoSortOn)
         {
-            // The tray icon stays; only the scheduled sorting and the start at sign-in stop.
+        }
+        else if (!on)
+        {
+            // The tray icon stays; only the scheduled sorting stops.
             UpdateConfig(config => config.AutoSort = false);
-            SetAutostart(false);
         }
         else if (Config.ScanIntervalMinutes == 0)
         {
@@ -325,11 +335,10 @@ public sealed partial class MainWindow : Window
         else if (Ui.Ask("Automatic sorting", Ui.T(
                      "The {0} file(s) on the Sorter page will be moved now, and from then on files will be checked every {1} minutes and moved without asking.\n\n"
                      + "After each run you can review, approve or undo what moved.\n\n"
-                     + "It starts by itself every time you sign in to Windows.\n\nTurn it on?",
+                     + "It works while PC Butler is running, also from the taskbar tray.\n\nTurn it on?",
                      Sorter.Count, Config.ScanIntervalMinutes)))
         {
             UpdateConfig(config => config.AutoSort = true);
-            SetAutostart(true);
             // The background sorter notices the switch within 5 seconds.
             var later = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
             later.Tick += (_, _) =>

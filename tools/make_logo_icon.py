@@ -1,5 +1,5 @@
-# Usage: python tools/make_tray_icon.py src/PCButler/icon.png src/PCButler/tray.ico preview.png
-# Builds tray.ico: the logo on a transparent background, cropped tight, lines thickened so they survive 16 px.
+# Usage: python tools/make_logo_icon.py src/PCButler/icon.png src/PCButler/logo.ico preview.png
+# Builds logo.ico (the tray and the File Explorer menu): the logo on a transparent background, cropped tight, lines thickened so they survive 16 px.
 import sys
 from PIL import Image, ImageFilter
 src, out, sheet = sys.argv[1:4]

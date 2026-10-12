@@ -264,7 +264,7 @@ public static class Ui
         };
         try
         {
-            window.Icon = BitmapFrame.Create(new Uri("pack://application:,,,/PCButler;component/icon.ico"));
+            window.Icon = BitmapFrame.Create(new Uri("pack://application:,,,/PCButler;component/logo.ico"));
         }
         catch (Exception error) when (error is IOException or NotSupportedException)
         {

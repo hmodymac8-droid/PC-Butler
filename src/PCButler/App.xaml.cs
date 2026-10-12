@@ -262,8 +262,8 @@ public partial class App : Application
         TrayMenu.Style(tray.ContextMenuStrip);
         try
         {
-            // The logo alone on a transparent background; the tile in icon.ico is for the taskbar and shortcuts.
-            using var stream = GetResourceStream(new Uri("pack://application:,,,/PCButler;component/tray.ico"))!.Stream;
+            // The logo alone on a transparent background, like the program and window icons.
+            using var stream = GetResourceStream(new Uri("pack://application:,,,/PCButler;component/logo.ico"))!.Stream;
             tray.Icon = new System.Drawing.Icon(stream, Forms.SystemInformation.SmallIconSize);
         }
         catch (Exception error) when (error is IOException or ArgumentException or NullReferenceException)

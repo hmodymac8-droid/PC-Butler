@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.10.1
+
+- Settings: "Start PC Butler when Windows starts" and "Sort automatically" are now two separate switches. Before, one button did both. The installer offers them separately too.
+- The program, window and Task Manager icons also show the logo without the dark square.
+- The tray icon and the "PC Butler" entry in File Explorer's right-click menu show the logo on a transparent background, without the dark square.
+
 ## 1.10.0
 
 - New look: the new PC Butler logo, a refreshed colour palette and the Manrope typeface.

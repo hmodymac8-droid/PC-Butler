@@ -10,9 +10,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PCButler</AssemblyName>
     <RootNamespace>PCButler</RootNamespace>
-    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <ApplicationIcon>logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.10.0</Version>
+    <Version>1.10.1</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
     <Copyright>Copyright (c) 2026 hmodymac8-droid. GPL-3.0-only.</Copyright>
@@ -29,7 +29,9 @@
     <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
     <Resource Include="icon.png" />
     <Resource Include="icon.ico" />
-    <Resource Include="tray.ico" />
+    <Resource Include="logo.ico" />
+    <!-- Also beside PCButler.exe: File Explorer's right-click menu shows it. -->
+    <None Include="logo.ico" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="Fonts\*.ttf" />
   </ItemGroup>
 

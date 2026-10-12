@@ -61,6 +61,8 @@ public static class ExplorerMenu
         }
     }
 
+    public const string LogoFile = "logo.ico";
+
     /// <summary>Write the submenu (or point it at this copy of the program, in this language).</summary>
     public static void Install(string program, Func<string, string> translate)
     {
@@ -72,7 +74,9 @@ public static class ExplorerMenu
                 parent.DeleteSubKeyTree(Verb, throwOnMissingSubKey: false);
             using var key = Registry.CurrentUser.CreateSubKey($@"{shell}\{Verb}");
             key.SetValue("MUIVerb", AppInfo.Name);
-            key.SetValue("Icon", $"\"{program}\",0");
+            // The logo on a transparent background when it ships beside the program; else the program's own icon.
+            var logo = Path.Combine(Path.GetDirectoryName(program) ?? "", LogoFile);
+            key.SetValue("Icon", File.Exists(logo) ? $"\"{logo}\"" : $"\"{program}\",0");
             key.SetValue("SubCommands", ""); // the items are in the "shell" key below
             for (var index = 0; index < Actions.Length; index++)
             {

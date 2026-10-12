@@ -43,16 +43,22 @@ public sealed partial class SettingsPage : Page
         var quickTitle = Ui.Text(Ui.T("Applied at once"), 16, weight: FontWeights.Bold).Margin(0, 0, 0, 8);
         quickTitle.FontFamily = Ui.DisplayFont;
         quick.Children.Add(quickTitle);
-        quick.Children.Add(Ui.Row(12, main.BackgroundButton,
-                                  Ui.Muted(Ui.T("Sorts in the background on the schedule below, and starts when you sign in."))));
+        // Two separate things: whether PC Butler starts with Windows, and whether it sorts by itself.
+        quick.Children.Add(Ui.Switch(Ui.T("Start PC Butler when Windows starts"), Autostart.IsEnabled(), MainWindow.SetAutostart));
+        quick.Children.Add(Ui.Muted(Ui.T("It waits in the taskbar tray, for automatic sorting, updates and the drop zone."), 12, wrap: true)
+                             .Margin(0, 2, 0, 0));
+        main.AutoSortSwitch.Content = Ui.T("Sort automatically");
+        quick.Children.Add(main.AutoSortSwitch.Margin(0, 12, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("Moves files on the schedule below, without asking, while PC Butler is running."), 12, wrap: true)
+                             .Margin(0, 2, 0, 0));
         quick.Children.Add(Ui.Switch(Ui.T("Show the “PC Butler” menu when I right-click files or folders"), config.ExplorerMenu, on =>
         {
             Main.UpdateConfig(saved => saved.ExplorerMenu = on);
             if (App.SyncExplorerMenu(on) is { } error)
                 Ui.Warn("File Explorer", error);
         }).Margin(0, 12, 0, 0));
-        quick.Children.Add(Ui.Muted(Ui.T("Sort the file into its category folder, sort a folder's loose files, lock a file in the Vault, shred it or send "
-                                         + "it to the Recycle Bin. On Windows 11 the entry is under “Show more options”."), 12, wrap: true).Margin(0, 2, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("Sort files into their category folders, sort a folder's loose files, lock files in the Vault or shred them. "
+                                         + "On Windows 11 the menu is under “Show more options”."), 12, wrap: true).Margin(0, 2, 0, 0));
         if (ExplorerMenu.HasShortMenu)
         {
             // Windows 11 only: its short right-click menu, or the classic full one (where the entry above is one click away).
@@ -291,7 +297,6 @@ public sealed partial class SettingsPage : Page
             if (wasOn)
                 message = Ui.T("Settings saved. The Sorter page shows the result.\n\nAutomatic sorting has been turned off because the interval is 0.");
             Main.UpdateConfig(config => config.AutoSort = false);
-            MainWindow.SetAutostart(false);
         }
         if (languageChanged)
         {

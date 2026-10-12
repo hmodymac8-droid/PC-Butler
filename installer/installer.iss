@@ -59,14 +59,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
 
 [CustomMessages]
-english.AutoSort=Sort automatically in the background (starts when you sign in)
-arabic.AutoSort=الفرز التلقائي في الخلفية (يبدأ عند تسجيل الدخول)
+english.Autostart=Start {#AppName} when Windows starts
+arabic.Autostart=تشغيل {#AppName} مع بدء تشغيل ويندوز
+english.AutoSort=Sort automatically in the background
+arabic.AutoSort=الفرز التلقائي في الخلفية
 english.OpenApp=Open {#AppName}
 arabic.OpenApp=فتح {#AppName}
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"
-Name: "autostart"; Description: "{cm:AutoSort}"; Flags: unchecked
+Name: "autostart"; Description: "{cm:Autostart}"; Flags: unchecked
+Name: "autosort"; Description: "{cm:AutoSort}"; Flags: unchecked
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
@@ -91,7 +94,8 @@ Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValue}"; \
 ; One process holds the tray icon and the window. After a silent update it always comes
 ; back as it was; in the wizard it starts with automatic sorting on if that was ticked.
 Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: WizardSilent
-Filename: "{app}\{#AppExe}"; Parameters: "--background --auto-on"; Flags: nowait; Check: TickedAutostart
+Filename: "{app}\{#AppExe}"; Parameters: "--background --auto-on"; Flags: nowait; Check: TickedAutoSort
+Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: TickedAutostartOnly
 ; Updating from the window: a second launch brings the window up in the running program.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: ReopenRequested
 #endif
@@ -121,7 +125,7 @@ end;
 
 function WantAutostart: Boolean;
 begin
-  // A silent run is the program updating itself: keep automatic sorting as the
+  // A silent run is the program updating itself: keep the start with Windows as the
   // user has it now. (They may have switched it in the program since installing.)
   if WizardSilent then
     Result := AutostartWasOn
@@ -129,9 +133,15 @@ begin
     Result := WizardIsTaskSelected('autostart');
 end;
 
-function TickedAutostart: Boolean;
+function TickedAutoSort: Boolean;
 begin
-  Result := (not WizardSilent) and WizardIsTaskSelected('autostart');
+  Result := (not WizardSilent) and WizardIsTaskSelected('autosort');
+end;
+
+function TickedAutostartOnly: Boolean;
+begin
+  // Starting with Windows but not sorting: the program still starts now, in the tray.
+  Result := (not WizardSilent) and WizardIsTaskSelected('autostart') and not WizardIsTaskSelected('autosort');
 end;
 
 function ReopenRequested: Boolean;
