@@ -3,11 +3,19 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PCButler.Core;
 
 /// <summary>Megabits per second down and up, and the server's response time in milliseconds.</summary>
-public sealed record SpeedResult(double Download, double Upload, int Ping);
+public sealed record SpeedResult(
+    [property: JsonPropertyName("download")] double Download, [property: JsonPropertyName("upload")] double Upload,
+    [property: JsonPropertyName("ping")] int Ping)
+{
+    /// <summary>"yyyy-MM-dd HH:mm", set when the result is saved.</summary>
+    [JsonPropertyName("time")] public string Time { get; init; } = "";
+}
 
 /// <summary>
 /// Measures the internet connection against Cloudflare's public speed-test servers
@@ -21,6 +29,46 @@ public static class SpeedTest
     private const int Streams = 4;
     private static readonly TimeSpan DownloadTime = TimeSpan.FromSeconds(6), UploadTime = TimeSpan.FromSeconds(5),
                                      RampUp = TimeSpan.FromSeconds(1);
+
+    public static string HistoryFile => Path.Combine(AppInfo.DataDir, "speedtests.json");
+    private const int HistoryKept = 200;
+
+    /// <summary>Earlier results, newest first.</summary>
+    public static List<SpeedResult> History()
+    {
+        try
+        {
+            return File.Exists(HistoryFile) ? JsonSerializer.Deserialize<List<SpeedResult>>(File.ReadAllText(HistoryFile)) ?? [] : [];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>Add a result to the history and return the history.</summary>
+    public static List<SpeedResult> Remember(SpeedResult result)
+    {
+        var history = History();
+        history.Insert(0, result with { Time = DateTime.Now.ToString("yyyy-MM-dd HH:mm") });
+        Write(history.Take(HistoryKept).ToList());
+        return history;
+    }
+
+    public static void ClearHistory() => Write([]);
+
+    private static void Write(List<SpeedResult> history)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppInfo.DataDir);
+            File.WriteAllText(HistoryFile, JsonSerializer.Serialize(history));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning($"Could not save the speed-test history: {error.Message}");
+        }
+    }
 
     /// <summary>Sends random bytes until the time is up, counting them.</summary>
     private sealed class RandomUpload(TimeSpan time, Action<int> sent, CancellationToken cancel) : HttpContent

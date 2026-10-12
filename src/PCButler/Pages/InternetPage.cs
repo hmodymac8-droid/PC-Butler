@@ -14,7 +14,6 @@ public sealed class InternetPage : Page
     private readonly Button start;
     private readonly TextBlock status = Ui.Text("", 18, weight: FontWeights.SemiBold);
     private readonly ListView results;
-    private readonly List<Row> rows = [];
     private CancellationTokenSource? running;
 
     public InternetPage(MainWindow main) : base(main, "Internet", "How fast is your connection, really?")
@@ -25,6 +24,7 @@ public sealed class InternetPage : Page
             card.Set("—");
 
         var panel = new CardPanel("Speed test", "");
+        panel.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory));
         var top = new StackPanel { Margin = new Thickness(20, 14, 20, 10) };
         status.Text = Ui.T("Press Start test.");
         top.Children.Add(status);
@@ -37,9 +37,27 @@ public sealed class InternetPage : Page
         body.Children.Add(results);
         panel.SetBody(body);
         Children.Add(panel);
+        ShowHistory(SpeedTest.History());
     }
 
     private static string Speed(double megabits) => megabits >= 100 ? $"{megabits:0}" : $"{megabits:0.0}";
+
+    private void ShowHistory(List<SpeedResult> history)
+    {
+        results.ItemsSource = history.Select(result => new Row
+        {
+            Name = result.Time, Cells = [$"{Speed(result.Download)} Mbps", $"{Speed(result.Upload)} Mbps", $"{result.Ping} ms"],
+        }).ToList();
+    }
+
+    private void ClearHistory()
+    {
+        var count = SpeedTest.History().Count;
+        if (count == 0 || !Ui.Ask("Clear history", Ui.T("Clear all {0} speed-test results?", count)))
+            return;
+        SpeedTest.ClearHistory();
+        ShowHistory([]);
+    }
 
     private async void Toggle()
     {
@@ -67,12 +85,7 @@ public sealed class InternetPage : Page
             stats[1].Set(Speed(result.Upload), "Mbps", Ui.T("About {0} per second", Ui.FormatSize((long)(result.Upload * 125000))));
             stats[2].Set(result.Ping.ToString(), "ms", Ui.T("To the nearest Cloudflare server"));
             status.Text = Ui.T("Done.");
-            rows.Insert(0, new Row
-            {
-                Name = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
-                Cells = [$"{Speed(result.Download)} Mbps", $"{Speed(result.Upload)} Mbps", $"{result.Ping} ms"],
-            });
-            results.ItemsSource = rows.ToList();
+            ShowHistory(SpeedTest.Remember(result));
         }
         catch (OperationCanceledException)
         {

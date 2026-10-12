@@ -13,6 +13,7 @@ public sealed class ProgramsPage : Page
     private readonly ListView installedList;
     private readonly ListView updateList;
     private readonly TextBox search;
+    private readonly ComboBox driveFilter = new() { Width = 130 };
     private readonly TextBlock installedStatus = Ui.Muted("").Margin(10);
     private readonly TextBlock updateStatus = Ui.Muted("").Margin(10);
     private List<InstalledProgram> programs = [];
@@ -29,10 +30,17 @@ public sealed class ProgramsPage : Page
         search = Ui.Field(width: 200, hint: Ui.T("Search programs…"));
         search.TextChanged += (_, _) => ShowInstalled();
         bar.Children.Add(search.Margin(6));
+        driveFilter.SelectionChanged += (_, _) => ShowInstalled();
+        bar.Children.Add(driveFilter.Margin(6));
         bar.Children.Add(installedStatus);
         bar.Children.Add(Ui.Button(Ui.T("Uninstall"), UninstallSelected, accent: true).Dock(Dock.Right));
-        installedList = Ui.List(("Program", 300, "PlainCell"), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
+        installedList = Ui.List(("Program", 300, "PlainCell"), ("Drive", 60), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
         installedList.SelectionMode = SelectionMode.Single;
+        installedList.MouseDoubleClick += (_, e) =>
+        {
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Ui.RowAt(e.OriginalSource)?.Tag is InstalledProgram program)
+                Run(program);
+        };
         tabs.Items.Add(Tab("Installed", installedList, bar));
 
         bar = new DockPanel { LastChildFill = false };
@@ -67,20 +75,40 @@ public sealed class ProgramsPage : Page
         stats[0].Set(programs.Count.ToString());
         var size = Ui.FormatSize(programs.Sum(program => program.Size)).Split(' ');
         stats[1].Set(size[0], size[1], Ui.T("As the installers reported it"));
+        // The drive filter offers the drives programs are actually on, and keeps the choice across refreshes.
+        var chosen = (driveFilter.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        driveFilter.Items.Clear();
+        driveFilter.Items.Add(new ComboBoxItem { Content = Ui.T("All drives"), Tag = "" });
+        foreach (var drive in programs.Select(program => program.Drive).Where(drive => drive.Length > 0).Distinct().Order())
+            driveFilter.Items.Add(new ComboBoxItem { Content = Ui.T("Drive {0}", drive), Tag = drive });
+        driveFilter.SelectedIndex = Math.Max(0, driveFilter.Items.OfType<ComboBoxItem>().ToList().FindIndex(item => (string)item.Tag == chosen));
         ShowInstalled();
     }
 
     private void ShowInstalled()
     {
         var needle = search.Text.Trim();
+        var drive = (driveFilter.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
         installedList.ItemsSource = programs
+            .Where(program => drive.Length == 0 || program.Drive == drive)
             .Where(program => needle.Length == 0 || program.Name.Contains(needle, StringComparison.CurrentCultureIgnoreCase)
                               || program.Publisher.Contains(needle, StringComparison.CurrentCultureIgnoreCase))
             .Select(program => new Row
             {
                 Name = program.Name, Tag = program,
-                Cells = [program.Version, program.Publisher, program.Size > 0 ? Ui.FormatSize(program.Size) : "", program.Installed],
+                Cells = [program.Drive, program.Version, program.Publisher, program.Size > 0 ? Ui.FormatSize(program.Size) : "", program.Installed],
             }).ToList();
+    }
+
+    private async void Run(InstalledProgram program)
+    {
+        var launcher = await Task.Run(() => Programs.FindLauncher(program));
+        if (launcher is null)
+        {
+            Ui.Info("Programs", Ui.T("{0} has nothing to open, or PC Butler could not find what starts it.", program.Name));
+            return;
+        }
+        Shell.Open(launcher);
     }
 
     private async void UninstallSelected()

@@ -137,6 +137,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Show the window (after the launch screen, when there is one).</summary>
     public void Reveal()
     {
+        WindowState = WindowState.Maximized; // always opens filling the screen
         Show();
         Activate();
     }

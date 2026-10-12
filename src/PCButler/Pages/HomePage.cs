@@ -41,7 +41,7 @@ public sealed class HomePage : Page
         left.Children.Add(drives);
         left.Children.Add(Heading("Temperature and fans").Margin(0, 18));
         left.Children.Add(sensorsText);
-        sensorsButton = Ui.Button(Ui.T("Turn on sensors (asks for administrator rights)"), TurnOnSensors);
+        sensorsButton = Ui.Button(Ui.T("Read the motherboard's sensors too (asks for administrator rights)"), TurnOnSensors);
         sensorsButton.HorizontalAlignment = HorizontalAlignment.Left;
         left.Children.Add(sensorsButton.Margin(0, 8));
         body.Children.Add(left.At(0, 0));
@@ -125,19 +125,25 @@ public sealed class HomePage : Page
 
     private void ShowSensors()
     {
-        if (Sensors.Latest() is not { } reading)
-        {
-            sensorsText.Text = Ui.T("Windows only gives processor temperature and fan speeds to a program running as administrator. "
-                                    + "PC Butler doesn't need that for anything else, so it asks only if you turn this on.");
-            sensorsButton.Visibility = Visibility.Visible;
-            return;
-        }
-        sensorsButton.Visibility = Visibility.Collapsed;
-        var temperature = reading.Temperature is { } degrees
-            ? Ui.T("Temperature: {0} °C", degrees) : Ui.T("This PC does not report a temperature to Windows.");
-        var fans = reading.Fans.Count > 0
-            ? Ui.T("Fans: {0} RPM", string.Join(", ", reading.Fans)) : Ui.T("This PC does not report fan speeds to Windows.");
-        sensorsText.Text = temperature + "\n" + fans;
+        var lines = new List<string>();
+        var gpu = App.Current.Usage.Latest?.Gpu;
+        if (gpu?.Temperature is { } gpuDegrees)
+            lines.Add(Ui.T("Graphics card: {0} °C", gpuDegrees) + (gpu.Fan is { } gpuFan ? "  ·  " + Ui.T("fan {0} RPM", gpuFan) : ""));
+        var monitor = Sensors.MonitorApp();
+        var reading = Sensors.Latest();
+        var fans = monitor?.Fans.Count > 0 ? monitor.Value.Fans : reading?.Fans ?? [];
+        if (monitor?.Cpu is { } cpuDegrees)
+            lines.Add(Ui.T("Processor: {0} °C (from {1})", cpuDegrees, monitor.Value.App));
+        else if (reading?.Temperature is { } zone)
+            lines.Add(Ui.T("Motherboard sensor: {0} °C", zone));
+        if (fans.Count > 0)
+            lines.Add(Ui.T("Fans: {0} RPM", string.Join(", ", fans)));
+        if (monitor?.Cpu is null)
+            lines.Add(Ui.T("A processor's own temperature can only be read by a hardware-monitor driver, which PC Butler does not "
+                           + "install. If LibreHardwareMonitor is running, its processor temperature and fan speeds appear here."));
+        sensorsText.Text = string.Join("\n", lines);
+        // The helper only adds the motherboard's sensor and its fans, so it is offered only while it isn't running.
+        sensorsButton.Visibility = reading is null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void TurnOnSensors()
@@ -145,7 +151,6 @@ public sealed class HomePage : Page
         if (!Sensors.StartHelper())
             return;
         sensorsButton.Visibility = Visibility.Collapsed;
-        sensorsText.Text = Ui.T("Reading the sensors…");
     }
 
     /// <summary>The score looks at files and folders, so it is worked out off the window's thread.</summary>

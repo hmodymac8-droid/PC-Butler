@@ -299,6 +299,29 @@ var oneSource = Programs.ParseUpdates(string.Join('\n', "Name      Id           
     "---------------------------------------------", "AviSynth+ AviSynth.AviSynthPlus 3.7.3   3.7.3.4003", "1 upgrades available.", ""));
 Check(oneSource.Count == 1 && oneSource[0] == new ProgramUpdate("AviSynth+", "AviSynth.AviSynthPlus", "3.7.3", "3.7.3.4003"), "also without the source column");
 
+var onD = new InstalledProgram { Name = "Somewhere", Hive = "HKCU", Key = "s", UninstallCommand = "\"D:\\Apps\\Some\\unins000.exe\" /S" };
+Check(onD.Drive == "D:" && new InstalledProgram { Name = "Msi", Hive = "HKLM", Key = "{1}", UninstallCommand = "MsiExec.exe /X{1}" }.Drive == ""
+      && installed.Any(p => p.Drive.Length == 2), "the drive a program is on");
+var appHome = Path.Combine(temp, "Apps", "Runner Tool");
+Directory.CreateDirectory(appHome);
+foreach (var exe in new[] { "unins000.exe", "RunnerTool.exe", "crashhelper.exe" }) File.WriteAllText(Path.Combine(appHome, exe), "");
+var runner = new InstalledProgram { Name = "Runner Tool 3.1", Hive = "HKCU", Key = "r", Location = appHome };
+Check(Programs.FindLauncher(runner) == Path.Combine(appHome, "RunnerTool.exe")
+      && Programs.FindLauncher(new InstalledProgram { Name = "Runner Tool 3.1", Hive = "HKCU", Key = "r", Icon = Path.Combine(appHome, "RunnerTool.exe") + ",0" }) == Path.Combine(appHome, "RunnerTool.exe")
+      && Programs.FindLauncher(new InstalledProgram { Name = "Nothing Here 1.0", Hive = "HKCU", Key = "n", Icon = Path.Combine(appHome, "unins000.exe") }) is null,
+      "what opens a program is found, never its uninstaller");
+
+// ---------------------------------------------------------------- speed-test history, graphics sensors
+Section("speed history, sensors");
+SpeedTest.ClearHistory();
+SpeedTest.Remember(new SpeedResult(100.5, 20, 12));
+var speeds = SpeedTest.Remember(new SpeedResult(250, 40, 9));
+Check(speeds.Count == 2 && SpeedTest.History() is [{ Download: 250, Ping: 9, Time.Length: 16 }, { Upload: 20 }], "results are kept, newest first");
+SpeedTest.ClearHistory();
+Check(SpeedTest.History().Count == 0, "and can be cleared");
+var (gpuDegrees, gpuFan) = GpuSensors.Read();
+Check(gpuDegrees is null or (> 0 and < 150) && gpuFan is null or (> 0 and < 20000), $"graphics-card sensors read without error ({gpuDegrees?.ToString() ?? "none"} °C)");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.

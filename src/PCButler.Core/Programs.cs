@@ -19,6 +19,22 @@ public sealed class InstalledProgram
     public string Installed { get; init; } = "";
     public string UninstallCommand { get; init; } = "";
     public string Location { get; init; } = "";
+    /// <summary>The icon Windows shows for it, usually the program's own .exe.</summary>
+    public string Icon { get; init; } = "";
+    /// <summary>The drive it is installed on ("C:"), or "" when its entry doesn't say where it is.</summary>
+    public string Drive
+    {
+        get
+        {
+            foreach (var text in new[] { Location, Icon, UninstallCommand })
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(text, @"(?<![A-Za-z])([A-Za-z]):\\");
+                if (match.Success)
+                    return match.Groups[1].Value.ToUpperInvariant() + ":";
+            }
+            return "";
+        }
+    }
     /// <summary>Where its entry lives: "HKCU" or "HKLM", the registry view and the key's name.</summary>
     public required string Hive { get; init; }
     public RegistryView View { get; init; }
@@ -81,7 +97,7 @@ public static partial class Programs
                         Size = key.GetValue("EstimatedSize") is int kilobytes && kilobytes > 0 ? kilobytes * 1024L : 0,
                         Installed = date.Length == 8 && date.All(char.IsDigit) ? $"{date[..4]}-{date[4..6]}-{date[6..]}" : "",
                         UninstallCommand = uninstall, Location = Text("InstallLocation").Trim('"').TrimEnd('\\'),
-                        Hive = hive, View = view, Key = name, Msi = msi,
+                        Icon = Text("DisplayIcon"), Hive = hive, View = view, Key = name, Msi = msi,
                     });
                 }
             }
@@ -129,6 +145,63 @@ public static partial class Programs
             Log.Warning($"Could not start the uninstaller of {program.Name}: {error.Message}");
             return null;
         }
+    }
+
+    /// <summary>Words in a file name that mark it as not the program itself.</summary>
+    private static readonly string[] NotTheProgram = ["unins", "setup", "install", "update", "crash", "helper", "msiexec", "repair", "remove"];
+
+    private static bool LooksLikeProgram(string path) =>
+        path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(path)
+        && !NotTheProgram.Any(word => Path.GetFileName(path).Contains(word, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// What to run to open the program: its Start menu shortcut, the .exe its entry shows
+    /// as its icon, or the one .exe in its folder that carries its name. Null when there is
+    /// no telling (many entries are drivers, runtimes and the like, with nothing to open).
+    /// </summary>
+    public static string? FindLauncher(InstalledProgram program)
+    {
+        var name = CleanName(program.Name);
+        if (name.Length > 0)
+        {
+            foreach (var menu in new[] { Environment.SpecialFolder.Programs, Environment.SpecialFolder.CommonPrograms })
+            {
+                try
+                {
+                    var folder = Environment.GetFolderPath(menu);
+                    var shortcut = folder.Length == 0 ? null : Directory.EnumerateFiles(folder, "*.lnk", SearchOption.AllDirectories)
+                        .FirstOrDefault(file => Path.GetFileNameWithoutExtension(file).Equals(name, StringComparison.OrdinalIgnoreCase)
+                                                || Path.GetFileNameWithoutExtension(file).Equals(program.Name, StringComparison.OrdinalIgnoreCase));
+                    if (shortcut is not null)
+                        return shortcut;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        // "C:\path\app.exe,0" or a quoted path.
+        var icon = program.Icon.Trim('"');
+        var comma = icon.LastIndexOf(',');
+        if (comma > 2 && int.TryParse(icon[(comma + 1)..].Trim(), out _))
+            icon = icon[..comma].Trim('"');
+        if (LooksLikeProgram(icon))
+            return icon;
+        try
+        {
+            if (program.Location.Length > 0 && Directory.Exists(program.Location))
+            {
+                var programs = Directory.EnumerateFiles(program.Location, "*.exe").Where(LooksLikeProgram).ToList();
+                var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                return programs.FirstOrDefault(file => words.Any(word => word.Length > 2 && Path.GetFileNameWithoutExtension(file)
+                                                                             .Contains(word, StringComparison.OrdinalIgnoreCase)))
+                       ?? (programs.Count == 1 ? programs[0] : null);
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
+        return null;
     }
 
     // --- leftovers ---

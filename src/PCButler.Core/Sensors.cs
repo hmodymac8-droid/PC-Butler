@@ -46,6 +46,70 @@ public static class Sensors
         }
     }
 
+    private static (string App, double? Cpu, List<int> Fans)? monitorApp;
+    private static DateTime monitorAppRead = DateTime.MinValue;
+    private static int monitorAppReading;
+
+    /// <summary>
+    /// Readings from a hardware-monitor program, if one is running. A processor's own
+    /// temperature can only be read by a driver, which PC Butler does not install;
+    /// LibreHardwareMonitor and OpenHardwareMonitor have one and publish what they read.
+    /// Returns the last answer at once and refreshes it in the background every few seconds.
+    /// </summary>
+    public static (string App, double? Cpu, List<int> Fans)? MonitorApp()
+    {
+        if ((DateTime.Now - monitorAppRead).TotalSeconds > IntervalSeconds * 2 && Interlocked.Exchange(ref monitorAppReading, 1) == 0)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    monitorApp = ReadMonitorApp();
+                }
+                finally
+                {
+                    monitorAppRead = DateTime.Now;
+                    monitorAppReading = 0;
+                }
+            });
+        }
+        return monitorApp;
+    }
+
+    private static (string App, double? Cpu, List<int> Fans)? ReadMonitorApp()
+    {
+        foreach (var app in new[] { "LibreHardwareMonitor", "OpenHardwareMonitor" })
+        {
+            try
+            {
+                double? cpu = null, package = null;
+                var fans = new List<int>();
+                using var sensors = new ManagementObjectSearcher($@"root\{app}", "SELECT Name, Value, SensorType, Identifier FROM Sensor");
+                foreach (var sensor in sensors.Get())
+                {
+                    var (type, name, id) = (sensor["SensorType"]?.ToString(), sensor["Name"]?.ToString() ?? "", sensor["Identifier"]?.ToString() ?? "");
+                    var value = Convert.ToDouble(sensor["Value"]);
+                    if (type == "Fan" && value is > 0 and < 20000)
+                        fans.Add((int)value);
+                    if (type != "Temperature" || !id.Contains("cpu", StringComparison.OrdinalIgnoreCase) || value is <= 0 or >= 150)
+                        continue;
+                    // The whole processor's figure when there is one, otherwise the hottest core.
+                    if (name.Contains("Package", StringComparison.OrdinalIgnoreCase) || name.Contains("Tctl", StringComparison.OrdinalIgnoreCase))
+                        package = value;
+                    cpu = cpu is null || value > cpu ? value : cpu;
+                }
+                if ((package ?? cpu) is not null || fans.Count > 0)
+                    return (app, (package ?? cpu) is { } degrees ? Math.Round(degrees, 1) : null, fans);
+            }
+            catch (Exception error) when (error is ManagementException or UnauthorizedAccessException or FormatException
+                                              or InvalidCastException or System.Runtime.InteropServices.COMException)
+            {
+                // Not running: its namespace doesn't exist.
+            }
+        }
+        return null;
+    }
+
     /// <summary>
     /// Start the helper with administrator rights. Windows shows its permission prompt;
     /// returns false if the user says no.

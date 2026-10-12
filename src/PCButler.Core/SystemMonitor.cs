@@ -12,7 +12,7 @@ public sealed record DriveUsage(string Name, long Total, long Free)
 }
 
 /// <summary>The graphics card: usage and temperature are null when Windows won't tell without administrator rights.</summary>
-public sealed record GpuStatus(string Name, int? Usage, int? Temperature);
+public sealed record GpuStatus(string Name, int? Usage, int? Temperature, int? Fan = null);
 
 /// <summary>One reading of how busy the PC is.</summary>
 public sealed record UsageSample(int Cpu, long MemoryTotal, long MemoryUsed, GpuStatus? Gpu)
@@ -172,7 +172,7 @@ public sealed class UsageMonitor
             {
             }
         }
-        // Any other card: Windows' own counters give the use (the same number Task Manager shows), but no temperature.
+        // Any other card: Windows' own counters give the use, and its graphics kernel the temperature (as Task Manager shows them).
         int? usage = null;
         try
         {
@@ -199,7 +199,8 @@ public sealed class UsageMonitor
         {
         }
         var name = GpuName();
-        return name.Length == 0 && usage is null ? null : new GpuStatus(name, usage, null);
+        var (degrees, fan) = GpuSensors.Read();
+        return name.Length == 0 && usage is null && degrees is null ? null : new GpuStatus(name, usage, degrees, fan);
     }
 
     // --- things that don't need watching ---
