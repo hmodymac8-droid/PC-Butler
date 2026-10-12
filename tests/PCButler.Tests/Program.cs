@@ -580,6 +580,25 @@ Check(boxes.Count == 7 && Math.Abs(boxes.Sum(b => b.Width * b.Height) - 600 * 40
 Check(Math.Abs(boxes[0].Width * boxes[0].Height / (600.0 * 400) - 6.0 / 24) < 0.001 && boxes.All(b => Math.Max(b.Width / b.Height, b.Height / b.Width) < 4.5), "treemap areas match the sizes and the boxes stay roughly square");
 Check(Storage.Treemap([], 100, 100).Count == 0 && Storage.Treemap([5], 100, 50) is [(0, 0, 100, 50)], "treemap edge cases");
 
+Section("clipboard history");
+ClipboardHistory.Clear(keepPinned: false);
+ClipboardHistory.Add(new ClipEntry { Text = "first" }, 3);
+ClipboardHistory.Add(new ClipEntry { Text = "second" }, 3);
+ClipboardHistory.Add(new ClipEntry { Text = "first" }, 3);
+Check(ClipboardHistory.Entries.Select(e => e.Text).SequenceEqual(["first", "second"]), "copying the same text again moves it to the top");
+ClipboardHistory.SetPinned(ClipboardHistory.Entries[1], true);
+foreach (var text in new[] { "a", "b", "c", "d" })
+    ClipboardHistory.Add(new ClipEntry { Text = text }, 3);
+Check(ClipboardHistory.Entries.Count(e => !e.Pinned) == 3 && ClipboardHistory.Entries.Any(e => e.Text == "second" && e.Pinned)
+      && !ClipboardHistory.Entries.Any(e => e.Text == "first"), "the limit drops the oldest unpinned items, never pinned ones");
+Check(File.Exists(Path.Combine(ClipboardHistory.Folder, "history.json")), "the history is kept on disk");
+ClipboardHistory.Clear();
+Check(ClipboardHistory.Entries.Count == 1 && ClipboardHistory.Entries[0].Pinned, "Clear keeps pinned items");
+ClipboardHistory.Apply(new ClipboardSettings { KeepOnDisk = false });
+Check(!File.Exists(Path.Combine(ClipboardHistory.Folder, "history.json")), "turning off Keep after restart removes the file");
+Check(new ClipEntry { Kind = "files", Files = [Path.Combine(temp, "a.txt"), Path.Combine(temp, "b.txt")] }.Preview == "a.txt (+1)"
+      && new ClipEntry { Text = "one" + Environment.NewLine + "two" }.Preview == "one two", "list previews");
+
 Section("translations, updates");
 Tr.Language = "ar";
 Check(Tr.T("Settings") != "Settings" && Tr.T("Moved {0} file(s).", 3).Contains('3') && !Tr.T("Moved {0} file(s).", 3).Contains("Moved"), "Arabic lookups");

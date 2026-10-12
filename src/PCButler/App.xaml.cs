@@ -38,6 +38,8 @@ public partial class App : Application
     public BackgroundService Background { get; } = new();
     /// <summary>Processor and memory readings for the Home page and the tray icon.</summary>
     public UsageMonitor Usage { get; } = new();
+    /// <summary>The clipboard manager: records copies while it is on, and opens its list with the shortcut.</summary>
+    public ClipboardManager Clips { get; private set; } = null!;
     private string trayState = "";
     private bool firstStart;
     private DropZoneWindow? dropZone;
@@ -112,6 +114,9 @@ public partial class App : Application
             ShowDropZone(true);
 
         StartTray();
+        Clips = new ClipboardManager();
+        if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
+            Log.Warning($"Clipboard manager: {clipboardError}");
         StartBackground();
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
@@ -298,6 +303,7 @@ public partial class App : Application
             config.IsPaused ? new("\uE768", Ui.T("Resume sorting"), Background.TogglePause, config.AutoSortOn)
                             : new("\uE769", Ui.T("Pause for today"), Background.TogglePause, config.AutoSortOn),
             new("\uE81C", Ui.T("Show report"), ShowReport),
+            config.Clipboard.Enabled ? new("\uE77F", Ui.T("Clipboard history"), () => Clips.ShowPicker()) : null,
             config.DropZone ? new("\uE8B7", Ui.T("Hide the drop zone"), () => SetDropZone(false))
                             : new("\uE8B7", Ui.T("Show the drop zone"), () => SetDropZone(true)),
             // Only shown once a newer version is found.
@@ -431,6 +437,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         tray?.Dispose();
+        Clips?.Dispose();
         instance?.Dispose();
         base.OnExit(e);
     }

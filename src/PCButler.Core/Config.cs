@@ -86,6 +86,25 @@ public sealed class ScheduleSettings
         && last < LastSlot(mode, now);
 }
 
+/// <summary>The clipboard manager: what it keeps, for how many items, and the shortcut that opens its list.</summary>
+public sealed class ClipboardSettings
+{
+    public const int MinLimit = 10, MaxLimit = 10000;
+
+    /// <summary>Off until the user turns it on: everything copied is recorded while it is on.</summary>
+    [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+    /// <summary>How many items are kept; pinned ones never count against it.</summary>
+    [JsonPropertyName("limit")] public int Limit { get; set; } = 500;
+    /// <summary>The keys that open the list, such as "Ctrl+Alt+V"; "" = none.</summary>
+    [JsonPropertyName("shortcut")] public string Shortcut { get; set; } = "Ctrl+Alt+V";
+    /// <summary>Keep the history on disk, so it survives a restart.</summary>
+    [JsonPropertyName("keep_on_disk")] public bool KeepOnDisk { get; set; } = true;
+    /// <summary>Record copied pictures too, not only text and files.</summary>
+    [JsonPropertyName("pictures")] public bool Pictures { get; set; } = true;
+    /// <summary>After picking an item, paste it into the window that was in front (else only copy it).</summary>
+    [JsonPropertyName("paste_on_pick")] public bool PasteOnPick { get; set; } = true;
+}
+
 public sealed class CleanerSettings
 {
     /// <summary>Keys ticked on the Cleaner page; null = the defaults.</summary>
@@ -115,6 +134,7 @@ public sealed class Config
     [JsonPropertyName("cleaner")] public CleanerSettings Cleaner { get; set; } = new();
     [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
+    [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
     /// <summary>Show the drop zone, the small always-on-top tile that files can be dragged onto.</summary>
@@ -215,6 +235,8 @@ public static class ConfigStore
         config.Duplicates ??= new DuplicatesSettings();
         config.Cleaner ??= new CleanerSettings();
         config.Schedule ??= new ScheduleSettings();
+        config.Clipboard ??= new ClipboardSettings();
+        config.Clipboard.Limit = Math.Clamp(config.Clipboard.Limit, ClipboardSettings.MinLimit, ClipboardSettings.MaxLimit);
         return config;
     }
 

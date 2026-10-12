@@ -100,6 +100,7 @@ public sealed partial class MainWindow : Window
                      ("programs", "\uE71D", "Programs", new ProgramsPage(this), false),
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("shredder", "\uE75C", "Shredder", Shredder, false),
+                     ("clipboard", "\uE77F", "Clipboard", new ClipboardPage(this), false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
                      ("settings", "\uE713", "Settings", Settings, true),

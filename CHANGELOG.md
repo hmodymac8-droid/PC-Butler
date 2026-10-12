@@ -5,6 +5,8 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.12.0
 
+- Clipboard: a new page and a clipboard manager. Turn it on to keep what you copy (text, files and pictures, up to 500 items by default, or any limit you set), search it, pin items, copy them back or delete them. A shortcut (Ctrl+Alt+V by default, changeable) opens the list in any program: pick an item and it is pasted there. Items that password managers mark as private are skipped.
+- Home: the "Last restart" card is now called Uptime.
 - Settings: a Windows Sandbox switch turns Windows' throwaway, safe copy of Windows on or off (administrator rights and a restart), with a button to open it. It needs Windows Pro, Enterprise or Education.
 - Programs: the Essential apps and Recommended apps lists are rearranged. Essential: Chrome, WinRAR, Visual C++ Redistributable, .NET Desktop Runtime 8, Discord, Steam, Git, MPC-HC, Visual Studio Code, TeraCopy and WizTree. Recommended adds GitHub Desktop and MSI Afterburner.
 - Recommended apps: added EchoSub, EchoSub Lens and ATS CV Studio (installed from their latest GitHub release, checked against its checksum), AndroidDC (opens its page) and Prayer Times Reminder (from the Microsoft Store).

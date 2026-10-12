@@ -32,6 +32,7 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **File Explorer menu.** Right-click one or more files or folders and open the *PC Butler* submenu: sort them into their category folders (a folder has its loose files sorted), lock files in the Vault, or shred them. On Windows 11 the entry is under *Show more options*; a switch in Settings brings back the classic full right-click menu, where it is one click away.
 - **What's new.** After each update a window lists what changed; the full list is in [CHANGELOG.md](CHANGELOG.md).
 - **English and Arabic.** The interface follows Windows' language, or you pick one in Settings.
+- **Clipboard manager.** Keeps what you copy (text, files, pictures; 500 items by default), with search and pinning. A shortcut opens the list in any program and pastes the item you pick. Off until you turn it on.
 - **Updates.** Checks this repository's releases, notifies you when a new version is out, and updates with one click (or automatically, if you turn that on).
 - **Safe by design.** Unfinished downloads and shortcuts are skipped, nothing is ever overwritten, and deletions go to the Recycle Bin unless you choose to delete for good.
 

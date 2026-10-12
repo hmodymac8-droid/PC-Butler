@@ -17,7 +17,7 @@ public sealed class HomePage : Page
     private readonly MetricCard processor = new("Processor", "", "CPU");
     private readonly MetricCard graphics = new("Graphics card", "", "GPU");
     private readonly MetricCard memory = new("Memory", "", "RAM");
-    private readonly MetricCard restart = new("Last restart", "", "Uptime");
+    private readonly MetricCard restart = new("Uptime", "", "");
     private readonly AmountCard space = new("Free space", "");
     private readonly StackPanel drives = new();
     private readonly TextBlock gpuTemperature = Ui.Text("—", 13);
