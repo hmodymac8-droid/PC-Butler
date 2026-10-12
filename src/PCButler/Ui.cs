@@ -156,6 +156,42 @@ public static class Ui
         return (back, fore, label, label.Length <= 3 ? 10.5 : 8.5);
     }
 
+    // --- settings cards ---
+
+    /// <summary>A row of a settings card: a title and a line of explanation on one side, its control on the other.</summary>
+    public static Border SettingRow(string title, string detail, FrameworkElement? control, bool first = false) =>
+        SettingRow(Text(title, 13, weight: FontWeights.Bold), Muted(detail, 12), control, first);
+
+    public static Border SettingRow(TextBlock title, TextBlock detail, FrameworkElement? control, bool first = false)
+    {
+        var row = new DockPanel { Margin = new Thickness(24, 16, 24, 16), MinHeight = 40 };
+        if (control is not null)
+        {
+            control.VerticalAlignment = VerticalAlignment.Center;
+            control.Margin = new Thickness(24, 0, 0, 0);
+            row.Children.Add(control.Dock(System.Windows.Controls.Dock.Right));
+        }
+        detail.TextWrapping = TextWrapping.Wrap;
+        // A row without explanation (or one whose text comes later) shows just its title.
+        detail.SetBinding(UIElement.VisibilityProperty, new Binding(nameof(TextBlock.Text)) { Source = detail, Converter = new EmptyHides() });
+        row.Children.Add(new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, detail.Margin(0, 4, 0, 0) } });
+        return new Border
+        {
+            Child = row, Background = Brushes.Transparent,
+            BorderBrush = Paint("Line"), BorderThickness = new Thickness(0, first ? 0 : 1, 0, 0),
+        };
+    }
+
+    /// <summary>Hides a text while it is empty.</summary>
+    private sealed class EmptyHides : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+            value is string { Length: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+            throw new NotSupportedException();
+    }
+
     // --- message boxes (Windows' own, like the Python program used) ---
 
     /// <summary>Arabic message boxes read right to left.</summary>
