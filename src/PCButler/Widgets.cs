@@ -89,10 +89,12 @@ public sealed class MeterBar : Grid
     }
 
     /// <summary>percent is 0-100.</summary>
-    public void Set(double percent, string tone = "Primary")
+    public void Set(double percent, string tone = "Primary") => Set(percent, Ui.Paint(tone));
+
+    public void Set(double percent, Brush tone)
     {
         share = Math.Clamp(percent, 0, 100) / 100;
-        fill.Background = Ui.Paint(tone);
+        fill.Background = tone;
         Draw();
     }
 

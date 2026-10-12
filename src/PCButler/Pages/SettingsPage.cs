@@ -45,7 +45,7 @@ public sealed partial class SettingsPage : Page
         quick.Children.Add(quickTitle);
         quick.Children.Add(Ui.Row(12, main.BackgroundButton,
                                   Ui.Muted(Ui.T("Sorts in the background on the schedule below, and starts when you sign in."))));
-        quick.Children.Add(Ui.Switch(Ui.T("Show “Process with PC Butler” when I right-click a file or folder"), config.ExplorerMenu, on =>
+        quick.Children.Add(Ui.Switch(Ui.T("Show the “PC Butler” menu when I right-click files or folders"), config.ExplorerMenu, on =>
         {
             Main.UpdateConfig(saved => saved.ExplorerMenu = on);
             if (App.SyncExplorerMenu(on) is { } error)
@@ -69,7 +69,7 @@ public sealed partial class SettingsPage : Page
                     Task.Run(ExplorerMenu.RestartExplorer);
             });
             quick.Children.Add(classic.Margin(0, 12, 0, 0));
-            quick.Children.Add(Ui.Muted(Ui.T("The classic menu shows every entry at once, including “Process with PC Butler”. Switch it off to get "
+            quick.Children.Add(Ui.Muted(Ui.T("The classic menu shows every entry at once, including the “PC Butler” menu. Switch it off to get "
                                              + "Windows 11's short menu back."), 12, wrap: true).Margin(0, 2, 0, 0));
         }
         quick.Children.Add(Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on)).Margin(0, 12, 0, 0));

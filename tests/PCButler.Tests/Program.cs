@@ -333,13 +333,30 @@ Check(Changelog.ShouldShow("1.0.0", firstStart: false) && Changelog.ShouldShow("
 
 // ---------------------------------------------------------------- File Explorer's right-click entry
 Section("explorer menu");
+// PCBUTLER_DATA is set, so this writes under Software\PCButlerTest, where Windows never looks.
 ExplorerMenu.Remove();
-Check(ExplorerMenu.InstalledCommand() is null, "no entry to begin with");
-Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", "Process with PC Butler") is null
-      && ExplorerMenu.InstalledCommand() == "\"C:\\Apps\\PC Butler\\PCButler.exe\" --process \"%1\"", "the entry runs the program with the clicked item");
-using (var folderEntry = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell\PCButler"))
-    Check(folderEntry?.GetValue("") as string == "Process with PC Butler" && folderEntry.OpenSubKey("command") is not null, "folders get it too");
-Check(ExplorerMenu.Sync(false, "x", "x") is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
+Check(ExplorerMenu.InstalledCommand() is null, "no menu to begin with");
+Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", english => english) is null
+      && ExplorerMenu.InstalledCommand("sort") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort")
+      && ExplorerMenu.InstalledCommand("shred") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "shred")
+      && ExplorerMenu.CommandFor("P.exe", "sort") == "\"P.exe\" --act sort \"%1\"", "each submenu item runs the program with its action");
+using (var fileMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\*\shell\PCButler"))
+    Check(fileMenu?.GetValue("MUIVerb") as string == "PC Butler" && fileMenu.GetValue("SubCommands") as string == ""
+          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3shred"]),
+          "files get the submenu, in order");
+using (var folderMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell"))
+    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3shred"]),
+          "folders get it too, without the Vault");
+using (var real = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\*\shell\PCButler\shellsort\command"))
+    Check(real?.GetValue("") as string != ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort"), "the real menu is left alone");
+Check(ExplorerMenu.Sync(false, "x", english => english) is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
+// Several selected items: every copy hands its path to the first, which acts once.
+var batches = new List<string>?[6];
+var copies = Enumerable.Range(0, batches.Length).Select(number => new Thread(() => batches[number] = MenuBatch.Gather("test", $@"C:\item{number}.txt"))).ToList();
+copies.ForEach(copy => copy.Start());
+copies.ForEach(copy => copy.Join());
+var gathered = batches.Where(batch => batch is not null).ToList();
+Check(gathered.Count == 1 && gathered[0]!.Count == batches.Length, $"several selected items make one batch ({string.Join(", ", gathered.Select(batch => batch!.Count))})");
 var hadClassic = ExplorerMenu.ClassicMenu;
 Check(ExplorerMenu.SetClassicMenu(true) is null && ExplorerMenu.ClassicMenu && ExplorerMenu.SetClassicMenu(false) is null && !ExplorerMenu.ClassicMenu,
       "the classic right-click menu can be switched on and off");

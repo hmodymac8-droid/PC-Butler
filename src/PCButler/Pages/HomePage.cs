@@ -189,16 +189,18 @@ public sealed class HomePage : Page
                   Ui.T(freeShare < 20 ? "Consider a cleanup" : "Plenty of room"), Ui.T("{0} drive(s)", all.Count));
 
         drives.Children.Clear();
+        var index = 0;
         foreach (var drive in all)
         {
+            var tone = Ui.DriveTone(index++);
             var percent = drive.Total > 0 ? drive.Used * 100.0 / drive.Total : 0;
             var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 8) };
             row.Children.Add(Ui.Text(Ui.T("Local disk ({0})", drive.Name), 13));
             row.Children.Add(Ui.Muted(Ui.T("{0} free of {1}", Ui.FormatSize(drive.Free), Ui.FormatSize(drive.Total)), 12.5).Dock(Dock.Right));
             drives.Children.Add(row);
             var bar = new MeterBar(5);
-            // Amber once a drive is four-fifths full, red at nine-tenths.
-            bar.Set(percent, percent >= 90 ? "Red" : percent >= 80 ? "Amber" : "Primary");
+            // Each drive its own colour, as on the Storage page; red once it is nine-tenths full.
+            bar.Set(percent, percent >= 90 ? Ui.Paint("Red") : tone);
             drives.Children.Add(bar.Margin(0, 0, 0, 12));
         }
     }

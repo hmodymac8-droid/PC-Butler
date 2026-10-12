@@ -9,6 +9,12 @@ Each version is a `## heading` followed by `- ` lines.
 - Home page: ring gauges for the processor, graphics card, memory and time since the last restart, a free-space bar, and two panels for storage and the neatness score.
 - Sidebar and top bar: the logo beside the name, the open page marked with a dot, and a simpler top bar.
 
+## 1.9.1
+
+- Right-click in File Explorer: a "PC Butler" submenu with Sort into its category folder, Lock in the Vault and Shred, for one or many files and folders at once.
+- Storage: an All drives tab shows how full each drive is; click one to measure it.
+- Booster and Help & about: tidier pages, each setting a row with its switch on the side.
+
 ## 1.9.0
 
 - Shredder: deep delete. Files are overwritten with random data and then deleted, so recovery tools find nothing. It has its own page and cannot be undone.
@@ -68,6 +74,11 @@ Each version is a `## heading` followed by `- ` lines.
 ## 1.0.3
 
 - Every list can be sorted by clicking a column heading.
+
+## 1.0.2
+
+- Vault: a recovery key file lets you set a new password if you forget it (Vault page, Recovery key…).
+- The tray icon's menu has the program's dark look and shows whether automatic sorting is on.
 
 ## 1.0.1
 

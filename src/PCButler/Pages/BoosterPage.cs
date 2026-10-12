@@ -17,9 +17,9 @@ public sealed class BoosterPage : Page
     private readonly TextBlock startupSummary = Ui.Muted("").Margin(10);
     private readonly ListView programList;
     private readonly StackPanel powerList = new() { Margin = new Thickness(0, 10, 0, 10) };
-    private readonly TextBlock boostStatus = Ui.Text("", 18, weight: FontWeights.SemiBold);
+    private readonly TextBlock boostStatus = Ui.Muted("", 12);
     private readonly TextBlock boostDetail = Ui.Muted("", wrap: true);
-    private readonly ComboBox favoured = new() { Width = 380 };
+    private readonly ComboBox favoured = new() { Width = 340 };
     private readonly Button boostButton;
     private readonly CheckBox servicesSwitch;
     private readonly TextBox autoApps;
@@ -32,35 +32,51 @@ public sealed class BoosterPage : Page
 
         // Boost: one program gets the PC's attention; everything is put back when it is switched off.
         var settings = main.Config.Boost;
-        var boost = new StackPanel { Margin = new Thickness(14), MaxWidth = 700, HorizontalAlignment = HorizontalAlignment.Left };
-        boost.Children.Add(boostStatus);
-        boost.Children.Add(boostDetail.Margin(0, 4, 0, 12));
-        boost.Children.Add(Ui.Text(Ui.T("Boost gives one program the PC's attention: it runs at high priority while the programs behind it "
-                                        + "step back. Nothing is closed, Windows' own programs are never touched, and switching Boost off "
-                                        + "puts everything back."), wrap: true));
-        boost.Children.Add(Ui.Muted(Ui.T("Program to speed up")).Margin(0, 14, 0, 4));
-        boost.Children.Add(Ui.Row(6, favoured, Ui.Button(Ui.T("Refresh"), RefreshFavoured)));
-        boost.Children.Add(Ui.Switch(Ui.T("Lower the priority of background programs"), settings.Priorities,
-                                     on => Main.UpdateConfig(config => config.Boost.Priorities = on)).Margin(0, 14, 0, 0));
-        boost.Children.Add(Ui.Switch(Ui.T("Use the high-performance power plan while Boost is on"), settings.PowerPlan,
-                                     on => Main.UpdateConfig(config => config.Boost.PowerPlan = on)).Margin(0, 8, 0, 0));
-        boost.Children.Add(Ui.Switch(Ui.T("Trim the memory of background programs"), settings.TrimMemory,
-                                     on => Main.UpdateConfig(config => config.Boost.TrimMemory = on)).Margin(0, 8, 0, 0));
-        boost.Children.Add(Ui.Muted(Ui.T("Trimming frees memory at once, but those programs load it back when you return to them, so they "
-                                         + "feel slower for a moment. Worth it only when memory is nearly full."), 12, wrap: true).Margin(0, 2, 0, 0));
-        servicesSwitch = Ui.Switch(Ui.T("Pause background services (needs administrator rights)"), settings.Services, SetServices);
-        boost.Children.Add(servicesSwitch.Margin(0, 8, 0, 0));
-        boost.Children.Add(Ui.Muted(Ui.T("Print Spooler (no printing while paused), Telemetry and SysMain. They are started again when Boost "
-                                         + "goes off or PC Butler closes."), 12, wrap: true).Margin(0, 2, 0, 0));
-        boostButton = Ui.Button(Ui.T("Boost"), ToggleBoost, accent: true);
-        boostButton.MinWidth = 140;
-        boost.Children.Add(Ui.Row(6, boostButton).Margin(0, 14, 0, 0));
-        boost.Children.Add(Ui.Muted(Ui.T("Boost by itself while these programs are running")).Margin(0, 20, 0, 4));
-        autoApps = Ui.Field(string.Join(", ", settings.AutoApps), 380, "game.exe, editor.exe");
+        var boost = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+        var heading = new DockPanel { Margin = new Thickness(24, 8, 24, 4) };
+        heading.Children.Add(new Border
+        {
+            Background = Ui.Paint("Secondary"), CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 4, 10, 5),
+            VerticalAlignment = VerticalAlignment.Center, Child = boostStatus,
+        }.Dock(Dock.Right));
+        var title = Ui.Text(Ui.T("A calmer background. A faster foreground."), 15, weight: FontWeights.Bold);
+        title.ToolTip = Ui.T("Boost gives one program the PC's attention: it runs at high priority while the programs behind it "
+                             + "step back. Nothing is closed, Windows' own programs are never touched, and switching Boost off "
+                             + "puts everything back.");
+        heading.Children.Add(title);
+        boost.Children.Add(heading);
+        boost.Children.Add(boostDetail.Margin(24, 0, 24, 10));
+        boost.Children.Add(Ui.Row(10, Ui.Muted(Ui.T("Program to speed up")), favoured, Ui.Button(Ui.T("Refresh"), RefreshFavoured))
+                             .Margin(24, 0, 24, 10));
+
+        // Each part of Boost: a title, what it does, and its switch on the far side.
+        boost.Children.Add(Ui.SettingRow(Ui.T("Lower the priority of background programs"),
+                                         Ui.T("Give the foreground program a little more attention."),
+                                         Ui.Switch("", settings.Priorities, on => Main.UpdateConfig(config => config.Boost.Priorities = on))));
+        boost.Children.Add(Ui.SettingRow(Ui.T("Use the high-performance power plan while Boost is on"),
+                                         Ui.T("Your own plan comes back when Boost is turned off."),
+                                         Ui.Switch("", settings.PowerPlan, on => Main.UpdateConfig(config => config.Boost.PowerPlan = on))));
+        boost.Children.Add(Ui.SettingRow(Ui.T("Trim the memory of background programs"),
+                                         Ui.T("Trimming frees memory at once, but those programs load it back when you return to them, so they "
+                                              + "feel slower for a moment. Worth it only when memory is nearly full."),
+                                         Ui.Switch("", settings.TrimMemory, on => Main.UpdateConfig(config => config.Boost.TrimMemory = on))));
+        servicesSwitch = Ui.Switch("", settings.Services, SetServices);
+        boost.Children.Add(Ui.SettingRow(Ui.T("Pause background services (needs administrator rights)"),
+                                         Ui.T("Print Spooler (no printing while paused), Telemetry and SysMain. They are started again when Boost "
+                                              + "goes off or PC Butler closes."), servicesSwitch));
+        autoApps = Ui.Field(string.Join(", ", settings.AutoApps), 260, "game.exe, editor.exe");
         autoApps.LostFocus += (_, _) => SaveAutoApps();
-        boost.Children.Add(Ui.Row(6, autoApps, Ui.Button(Ui.T("Add the chosen program"), AddChosenToAuto)));
-        boost.Children.Add(Ui.Muted(Ui.T("PC Butler must be running (it can stay in the tray). Boost goes off when the program closes."), 12,
-                                    wrap: true).Margin(0, 2, 0, 0));
+        boost.Children.Add(Ui.SettingRow(Ui.T("Boost by itself while these programs are running"),
+                                         Ui.T("PC Butler must be running (it can stay in the tray). Boost goes off when the program closes."),
+                                         Ui.Row(6, autoApps, Ui.Button(Ui.T("Add the chosen program"), AddChosenToAuto))));
+
+        boostButton = new Button { MinWidth = 140, Style = (Style)Application.Current.FindResource("AccentButton") };
+        boostButton.Click += (_, _) => ToggleBoost();
+        boost.Children.Add(new Border
+        {
+            BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(24, 18, 24, 8),
+            Child = Ui.Row(0, boostButton),
+        });
         tabs.Items.Add(new TabItem
         {
             Header = Ui.T("Boost"),
@@ -162,14 +178,15 @@ public sealed class BoosterPage : Page
         if (key == shownBoost)
             return;
         shownBoost = key;
-        boostButton.Content = Ui.T(state is null ? "Boost" : "Stop Boost");
+        boostButton.Content = Ui.Row(8, Ui.Glyph("\uE945", 13, "PrimaryText"), Ui.Text(Ui.T(state is null ? "Start Boost" : "Stop Boost"), 13, "PrimaryText"));
+        boostStatus.Foreground = Ui.Paint(state is null ? "Muted" : "Primary");
         if (state is null)
         {
-            boostStatus.Text = Ui.T("Boost is off");
-            boostDetail.Text = Ui.T("Choose a program, then press Boost.");
+            boostStatus.Text = Ui.T("Not active");
+            boostDetail.Text = Ui.T("Choose a program, then press Start Boost.");
             return;
         }
-        boostStatus.Text = Ui.T("Boost is on (since {0})", state.Started[^5..]);
+        boostStatus.Text = Ui.T("Active since {0}", state.Started[^5..]);
         var lines = new List<string>();
         if (state.Processes.Any(process => process.Raised))
             lines.Add(Ui.T("{0} is running at high priority.", state.Favoured));

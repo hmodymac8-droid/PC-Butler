@@ -29,7 +29,7 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Several folders.** Sort Desktop or any other folder with the same rules.
 - **Shredder.** Deep delete: files are overwritten with random data and then deleted, so recovery tools find nothing. It cannot be undone. (On an SSD the drive may keep old copies in cells it has not reused yet, out of reach of ordinary recovery tools.)
 - **Drop zone.** A small tile that stays on top of other windows: drag files or folders onto it to sort them, lock them in the Vault, shred them or recycle them. It can be moved, and hidden from its menu, the tray menu or Settings.
-- **File Explorer menu.** Right-click a file or folder and choose *Process with PC Butler* to sort it, sort a folder's loose files, lock a file in the Vault, shred it or send it to the Recycle Bin. On Windows 11 the entry is under *Show more options*; a switch in Settings brings back the classic full right-click menu, where it is one click away.
+- **File Explorer menu.** Right-click one or more files or folders and open the *PC Butler* submenu: sort them into their category folders (a folder has its loose files sorted), lock files in the Vault, or shred them. On Windows 11 the entry is under *Show more options*; a switch in Settings brings back the classic full right-click menu, where it is one click away.
 - **What's new.** After each update a window lists what changed; the full list is in [CHANGELOG.md](CHANGELOG.md).
 - **English and Arabic.** The interface follows Windows' language, or you pick one in Settings.
 - **Updates.** Checks this repository's releases, notifies you when a new version is out, and updates with one click (or automatically, if you turn that on).

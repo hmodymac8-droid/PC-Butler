@@ -11,26 +11,48 @@ public sealed record ProcessPlan(string Path, bool IsFolder, List<PlannedMove> M
     public string Destination => !IsFolder && Moves.Count == 1 ? Moves[0].Folder : "";
 }
 
+/// <summary>One item of the "PC Butler" submenu: what it does, its English label and its icon.</summary>
+public sealed record MenuAction(string Key, string Label, string Icon, bool ForFolders);
+
 /// <summary>
-/// The "Process with PC Butler" entry in File Explorer's right-click menu, for files and
-/// for folders. It is written under HKEY_CURRENT_USER, so it needs no administrator
-/// rights and only affects this user. On Windows 11 such entries appear under "Show more
-/// options"; only programs installed from a package can add to the short menu.
+/// The "PC Butler" submenu in File Explorer's right-click menu, for files and folders: sort,
+/// lock in the Vault (files only), shred. Each item runs the program with
+/// "--act &lt;key&gt; &lt;path&gt;"; when several items are selected File Explorer starts it once per item,
+/// and the copies hand their paths to the first one (see App.RunMenuAction). It is written under
+/// HKEY_CURRENT_USER, so it needs no administrator rights and only affects this user. On
+/// Windows 11 such entries appear under "Show more options" unless the classic menu is on.
 /// </summary>
 public static class ExplorerMenu
 {
     private const string Verb = "PCButler";
+
+    /// <summary>
+    /// Where Windows reads the per-user menu. A test copy (PCBUTLER_DATA set) writes somewhere
+    /// Windows never looks, so running the tests can't change the real menu.
+    /// </summary>
+    private static string ClassesRoot =>
+        Environment.GetEnvironmentVariable("PCBUTLER_DATA") is { Length: > 0 } ? @"Software\PCButlerTest\Classes" : @"Software\Classes";
+
     /// <summary>All files, and folders (right-clicking a folder itself).</summary>
-    private static readonly string[] Classes = [@"Software\Classes\*\shell", @"Software\Classes\Directory\shell"];
+    private static string[] Classes => [$@"{ClassesRoot}\*\shell", $@"{ClassesRoot}\Directory\shell"];
 
-    public static string CommandFor(string program) => $"\"{program}\" --process \"%1\"";
+    /// <summary>The submenu, in order. Icons are imageres.dll pictures, so they look like Windows' own.</summary>
+    public static readonly MenuAction[] Actions =
+    [
+        new("sort", "Sort into its category folder", "imageres.dll,-116", ForFolders: true),
+        new("vault", "Lock in the Vault", "imageres.dll,-59", ForFolders: false),
+        new("shred", "Shred (deep delete, cannot be undone)", "imageres.dll,-5305", ForFolders: true),
+    ];
 
-    /// <summary>The command the entry runs now, or null when the entry isn't there.</summary>
-    public static string? InstalledCommand()
+    public static string CommandFor(string program, string action) => $"\"{program}\" --act {action} \"%1\"";
+
+    /// <summary>The command a submenu item runs now, or null when the menu isn't there.</summary>
+    public static string? InstalledCommand(string action = "sort")
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey($@"{Classes[0]}\{Verb}\command");
+            var index = Array.FindIndex(Actions, item => item.Key == action);
+            using var key = Registry.CurrentUser.OpenSubKey($@"{Classes[0]}\{Verb}\shell\{index + 1}{action}\command");
             return key?.GetValue("") as string;
         }
         catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
@@ -39,16 +61,33 @@ public static class ExplorerMenu
         }
     }
 
-    /// <summary>Add the entry (or point it at this copy of the program, in this language).</summary>
-    public static void Install(string program, string label)
+    /// <summary>Write the submenu (or point it at this copy of the program, in this language).</summary>
+    public static void Install(string program, Func<string, string> translate)
     {
         foreach (var shell in Classes)
         {
+            var folders = shell.Contains(@"\Directory\", StringComparison.Ordinal);
+            // Start clean: earlier versions had a single entry with a command of its own.
+            using (var parent = Registry.CurrentUser.CreateSubKey(shell))
+                parent.DeleteSubKeyTree(Verb, throwOnMissingSubKey: false);
             using var key = Registry.CurrentUser.CreateSubKey($@"{shell}\{Verb}");
-            key.SetValue("", label);
+            key.SetValue("MUIVerb", AppInfo.Name);
             key.SetValue("Icon", $"\"{program}\",0");
-            using var command = key.CreateSubKey("command");
-            command.SetValue("", CommandFor(program));
+            key.SetValue("SubCommands", ""); // the items are in the "shell" key below
+            for (var index = 0; index < Actions.Length; index++)
+            {
+                var action = Actions[index];
+                if (folders && !action.ForFolders)
+                    continue;
+                // The number keeps File Explorer's alphabetical order the same as ours.
+                using var item = key.CreateSubKey($@"shell\{index + 1}{action.Key}");
+                item.SetValue("MUIVerb", translate(action.Label));
+                item.SetValue("Icon", action.Icon);
+                // Offered for any number of selected items (by default File Explorer hides it above 15).
+                item.SetValue("MultiSelectModel", "Player");
+                using var command = item.CreateSubKey("command");
+                command.SetValue("", CommandFor(program, action.Key));
+            }
         }
     }
 
@@ -65,14 +104,14 @@ public static class ExplorerMenu
     /// Bring the menu in line with the setting. Returns an error message, or null. Called
     /// at startup, so a moved program or a changed language is picked up.
     /// </summary>
-    public static string? Sync(bool wanted, string program, string label)
+    public static string? Sync(bool wanted, string program, Func<string, string> translate)
     {
         try
         {
             if (!wanted)
                 Remove();
             else
-                Install(program, label);
+                Install(program, translate);
             return null;
         }
         catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
@@ -89,7 +128,7 @@ public static class ExplorerMenu
     /// the entry brings the short menu back. It is a per-user setting, needs no
     /// administrator rights, and File Explorer reads it when it starts.
     /// </summary>
-    private const string ShortMenuClass = @"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}";
+    private static string ShortMenuClass => $@"{ClassesRoot}\CLSID\{{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}}";
 
     /// <summary>Windows 10 only has the classic menu, so there is nothing to choose there.</summary>
     public static bool HasShortMenu => Environment.OSVersion.Version.Build >= 22000;
