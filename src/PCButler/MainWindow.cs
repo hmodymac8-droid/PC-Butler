@@ -83,6 +83,7 @@ public sealed partial class MainWindow : Window
         // (key, icon, sidebar name, page, in the sidebar's bottom group)
         foreach (var (key, glyph, name, page, bottom) in new (string, string, string, Page, bool)[]
                  {
+                     ("home", "\uE80F", "Home", new HomePage(this), false),
                      ("preview", "\uE8FD", "Sorter", Sorter, false),
                      ("duplicates", "\uE8C8", "Duplicates", Duplicates, false),
                      ("cleaner", "\uE74D", "Cleaner", new CleanerPage(this), false),
@@ -121,7 +122,7 @@ public sealed partial class MainWindow : Window
         RefreshBackgroundStatus();
         statusTimer.Tick += (_, _) => RefreshBackgroundStatus();
         statusTimer.Start();
-        ShowPage("preview");
+        ShowPage("home");
         var firstCheck = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
         firstCheck.Tick += (_, _) =>
         {

@@ -114,6 +114,8 @@ public sealed class Config
     [JsonPropertyName("duplicates")] public DuplicatesSettings Duplicates { get; set; } = new();
     [JsonPropertyName("cleaner")] public CleanerSettings Cleaner { get; set; } = new();
     [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
+    /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
+    [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
     /// <summary>The main window's last size and position, as "WIDTHxHEIGHT+LEFT+TOP".</summary>
     [JsonPropertyName("window_geometry")] public string WindowGeometry { get; set; } = "";
     /// <summary>true = install new versions by itself; false = notify and offer.</summary>

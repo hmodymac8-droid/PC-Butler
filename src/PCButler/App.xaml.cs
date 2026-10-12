@@ -36,6 +36,9 @@ public partial class App : Application
 
     public static new App Current => (App)Application.Current;
     public BackgroundService Background { get; } = new();
+    /// <summary>Processor and memory readings for the Home page and the tray icon.</summary>
+    public UsageMonitor Usage { get; } = new();
+    private string trayState = "";
     /// <summary>The main window while it is open.</summary>
     public MainWindow? Workspace => window;
 
@@ -43,6 +46,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var arguments = e.Args;
+        if (arguments.Length >= 3 && arguments[0] == "--sensors")
+        {
+            // The helper that reads temperatures as administrator (see Sensors): no window, no tray icon.
+            Sensors.RunHelper(arguments[1], int.TryParse(arguments[2], out var parent) ? parent : 0);
+            Shutdown();
+            return;
+        }
         if (arguments.Contains("--auto-on"))
         {
             // The setup wizard's "sort automatically" option was ticked.
@@ -208,6 +218,16 @@ public partial class App : Application
         ]);
     }
 
+    private void ShowTrayText()
+    {
+        if (tray is null)
+            return;
+        var text = $"{AppInfo.Name}: {trayState}";
+        if (Usage.Latest is { } sample)
+            text += "\n" + Ui.T("Processor {0}%  ·  Memory {1}%", sample.Cpu, sample.MemoryPercent);
+        tray.Text = text.Length > 127 ? text[..127] : text;
+    }
+
     private void Notify(string message, object[] arguments)
     {
         try
@@ -231,9 +251,17 @@ public partial class App : Application
         {
             if (tray is null)
                 return;
-            var text = $"{AppInfo.Name}: {Ui.T(state, arguments)}";
-            tray.Text = text.Length > 127 ? text[..127] : text;
+            trayState = Ui.T(state, arguments);
+            ShowTrayText();
         });
+        // The tray icon's tooltip doubles as a small monitor, and warns when the PC is under strain.
+        Usage.Updated += _ => Dispatcher.BeginInvoke(ShowTrayText);
+        Usage.Alert += (message, arguments) => Dispatcher.BeginInvoke(() =>
+        {
+            if (ConfigStore.Load().UsageAlerts)
+                Notify(message, arguments);
+        });
+        Usage.Start();
         background.DataChanged += () => Dispatcher.BeginInvoke(() => window?.DataChanged());
         background.UpdateFound += () => Dispatcher.BeginInvoke(() => window?.UpdateFound(background.Update));
         background.WindowIsOpen = () => Dispatcher.Invoke(WindowIsOpen);

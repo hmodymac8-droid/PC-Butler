@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Reads the graphics card's use from Windows' own counters (the number Task Manager shows). -->
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
+    <!-- Reads temperature and fan sensors through WMI (only used by the optional administrator helper). -->
+    <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Translations\ar.json" LogicalName="PCButler.Core.ar.json" />
   </ItemGroup>
 
