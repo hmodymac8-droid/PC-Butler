@@ -143,6 +143,9 @@ Each was asked for by the owner, has engine tests, and was published as its own 
 
 | 1.7 | Graphics-card temperature from Windows (no rights needed), readings from LibreHardwareMonitor when it runs, window always opens maximized, speed-test history with Clear, Programs: drive column and filter, double-click runs | `GpuSensors.cs`, `Sensors.MonitorApp`, `SpeedTest.History`, `Programs.FindLauncher` | `Pages/HomePage.cs`, `Pages/InternetPage.cs`, `Pages/ProgramsPage.cs`, `MainWindow.Reveal` |
 | 1.8 | What's new window after an update (from `CHANGELOG.md` / `CHANGELOG.ar.md`, built into the program), File Explorer's right-click entry "Process with PC Butler" | `Changelog.cs`, `ExplorerMenu.cs` | `WhatsNewWindow.cs`, `ProcessWindow.cs`, `App.xaml.cs` (`--process <path>`), `Pages/AboutPage.cs` |
+| 1.9 | Shredder page (deep delete), drop zone, Vault and Shred in the right-click window, Windows 11 classic-menu switch; the File Explorer, drop-zone and automatic-sorting switches moved to Settings with Save settings at the bottom | `Shredder.cs` (with `VaultInbox`), `Sorter.PlanDropped`, `ExplorerMenu.SetClassicMenu` | `Pages/ShredderPage.cs`, `DropZoneWindow.cs`, `ProcessWindow.cs`, `Pages/SettingsPage.cs`, `Pages/VaultPage.cs` (`AddFromOutside`) |
+
+Only the main window writes to the vault: the right-click window and the drop zone leave paths in `vault-inbox.txt` and open the window, which adds them after the password. Two writers would overwrite each other's index.
 
 Every release needs a new `## x.y.z` section at the top of both changelog files; a test fails if the
 current version is not on top or the two files differ in shape.
@@ -160,8 +163,7 @@ Rules the owner set for these, which still hold:
 - No invented numbers: Boost shows what it measured (memory freed, programs changed), not an
   estimated speed-up.
 
-Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); a file
-shredder; clipboard history (encrypted, off by default); global hotkeys; a drop zone; unpacking
+Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); clipboard history (encrypted, off by default); global hotkeys; unpacking
 archives and cleaning names; a grouped Sorter preview; a per-file history; and a per-program
 network-usage monitor (view only, through the administrator helper).
 

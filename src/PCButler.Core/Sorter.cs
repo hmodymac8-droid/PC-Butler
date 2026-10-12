@@ -215,6 +215,36 @@ public static class Sorter
     }
 
     /// <summary>
+    /// Plan what to do with files and folders dropped on the drop zone: a dropped file goes
+    /// into its category's folder under "root" (the first sorted folder, usually Downloads),
+    /// a dropped folder has its own loose files sorted inside it. Age is not looked at.
+    /// </summary>
+    public static List<PlannedMove> PlanDropped(Config config, IEnumerable<string> dropped, string root)
+    {
+        var moves = new List<PlannedMove>();
+        foreach (var path in dropped)
+        {
+            if (Directory.Exists(path))
+            {
+                moves.AddRange(PlanMoves(config, everything: true, onlyFolders: [path]));
+                continue;
+            }
+            if (root.Length == 0 || !File.Exists(path) || IsSkipped(path) || IsIgnored(Path.GetFileName(path), config))
+                continue;
+            var category = config.Categories.FirstOrDefault(item => item.Extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase));
+            var folder = category?.Folder ?? config.OtherFolder;
+            if (folder.Length == 0)
+                continue;
+            var info = new FileInfo(path);
+            var target = Path.Combine(root, folder);
+            // Already where it belongs: nothing to do.
+            if (!Norm(info.DirectoryName ?? "").Equals(Norm(target), StringComparison.Ordinal))
+                moves.Add(new PlannedMove(path, target, AgeInDays(info), info.Length, root));
+        }
+        return moves;
+    }
+
+    /// <summary>
     /// Carry out planned moves and log them. review=true marks the run as waiting for the
     /// user's Approve/Undo in the report window.
     /// </summary>

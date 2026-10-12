@@ -81,6 +81,85 @@ public static class ExplorerMenu
         }
     }
 
+    // --- Windows 11: the short menu or the classic one ---
+
+    /// <summary>
+    /// Windows 11 looks this key up to build its short right-click menu; an empty entry for
+    /// the current user makes File Explorer fall back to the classic full menu. Deleting
+    /// the entry brings the short menu back. It is a per-user setting, needs no
+    /// administrator rights, and File Explorer reads it when it starts.
+    /// </summary>
+    private const string ShortMenuClass = @"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}";
+
+    /// <summary>Windows 10 only has the classic menu, so there is nothing to choose there.</summary>
+    public static bool HasShortMenu => Environment.OSVersion.Version.Build >= 22000;
+
+    /// <summary>True when the classic full menu is switched on for this user.</summary>
+    public static bool ClassicMenu
+    {
+        get
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey($@"{ShortMenuClass}\InprocServer32");
+                return key is not null && (key.GetValue("") as string ?? "").Length == 0;
+            }
+            catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Switch between the classic menu and Windows 11's short one. Returns an error message, or null.</summary>
+    public static string? SetClassicMenu(bool classic)
+    {
+        try
+        {
+            if (classic)
+            {
+                using var key = Registry.CurrentUser.CreateSubKey($@"{ShortMenuClass}\InprocServer32");
+                key.SetValue("", "");
+            }
+            else
+            {
+                Registry.CurrentUser.DeleteSubKeyTree(ShortMenuClass, throwOnMissingSubKey: false);
+            }
+            return null;
+        }
+        catch (Exception error) when (error is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+        {
+            return error.Message;
+        }
+    }
+
+    /// <summary>
+    /// Close File Explorer's desktop process so Windows starts it again and it reads the
+    /// setting. Open folder windows close; nothing else is affected.
+    /// </summary>
+    public static void RestartExplorer()
+    {
+        var session = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+        foreach (var explorer in System.Diagnostics.Process.GetProcessesByName("explorer"))
+        {
+            using (explorer)
+            {
+                try
+                {
+                    if (explorer.SessionId == session)
+                        explorer.Kill();
+                }
+                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                }
+            }
+        }
+        // Windows restarts the desktop by itself; if it hasn't after a moment, start it.
+        Thread.Sleep(2500);
+        if (System.Diagnostics.Process.GetProcessesByName("explorer").All(process => process.SessionId != session))
+            System.Diagnostics.Process.Start(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"));
+    }
+
     /// <summary>
     /// What sorting would do with the right-clicked item, using the same categories as the
     /// Sorter page: a file goes into its category's folder beside it, a folder has its

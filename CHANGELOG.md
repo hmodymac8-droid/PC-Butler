@@ -3,6 +3,14 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.9.0
+
+- Shredder: deep delete. Files are overwritten with random data and then deleted, so recovery tools find nothing. It has its own page and cannot be undone.
+- Drop zone: a small tile that stays on top. Drag files or folders onto it to sort them, lock them in the Vault, shred them or recycle them. Hide it from its right-click menu, the tray menu, or Help & about.
+- Right-click in File Explorer: "Process with PC Butler" now also offers Lock it in the Vault and Shred it.
+- Windows 11: a switch in Settings chooses between the classic full right-click menu and the short one.
+- Settings: the File Explorer, drop zone and automatic-sorting switches are now on the Settings page, and Save settings is at the bottom.
+
 ## 1.8.0
 
 - Right-click a file or folder in File Explorer and choose "Process with PC Butler": sort it, sort a folder's files, or recycle a file. On Windows 11 it is under "Show more options". It can be switched off in Help & about.

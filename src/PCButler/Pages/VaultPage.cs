@@ -18,6 +18,7 @@ public sealed class VaultPage : Page
     private readonly DispatcherTimer idleTimer = new() { Interval = TimeSpan.FromMinutes(IdleMinutes) };
     private Core.Vault? vault; // null while locked
     private bool jobRunning;
+    private readonly List<string> waiting = []; // sent from File Explorer or the drop zone, added once the vault is unlocked
     // The unlocked screen.
     private Button? addButton;
     private CardPanel? panel;
@@ -131,6 +132,7 @@ public sealed class VaultPage : Page
             }
             Touch();
             ShowScreen();
+            AddWaiting();
         }
 
         submitButton.Click += (_, _) => Submit();
@@ -319,7 +321,28 @@ public sealed class VaultPage : Page
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to move into the vault") };
         if (dialog.ShowDialog(Window.GetWindow(this)) != true || dialog.FileNames.Length == 0)
             return;
-        var paths = dialog.FileNames.ToList();
+        AddPaths(dialog.FileNames.ToList());
+    }
+
+    /// <summary>Files handed over from outside the page. They go in now if the vault is unlocked, otherwise right after the password.</summary>
+    public void AddFromOutside(List<string> paths)
+    {
+        waiting.AddRange(paths);
+        AddWaiting();
+    }
+
+    private void AddWaiting()
+    {
+        if (vault is null || jobRunning || waiting.Count == 0)
+            return;
+        var paths = waiting.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        waiting.Clear();
+        if (paths.Count > 0)
+            AddPaths(paths);
+    }
+
+    private void AddPaths(List<string> paths)
+    {
         if (!Ui.Ask("Vault", Ui.T("Move {0} file(s) into the vault?\n\nEach file is encrypted, checked, and then removed from where it is now "
                                   + "(not to the Recycle Bin, which would keep a readable copy).", paths.Count)))
             return;

@@ -340,6 +340,10 @@ Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", "Process with P
 using (var folderEntry = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\Directory\shell\PCButler"))
     Check(folderEntry?.GetValue("") as string == "Process with PC Butler" && folderEntry.OpenSubKey("command") is not null, "folders get it too");
 Check(ExplorerMenu.Sync(false, "x", "x") is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
+var hadClassic = ExplorerMenu.ClassicMenu;
+Check(ExplorerMenu.SetClassicMenu(true) is null && ExplorerMenu.ClassicMenu && ExplorerMenu.SetClassicMenu(false) is null && !ExplorerMenu.ClassicMenu,
+      "the classic right-click menu can be switched on and off");
+ExplorerMenu.SetClassicMenu(hadClassic);
 var clicked = Path.Combine(temp, "Clicked");
 Directory.CreateDirectory(clicked);
 foreach (var name in new[] { "report.pdf", "tune.mp3", "strange.xyz123" }) File.WriteAllText(Path.Combine(clicked, name), "x");
@@ -350,6 +354,43 @@ Check(ExplorerMenu.Plan(Path.Combine(clicked, "strange.xyz123"), rules).Destinat
 var folderPlan = ExplorerMenu.Plan(clicked, rules);
 Check(folderPlan.IsFolder && folderPlan.Moves.Count == 2, $"a folder's loose files are planned ({folderPlan.Moves.Count})");
 Check(Sorter.MoveFiles(filePlan.Moves).Count == 1 && File.Exists(Path.Combine(clicked, "Documents", "report.pdf")), "and sorting it moves it there");
+
+// ---------------------------------------------------------------- shredder, drop zone, vault inbox
+Section("shredder");
+var doomed = Path.Combine(temp, "Doomed");
+Directory.CreateDirectory(Path.Combine(doomed, "inner"));
+File.WriteAllBytes(Path.Combine(doomed, "secret.bin"), new byte[3_000_000]);
+File.WriteAllText(Path.Combine(doomed, "inner", "note.txt"), "private");
+File.SetAttributes(Path.Combine(doomed, "inner", "note.txt"), FileAttributes.ReadOnly);
+var single = Path.Combine(temp, "single.txt");
+File.WriteAllText(single, "one");
+Check(Shredder.Measure([doomed, single]) == (3, 3_000_010), "what will be shredded is measured");
+long shredDone = 0, shredTotal = 0;
+var shredded = Shredder.Shred([doomed, single, Path.Combine(temp, "missing.txt")], (d, t) => (shredDone, shredTotal) = (d, t));
+Check(shredded.Count == 3 && shredded.Errors.Count == 0 && !Directory.Exists(doomed) && !File.Exists(single) && shredDone == shredTotal && shredTotal == 3_000_010,
+      $"files and a whole folder are overwritten and gone ({shredded.Count}, {string.Join("; ", shredded.Errors)})");
+Check(History.Load().SelectMany(run => run.Moves).Count(move => move.Count == 3 && move[2] == "erased" && (move[0] == doomed || move[0] == single)) == 2,
+      "and logged as erased");
+Check(Shredder.IsProtected(@"C:\") && Shredder.IsProtected(Environment.GetFolderPath(Environment.SpecialFolder.Windows))
+      && Shredder.IsProtected(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "drivers"))
+      && Shredder.IsProtected(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)) && Shredder.IsProtected(AppInfo.DataDir)
+      && !Shredder.IsProtected(Path.Combine(temp, "anything")), "Windows, the programs, the profile and whole drives are refused");
+Check(Shredder.Shred([Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)]) is { Count: 0, Errors.Count: 1 }, "a protected folder is not touched");
+
+var dropRoot = Path.Combine(temp, "DropRoot");
+var dropFrom = Path.Combine(temp, "DropFrom");
+Directory.CreateDirectory(dropRoot); Directory.CreateDirectory(Path.Combine(dropFrom, "Folder"));
+foreach (var name in new[] { "a.pdf", "b.mp3", "c.unknownkind", @"Folder\d.jpg", @"Folder\e.zip" }) File.WriteAllText(Path.Combine(dropFrom, name), "x");
+var dropConfig = new Config { OtherFolder = "" };
+var dropPlan = Sorter.PlanDropped(dropConfig, [Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3"), Path.Combine(dropFrom, "c.unknownkind"), Path.Combine(dropFrom, "Folder")], dropRoot);
+Check(dropPlan.Count == 4 && dropPlan[0].Folder == Path.Combine(dropRoot, "Documents") && dropPlan[1].Folder == Path.Combine(dropRoot, "Audio")
+      && dropPlan.Count(m => m.Folder.StartsWith(Path.Combine(dropFrom, "Folder"))) == 2, $"dropped files go to the sorted folder, a dropped folder is sorted inside ({dropPlan.Count})");
+Check(Sorter.PlanDropped(dropConfig, [Path.Combine(dropFrom, "a.pdf")], "").Count == 0, "no sorted folder, no plan");
+
+VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "gone.pdf")]);
+VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]);
+Check(VaultInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]) && VaultInbox.Take().Count == 0,
+      "files waiting for the vault are handed over once");
 
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");

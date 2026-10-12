@@ -40,6 +40,7 @@ public partial class App : Application
     public UsageMonitor Usage { get; } = new();
     private string trayState = "";
     private bool firstStart;
+    private DropZoneWindow? dropZone;
     /// <summary>The main window while it is open.</summary>
     public MainWindow? Workspace => window;
 
@@ -96,6 +97,8 @@ public partial class App : Application
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
         SyncExplorerMenu(ConfigStore.Load().ExplorerMenu);
+        if (ConfigStore.Load().DropZone)
+            ShowDropZone(true);
 
         StartTray();
         StartBackground();
@@ -137,6 +140,7 @@ public partial class App : Application
                 SystemCommands.RestoreWindow(window); // back to normal or maximized, as it was
             window.Show();
             window.Activate();
+            window.TakeVaultInbox();
             return;
         }
         window = new MainWindow();
@@ -149,6 +153,12 @@ public partial class App : Application
             opened.Reveal();
             ShowWhatsNew(opened);
         }
+        // After the window is up (and after the launch screen, if there is one).
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (IsOpen(opened))
+                opened.TakeVaultInbox();
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>
@@ -158,6 +168,30 @@ public partial class App : Application
     public static string? SyncExplorerMenu(bool wanted) =>
         !AppInfo.IsInstalled ? null
             : ExplorerMenu.Sync(wanted, Environment.ProcessPath!, Ui.T($"Process with {AppInfo.Name}"));
+
+    private void ShowDropZone(bool show)
+    {
+        if (show && dropZone is null && !exiting)
+        {
+            dropZone = new DropZoneWindow();
+            dropZone.Closed += (_, _) => dropZone = null;
+            dropZone.Show();
+        }
+        else if (!show)
+        {
+            dropZone?.Close();
+        }
+    }
+
+    /// <summary>Show or hide the drop zone and remember the choice.</summary>
+    public void SetDropZone(bool show)
+    {
+        var config = ConfigStore.Load();
+        config.DropZone = show;
+        ConfigStore.Save(config);
+        window?.UpdateConfig(saved => saved.DropZone = show);
+        ShowDropZone(show);
+    }
 
     /// <summary>Once after each update, when the window first opens: the list of what changed.</summary>
     private void ShowWhatsNew(MainWindow owner)
@@ -252,6 +286,8 @@ public partial class App : Application
             config.IsPaused ? new("\uE768", Ui.T("Resume sorting"), Background.TogglePause, config.AutoSortOn)
                             : new("\uE769", Ui.T("Pause for today"), Background.TogglePause, config.AutoSortOn),
             new("\uE81C", Ui.T("Show report"), ShowReport),
+            config.DropZone ? new("\uE8B7", Ui.T("Hide the drop zone"), () => SetDropZone(false))
+                            : new("\uE8B7", Ui.T("Show the drop zone"), () => SetDropZone(true)),
             // Only shown once a newer version is found.
             update is null ? null : new("\uE896", Ui.T("Install version {0}", update.Version), () => Task.Run(() => InstallUpdate(update))),
             null,

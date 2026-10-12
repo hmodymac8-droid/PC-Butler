@@ -56,8 +56,17 @@ public sealed class ProcessWindow : Window
             Add(body, plan.Destination.Length > 0 ? Ui.T("Sort it into “{0}”", Path.GetFileName(plan.Destination))
                                                   : Ui.T("Nothing to sort: no category takes this kind of file"),
                 plan.Destination.Length > 0, () => Sort(plan), accent: true);
+            Add(body, Ui.T("Lock it in the Vault"), true, () =>
+            {
+                // The main window holds the vault and asks for its password, so the file is handed over to it.
+                VaultInbox.Add([path]);
+                Shell.Open(Environment.ProcessPath!);
+                Close();
+            });
             Add(body, Ui.T("Move it to the Recycle Bin"), true, Recycle);
         }
+        if (File.Exists(path) || Directory.Exists(path))
+            Add(body, Ui.T("Shred it (deep delete, cannot be undone)"), !Shredder.IsProtected(path), Shred);
         Add(body, Ui.T($"Open {AppInfo.Name}"), true, () =>
         {
             Shell.Open(Environment.ProcessPath!);
@@ -85,6 +94,18 @@ public sealed class ProcessWindow : Window
         var (count, errors) = Sorter.MoveFiles(plan.Moves);
         Hide();
         Ui.ReportResult(Ui.T("Sorted {0} file(s).", count), errors);
+        Close();
+    }
+
+    private void Shred()
+    {
+        var (files, size) = Shredder.Measure([path]);
+        if (!Ui.Ask("Shredder", Ui.T("Shred {0} item(s): {1} file(s), {2}?\n\nThey are overwritten and deleted. This cannot be undone, "
+                                     + "not from History and not from the Recycle Bin.", 1, files, Ui.FormatSize(size)), warning: true))
+            return;
+        Hide();
+        var (count, errors) = Shredder.Shred([path]);
+        Ui.ReportResult(Ui.T("Shredded {0} file(s).", count), errors);
         Close();
     }
 

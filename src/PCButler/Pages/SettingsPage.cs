@@ -37,7 +37,56 @@ public sealed partial class SettingsPage : Page
     public SettingsPage(MainWindow main) : base(main, "Settings", "Your folders. Your rules.")
     {
         var config = main.Config;
-        AddAction("Save settings", Save, accent: true);
+
+        // Switches that take effect the moment they are flipped; everything below them waits for Save settings.
+        var quick = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
+        var quickTitle = Ui.Text(Ui.T("Applied at once"), 16, weight: FontWeights.Bold).Margin(0, 0, 0, 8);
+        quickTitle.FontFamily = Ui.DisplayFont;
+        quick.Children.Add(quickTitle);
+        quick.Children.Add(Ui.Row(12, main.BackgroundButton,
+                                  Ui.Muted(Ui.T("Sorts in the background on the schedule below, and starts when you sign in."))));
+        quick.Children.Add(Ui.Switch(Ui.T("Show “Process with PC Butler” when I right-click a file or folder"), config.ExplorerMenu, on =>
+        {
+            Main.UpdateConfig(saved => saved.ExplorerMenu = on);
+            if (App.SyncExplorerMenu(on) is { } error)
+                Ui.Warn("File Explorer", error);
+        }).Margin(0, 12, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("Sort the file into its category folder, sort a folder's loose files, lock a file in the Vault, shred it or send "
+                                         + "it to the Recycle Bin. On Windows 11 the entry is under “Show more options”."), 12, wrap: true).Margin(0, 2, 0, 0));
+        if (ExplorerMenu.HasShortMenu)
+        {
+            // Windows 11 only: its short right-click menu, or the classic full one (where the entry above is one click away).
+            CheckBox? classic = null;
+            classic = Ui.Switch(Ui.T("Use the classic full right-click menu instead of Windows 11's short one"), ExplorerMenu.ClassicMenu, on =>
+            {
+                if (ExplorerMenu.SetClassicMenu(on) is { } error)
+                {
+                    Ui.Warn("File Explorer", error);
+                    return;
+                }
+                if (Ui.Ask("File Explorer", Ui.T("File Explorer uses the new menu after it restarts.\n\nRestart it now? Open folder windows will "
+                                                 + "close, and the taskbar disappears for a moment. Otherwise it changes the next time you sign in.")))
+                    Task.Run(ExplorerMenu.RestartExplorer);
+            });
+            quick.Children.Add(classic.Margin(0, 12, 0, 0));
+            quick.Children.Add(Ui.Muted(Ui.T("The classic menu shows every entry at once, including “Process with PC Butler”. Switch it off to get "
+                                             + "Windows 11's short menu back."), 12, wrap: true).Margin(0, 2, 0, 0));
+        }
+        quick.Children.Add(Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on)).Margin(0, 12, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("A small tile that stays on top of other windows. Drag files or folders onto it to sort them, lock them in "
+                                         + "the Vault, shred them or recycle them. Drag the tile to move it."), 12, wrap: true).Margin(0, 2, 0, 0));
+        quick.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 18, 0, 0) });
+
+        // Save settings sits at the bottom, always in view, because nothing in the form below applies until it is pressed.
+        var save = Ui.Button(Ui.T("Save settings"), Save, accent: true);
+        save.MinWidth = 220;
+        save.Padding = new Thickness(26, 11, 26, 11);
+        save.FontSize = 15;
+        save.FontWeight = FontWeights.SemiBold;
+        var saveBar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 12, 0, 0) };
+        saveBar.Children.Add(save.Dock(Dock.Right));
+        saveBar.Children.Add(Ui.Muted(Ui.T("Folders, rules and schedule are applied when you save.")).Margin(0, 0, 14, 0).Dock(Dock.Right));
+        Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = saveBar }.Dock(Dock.Bottom));
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -126,7 +175,10 @@ public sealed partial class SettingsPage : Page
         buttons.Children.Add(Ui.Text(Ui.T("Language")).Dock(Dock.Right));
         grid.Children.Add(buttons.At(9, 0, 3));
         // More settings than a short window can show: the page scrolls rather than squeezing the list.
-        Children.Add(new ScrollViewer { Content = grid, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        var all = new DockPanel();
+        all.Children.Add(quick.Dock(Dock.Top));
+        all.Children.Add(grid);
+        Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
     }
 
     private System.Collections.ObjectModel.ObservableCollection<Row> CategoryRows => (System.Collections.ObjectModel.ObservableCollection<Row>)categories.ItemsSource;

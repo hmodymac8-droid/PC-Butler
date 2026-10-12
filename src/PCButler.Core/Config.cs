@@ -117,6 +117,8 @@ public sealed class Config
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
+    /// <summary>Show the drop zone, the small always-on-top tile that files can be dragged onto.</summary>
+    [JsonPropertyName("drop_zone")] public bool DropZone { get; set; } = true;
     /// <summary>Show "Process with PC Butler" when a file or folder is right-clicked in File Explorer.</summary>
     [JsonPropertyName("explorer_menu")] public bool ExplorerMenu { get; set; } = true;
     /// <summary>The version whose What's new list was last shown; a different one means the program was updated.</summary>

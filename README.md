@@ -27,7 +27,9 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Auto clean-up.** Optionally recycle old files in a category (for example installers after 90 days). Only files the program itself moved are touched.
 - **Never-move list.** Protect files by name or pattern (`*.torrent`). Files you put back with Undo are not moved again automatically.
 - **Several folders.** Sort Desktop or any other folder with the same rules.
-- **File Explorer menu.** Right-click a file or folder and choose *Process with PC Butler* to sort it, sort a folder's loose files, or send a file to the Recycle Bin without opening the program. On Windows 11 the entry is under *Show more options*.
+- **Shredder.** Deep delete: files are overwritten with random data and then deleted, so recovery tools find nothing. It cannot be undone. (On an SSD the drive may keep old copies in cells it has not reused yet, out of reach of ordinary recovery tools.)
+- **Drop zone.** A small tile that stays on top of other windows: drag files or folders onto it to sort them, lock them in the Vault, shred them or recycle them. It can be moved, and hidden from its menu, the tray menu or Settings.
+- **File Explorer menu.** Right-click a file or folder and choose *Process with PC Butler* to sort it, sort a folder's loose files, lock a file in the Vault, shred it or send it to the Recycle Bin. On Windows 11 the entry is under *Show more options*; a switch in Settings brings back the classic full right-click menu, where it is one click away.
 - **What's new.** After each update a window lists what changed; the full list is in [CHANGELOG.md](CHANGELOG.md).
 - **English and Arabic.** The interface follows Windows' language, or you pick one in Settings.
 - **Updates.** Checks this repository's releases, notifies you when a new version is out, and updates with one click (or automatically, if you turn that on).
@@ -113,7 +115,9 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 - **التنظيف التلقائي.** خيار لإرسال الملفات القديمة في تصنيف معيّن إلى سلة المحذوفات (مثل ملفات التثبيت بعد 90 يومًا). لا يمسّ إلا الملفات التي نقلها البرنامج نفسه.
 - **قائمة «لا تنقل أبدًا».** احمِ ملفات معيّنة بالاسم أو بالنمط (مثل `*.torrent`). الملفات التي أعدتها بالتراجع لا تُنقل تلقائيًا مرة أخرى.
 - **عدة مجلدات.** افرز سطح المكتب أو أي مجلد آخر بالقواعد نفسها.
-- **قائمة File Explorer.** انقر بالزر الأيمن على ملف أو مجلد واختر «معالجة بـ PC Butler» لفرزه، أو فرز الملفات السائبة في المجلد، أو إرسال الملف إلى سلة المحذوفات دون فتح البرنامج. في ويندوز 11 تجد الخيار تحت *Show more options*.
+- **الحذف العميق (Shredder).** تُكتب فوق الملفات بيانات عشوائية ثم تُحذف، فلا تجد أدوات الاستعادة شيئًا، ولا يمكن التراجع عنه. (في أقراص SSD قد يحتفظ القرص بنسخ قديمة في خلايا لم يُعد استخدامها بعد، وهي بعيدة عن متناول أدوات الاستعادة العادية.)
+- **منطقة الإفلات.** مربع صغير يبقى فوق النوافذ الأخرى: اسحب إليه ملفات أو مجلدات لفرزها أو قفلها في الخزنة أو حذفها العميق أو إرسالها لسلة المحذوفات. يمكن تحريكه، وإخفاؤه من قائمته أو من قائمة الأيقونة بجانب الساعة أو من الإعدادات.
+- **قائمة File Explorer.** انقر بالزر الأيمن على ملف أو مجلد واختر «معالجة بـ PC Butler» لفرزه، أو فرز الملفات السائبة في المجلد، أو قفل الملف في الخزنة، أو حذفه العميق، أو إرساله إلى سلة المحذوفات. في ويندوز 11 تجد الخيار تحت *Show more options*، ومفتاح في الإعدادات يعيد قائمة الزر الأيمن الكلاسيكية الكاملة حيث يظهر الخيار مباشرة.
 - **ما الجديد.** بعد كل تحديث تظهر نافذة بما تغيّر، والقائمة الكاملة في [CHANGELOG.ar.md](CHANGELOG.ar.md).
 - **العربية والإنجليزية.** الواجهة تتبع لغة ويندوز، أو تختار اللغة من الإعدادات.
 - **التحديثات.** يتحقق من إصدارات هذا المستودع، وينبّهك عند صدور نسخة جديدة، ويحدّث نفسه بضغطة واحدة (أو تلقائيًا إذا فعّلت ذلك).

@@ -1,15 +1,5 @@
 {
- "Process with PC Butler": "معالجة بـ PC Butler",
- "It is no longer there.": "لم يعد موجودًا.",
- "Sort its {0} loose file(s) into category folders": "فرز ملفاته السائبة ({0}) إلى مجلدات التصنيف",
- "Nothing to sort: no loose files here match a category": "لا شيء للفرز: لا ملفات سائبة هنا تطابق تصنيفًا",
- "Sort it into “{0}”": "فرزه إلى «{0}»",
- "Nothing to sort: no category takes this kind of file": "لا شيء للفرز: لا تصنيف يأخذ هذا النوع من الملفات",
- "Move it to the Recycle Bin": "نقله إلى سلة المحذوفات",
- "What you do here is logged in History and can be undone there.": "ما تفعله هنا يُسجَّل في السجل ويمكن التراجع عنه هناك.",
- "Sorted {0} file(s).": "فُرز {0} ملف.",
- "It could not be moved to the Recycle Bin.": "تعذّر نقله إلى سلة المحذوفات.",
- "File Explorer": "File Explorer",
- "Show “Process with PC Butler” when I right-click a file or folder": "إظهار «معالجة بـ PC Butler» عند النقر بالزر الأيمن على ملف أو مجلد",
- "Sort the file into its category folder, sort a folder's loose files, or send a file to the Recycle Bin, without opening PC Butler. On Windows 11 the entry is under “Show more options”.": "افرز الملف إلى مجلد تصنيفه، أو افرز الملفات السائبة في مجلد، أو أرسل ملفًا إلى سلة المحذوفات، دون فتح PC Butler. في ويندوز 11 تجد الخيار تحت “Show more options”."
+ "Use the classic full right-click menu instead of Windows 11's short one": "استخدام قائمة الزر الأيمن الكلاسيكية الكاملة بدل قائمة ويندوز 11 المختصرة",
+ "File Explorer uses the new menu after it restarts.\n\nRestart it now? Open folder windows will close, and the taskbar disappears for a moment. Otherwise it changes the next time you sign in.": "يستخدم File Explorer القائمة الجديدة بعد إعادة تشغيله.\n\nإعادة تشغيله الآن؟ ستُغلق نوافذ المجلدات المفتوحة ويختفي شريط المهام للحظة. وإلا فسيتغيّر عند تسجيل دخولك التالي.",
+ "The classic menu shows every entry at once, including “Process with PC Butler”. Switch it off to get Windows 11's short menu back.": "القائمة الكلاسيكية تعرض كل الخيارات مباشرة، ومنها «معالجة بـ PC Butler». أوقفه لتعود قائمة ويندوز 11 المختصرة."
 }

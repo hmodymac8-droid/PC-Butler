@@ -54,21 +54,6 @@ public sealed class AboutPage : Page
         note.MaxWidth = 620;
         note.HorizontalAlignment = HorizontalAlignment.Left;
         tab.Children.Add(note);
-
-        section = Ui.Text(Ui.T("File Explorer"), 16, weight: FontWeights.Bold).Margin(0, 18, 0, 6);
-        section.FontFamily = Ui.DisplayFont;
-        tab.Children.Add(section);
-        tab.Children.Add(Ui.Switch(Ui.T("Show “Process with PC Butler” when I right-click a file or folder"), main.Config.ExplorerMenu, on =>
-        {
-            Main.UpdateConfig(config => config.ExplorerMenu = on);
-            if (App.SyncExplorerMenu(on) is { } error)
-                Ui.Warn("File Explorer", error);
-        }));
-        note = Ui.Muted(Ui.T("Sort the file into its category folder, sort a folder's loose files, or send a file to the Recycle Bin, "
-                             + "without opening PC Butler. On Windows 11 the entry is under “Show more options”."), wrap: true).Margin(0, 4);
-        note.MaxWidth = 620;
-        note.HorizontalAlignment = HorizontalAlignment.Left;
-        tab.Children.Add(note);
         Children.Add(new ScrollViewer { Content = tab, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
     }
 

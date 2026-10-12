@@ -22,7 +22,8 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock bannerLabel = Ui.Text("");
     private readonly TextBlock statusGlyph = Ui.Glyph("\uE895", 16);
     private readonly TextBlock backgroundLabel = Ui.Text("");
-    private readonly Button backgroundButton;
+    /// <summary>Turns automatic sorting on or off. It lives on the Settings page; its text follows the state.</summary>
+    public Button BackgroundButton { get; }
     private readonly Button pauseButton;
     private readonly DispatcherTimer statusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool? compact;
@@ -32,6 +33,7 @@ public sealed partial class MainWindow : Window
     public DuplicatesPage Duplicates { get; }
     public HistoryPage History { get; }
     public VaultPage Vault { get; }
+    public ShredderPage Shredder { get; }
     public SettingsPage Settings { get; }
     public AboutPage About { get; }
 
@@ -63,11 +65,10 @@ public sealed partial class MainWindow : Window
 
         // The status bar. Its buttons come first so a narrow window cuts the text, not them.
         var bar = new DockPanel { Margin = new Thickness(30, 12, 30, 12) };
-        backgroundButton = Ui.Button("", ToggleBackground).Dock(Dock.Right);
+        BackgroundButton = Ui.Button("", ToggleBackground);
         pauseButton = Ui.Button("", TogglePause).Margin(0, 0, 6, 0).Dock(Dock.Right);
         bar.Children.Add(new Border { Background = Ui.Paint("Secondary"), Padding = new Thickness(8, 4, 8, 4), Child = statusGlyph,
                                       Margin = new Thickness(0, 0, 12, 0) }.Dock(Dock.Left));
-        bar.Children.Add(backgroundButton);
         bar.Children.Add(pauseButton);
         backgroundLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         bar.Children.Add(backgroundLabel);
@@ -78,6 +79,7 @@ public sealed partial class MainWindow : Window
         Duplicates = new DuplicatesPage(this);
         History = new HistoryPage(this);
         Vault = new VaultPage(this);
+        Shredder = new ShredderPage(this);
         Settings = new SettingsPage(this);
         About = new AboutPage(this);
         // (key, icon, sidebar name, page, in the sidebar's bottom group)
@@ -91,6 +93,7 @@ public sealed partial class MainWindow : Window
                      ("booster", "\uE945", "Booster", new BoosterPage(this), false),
                      ("programs", "\uE71D", "Programs", new ProgramsPage(this), false),
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
+                     ("shredder", "\uE75C", "Shredder", Shredder, false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
                      ("settings", "\uE713", "Settings", Settings, true),
@@ -169,6 +172,23 @@ public sealed partial class MainWindow : Window
     {
         Sorter.Refresh();
         History.Refresh();
+    }
+
+    /// <summary>Files sent to the vault from File Explorer or the drop zone: open the Vault page and add them (after the password).</summary>
+    public void TakeVaultInbox()
+    {
+        var waiting = VaultInbox.Take();
+        if (waiting.Count == 0)
+            return;
+        ShowPage("vault");
+        Vault.AddFromOutside(waiting);
+    }
+
+    /// <summary>Put items on the Shredder page's list. Nothing is shredded until the user presses Shred there.</summary>
+    public void ShredLater(IEnumerable<string> paths)
+    {
+        ShowPage("shredder");
+        Shredder.AddPaths(paths);
     }
 
     /// <summary>The background sorter moved or cleaned files.</summary>
@@ -276,7 +296,7 @@ public sealed partial class MainWindow : Window
         var color = running && paused ? Ui.Paint("Amber") : running ? Ui.Paint("Primary") : Ui.Paint("ControlLine");
         statusGlyph.Foreground = color;
         topBar.SetStatus(Ui.T(running && paused ? "Automatic sorting paused" : running ? "Automatic sorting on" : "Automatic sorting off"), color);
-        backgroundButton.Content = Ui.T(running ? "Turn off automatic sorting" : "Turn on automatic sorting");
+        BackgroundButton.Content = Ui.T(running ? "Turn off automatic sorting" : "Turn on automatic sorting");
         pauseButton.Content = Ui.T(paused ? "Resume" : "Pause for today");
         pauseButton.IsEnabled = running;
     }
