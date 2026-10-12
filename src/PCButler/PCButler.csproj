@@ -29,6 +29,7 @@
     <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
     <Resource Include="icon.png" />
     <Resource Include="icon.ico" />
+    <Resource Include="tray.ico" />
     <Resource Include="Fonts\*.ttf" />
   </ItemGroup>
 
