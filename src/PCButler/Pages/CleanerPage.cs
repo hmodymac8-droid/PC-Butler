@@ -166,6 +166,13 @@ public sealed class CleanerPage : Page
         }
     }
 
+    /// <summary>The scan the program starts by itself at launch, as if Scan now were pressed.</summary>
+    public void ScanNow()
+    {
+        if (Cleaner.Categories.Any(category => ticked.Contains(category.Key)))
+            Scan(); // with nothing ticked there is nothing to look for, and no need to say so at launch
+    }
+
     private async void Scan()
     {
         if (busy)

@@ -36,6 +36,8 @@ public sealed partial class MainWindow : Window
     public VaultPage Vault { get; }
     private readonly Dictionary<string, string> glyphs = [];
     public ShredderPage Shredder { get; }
+    public CleanerPage Cleaner { get; }
+    public ProgramsPage Programs { get; }
     public SettingsPage Settings { get; }
     public AboutPage About { get; }
 
@@ -86,6 +88,8 @@ public sealed partial class MainWindow : Window
         History = new HistoryPage(this);
         Vault = new VaultPage(this);
         Shredder = new ShredderPage(this);
+        Cleaner = new CleanerPage(this);
+        Programs = new ProgramsPage(this);
         Settings = new SettingsPage(this);
         About = new AboutPage(this);
         // (key, icon, sidebar name, page, in the sidebar's bottom group)
@@ -94,10 +98,10 @@ public sealed partial class MainWindow : Window
                      ("home", "\uE80F", "Home", new HomePage(this), false),
                      ("preview", "\uE8FD", "Sorter", Sorter, false),
                      ("duplicates", "\uE8C8", "Duplicates", Duplicates, false),
-                     ("cleaner", "\uE74D", "Cleaner", new CleanerPage(this), false),
+                     ("cleaner", "\uE74D", "Cleaner", Cleaner, false),
                      ("storage", "\uEDA2", "Storage", new StoragePage(this), false),
                      ("booster", "\uE945", "Booster", new BoosterPage(this), false),
-                     ("programs", "\uE71D", "Programs", new ProgramsPage(this), false),
+                     ("programs", "\uE71D", "Programs", Programs, false),
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("shredder", "\uE75C", "Shredder", Shredder, false),
                      ("clipboard", "\uE77F", "Clipboard", new ClipboardPage(this), false),

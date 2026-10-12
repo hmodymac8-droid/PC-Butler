@@ -109,6 +109,23 @@ public partial class App : Application
             e.SetObserved();
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
+
+        // The launch screen comes first; everything else waits until it is on screen.
+        var launching = !arguments.Contains("--background");
+        var withSplash = launching && !arguments.Contains("--no-splash");
+        if (withSplash)
+        {
+            splashOpen = true;
+            new SplashWindow(onClose: SplashClosed).Show();
+        }
+        Dispatcher.BeginInvoke(() => FinishStartup(launching, withSplash), System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    /// <summary>The rest of the start, once the launch screen (if any) has been drawn.</summary>
+    private void FinishStartup(bool launching, bool withSplash)
+    {
+        if (exiting)
+            return;
         SyncExplorerMenu(ConfigStore.Load().ExplorerMenu);
         if (ConfigStore.Load().DropZone)
             ShowDropZone(true);
@@ -121,8 +138,19 @@ public partial class App : Application
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
 
-        if (!arguments.Contains("--background"))
-            ShowMainWindow(splash: !arguments.Contains("--no-splash"));
+        if (launching)
+            ShowMainWindow(splash: withSplash);
+    }
+
+    private bool splashOpen;
+    private Action? afterSplash; // shows the window once the launch screen closes
+
+    private void SplashClosed()
+    {
+        splashOpen = false;
+        var next = afterSplash;
+        afterSplash = null;
+        next?.Invoke();
     }
 
     private void WaitForShowSignal()
@@ -163,7 +191,25 @@ public partial class App : Application
         window.Closed += (_, _) => window = null;
         var opened = window;
         if (splash)
-            new SplashWindow(onClose: () => { opened.Reveal(); ShowWhatsNew(opened); }).Show();
+        {
+            // The launch screen is already up (see OnStartup): the window waits for it to close.
+            void Show()
+            {
+                // Not shown yet, so it has no window handle: what matters is that it is still the program's window.
+                if (window == opened)
+                {
+                    opened.Reveal();
+                    ShowWhatsNew(opened);
+                }
+            }
+            if (splashOpen)
+                afterSplash = Show;
+            else
+                Show(); // it was clicked away before the window was ready
+            // While the launch screen is up: look for junk and for program updates, so the results are waiting.
+            opened.Cleaner.ScanNow();
+            opened.Programs.CheckAtLaunch();
+        }
         else
         {
             opened.Reveal();

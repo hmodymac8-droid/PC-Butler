@@ -510,12 +510,58 @@ public static partial class Programs
     ];
 
     /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list.</summary>
-    public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
-        app.Source != AppSource.Page
-        && installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
-                                    // a whole name or word: "Git" is not "GitHub Desktop"
-                                    && (program.Name.Length == app.Match.Length
-                                        || !app.Exact && !char.IsLetterOrDigit(program.Name[app.Match.Length])));
+    public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) => FindInstalled(app, installed) is not null;
+
+    /// <summary>The installed program an app from the lists above is, or null.</summary>
+    public static InstalledProgram? FindInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
+        app.Source == AppSource.Page ? null
+        : installed.FirstOrDefault(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
+                                              // a whole name or word: "Git" is not "GitHub Desktop"
+                                              && (program.Name.Length == app.Match.Length
+                                                  || !app.Exact && !char.IsLetterOrDigit(program.Name[app.Match.Length])));
+
+    /// <summary>The installed program a winget update is for. winget cuts long names short with "…".</summary>
+    public static InstalledProgram? FindInstalled(ProgramUpdate update, IEnumerable<InstalledProgram> installed)
+    {
+        var name = update.Name.TrimEnd('…').Trim();
+        var all = installed.ToList();
+        return all.FirstOrDefault(program => program.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+               ?? (name.Length >= 4 ? all.FirstOrDefault(program => program.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase)) : null);
+    }
+
+    /// <summary>The folder a program lives in: its install location, or the folder of what starts it. Null when unknown.</summary>
+    public static string? Folder(InstalledProgram program)
+    {
+        if (program.Location.Trim('"').TrimEnd('\\') is { Length: > 0 } location && Directory.Exists(location))
+            return location;
+        // The icon is usually the program's own .exe: "C:\Program Files\App\app.exe,0".
+        var icon = program.Icon.Split(',')[0].Trim('"');
+        if (icon.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(icon))
+            return Path.GetDirectoryName(icon);
+        if (FindLauncher(program) is not { } launcher)
+            return null;
+        if (launcher.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && ShortcutTarget(launcher) is { } target)
+            launcher = target;
+        return launcher.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? null : Path.GetDirectoryName(launcher);
+    }
+
+    /// <summary>Where a .lnk shortcut points, or null.</summary>
+    private static string? ShortcutTarget(string shortcut)
+    {
+        try
+        {
+            if (Type.GetTypeFromProgID("WScript.Shell") is not { } type)
+                return null;
+            dynamic shell = Activator.CreateInstance(type)!;
+            var link = shell.CreateShortcut(shortcut);
+            string target = link.TargetPath;
+            return target.Length > 0 && File.Exists(target) ? target : null;
+        }
+        catch (Exception error) when (error is System.Runtime.InteropServices.COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Start installing one app, with its own window so its questions and progress are visible:

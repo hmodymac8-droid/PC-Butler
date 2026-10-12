@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.12.1
+
+- Launch: the launch screen comes up first, and everything else starts behind it. While it shows, the Cleaner scans and the Programs page reads the installed programs and checks for updates, so the results are waiting.
+- Clipboard: picking an item now pastes it into the program you were in (before, it was only copied).
+- Programs: every list has tick boxes, and a right-click menu for each program: Run, Open file location, Update and Uninstall when it is installed; Install or open its page when it is not. Essential and Recommended apps list the installed ones first.
+
 ## 1.12.0
 
 - Clipboard: a new page and a clipboard manager. Turn it on to keep what you copy (text, files and pictures, up to 500 items by default, or any limit you set), search it, pin items, copy them back or delete them. A shortcut (Ctrl+Alt+V by default, changeable) opens the list in any program: pick an item and it is pasted there. Items that password managers mark as private are skipped.

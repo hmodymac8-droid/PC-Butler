@@ -211,12 +211,13 @@ public sealed class ClipboardManager : IDisposable
         if (!Copy(entry) || !settings.PasteOnPick || target == IntPtr.Zero)
             return;
         SetForegroundWindow(target);
-        await Task.Delay(120);
+        await Task.Delay(150);
         var inputs = new[]
         {
             Key(VK_CONTROL, false), Key(VK_V, false), Key(VK_V, true), Key(VK_CONTROL, true),
         };
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
+            Log.Warning($"Paste: SendInput was refused (error {Marshal.GetLastWin32Error()})");
     }
 
     public void Dispose()
@@ -235,8 +236,32 @@ public sealed class ClipboardManager : IDisposable
 
     private static INPUT Key(ushort key, bool up) => new()
     {
-        Type = 1, Keyboard = new KEYBDINPUT { Key = key, Flags = up ? 2u : 0u },
+        Type = 1, // keyboard
+        Union = new InputUnion { Keyboard = new KEYBDINPUT { Key = key, Flags = up ? 2u : 0u } },
     };
+
+    // INPUT is a type and a union whose largest member is MOUSEINPUT; SendInput refuses a wrong size (40 bytes on 64-bit).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint Type;
+        public InputUnion Union;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT Mouse;
+        [FieldOffset(0)] public KEYBDINPUT Keyboard;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int X, Y;
+        public uint Data, Flags, Time;
+        public IntPtr Extra;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct KEYBDINPUT
@@ -246,16 +271,7 @@ public sealed class ClipboardManager : IDisposable
         public IntPtr Extra;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
-    private struct INPUT
-    {
-        [FieldOffset(0)] public uint Type;
-        // The union is as big as its largest member, MOUSEINPUT: pad to it.
-        [FieldOffset(8)] public KEYBDINPUT Keyboard;
-        [FieldOffset(8)] private readonly long padding1;
-        [FieldOffset(16)] private readonly long padding2;
-        [FieldOffset(24)] private readonly long padding3;
-    }
+    internal static int InputSize => Marshal.SizeOf<INPUT>();
 
     [DllImport("user32.dll", SetLastError = true)] private static extern bool AddClipboardFormatListener(IntPtr hwnd);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
@@ -263,7 +279,7 @@ public sealed class ClipboardManager : IDisposable
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
-    [DllImport("user32.dll")] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormat(string name);
     [DllImport("user32.dll")] private static extern bool IsClipboardFormatAvailable(uint format);
 }

@@ -6,7 +6,11 @@ using PCButler.Core;
 
 namespace PCButler;
 
-/// <summary>The installed programs: uninstall one and clear what it leaves behind, or update through winget.</summary>
+/// <summary>
+/// The installed programs, their updates, and ready lists of apps to install. Every list has
+/// tick boxes, and a right-click menu that offers what fits the row: run, open its folder,
+/// uninstall or update an installed program; install one that is not there yet.
+/// </summary>
 public sealed class ProgramsPage : Page
 {
     private readonly StatCard[] stats;
@@ -22,7 +26,7 @@ public sealed class ProgramsPage : Page
 
     public ProgramsPage(MainWindow main) : base(main, "Programs", "Everything installed, in one list.")
     {
-        stats = AddStats(("Programs installed", ""), ("Space they use", ""), ("Updates available", ""));
+        stats = AddStats(("Programs installed", ""), ("Space they use", ""), ("Updates available", ""));
         stats[2].Set("—", "", Ui.T("Press Check for updates"));
         var tabs = new TabControl();
 
@@ -34,25 +38,28 @@ public sealed class ProgramsPage : Page
         driveFilter.SelectionChanged += (_, _) => ShowInstalled();
         bar.Children.Add(driveFilter.Margin(6));
         bar.Children.Add(installedStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), UninstallSelected, accent: true).Dock(Dock.Right));
-        installedList = Ui.List(("Program", 300, "PlainCell"), ("Drive", 60), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
-        installedList.SelectionMode = SelectionMode.Single;
+        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), () => Uninstall(Chosen(installedList).Select(row => (InstalledProgram)row.Tag!).ToList()),
+                                   accent: true).Dock(Dock.Right));
+        installedList = Ui.List(("Program", 300, "CheckCell"), ("Drive", 60), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
         installedList.MouseDoubleClick += (_, e) =>
         {
             if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Ui.RowAt(e.OriginalSource)?.Tag is InstalledProgram program)
                 Run(program);
         };
+        AttachMenu(installedList, row => (InstalledProgram)row.Tag!, null, null);
         tabs.Items.Add(Tab("Installed", installedList, bar));
 
         bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Check for updates"), CheckUpdates));
         bar.Children.Add(updateStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Update selected"), UpdateSelected, accent: true).Dock(Dock.Right));
-        updateList = Ui.List(("Program", 300, "PlainCell"), ("Installed", 150), ("New version", 150), ("Package", 260));
+        bar.Children.Add(Ui.Button(Ui.T("Update selected"), () => Update(Chosen(updateList).Select(row => (ProgramUpdate)row.Tag!).ToList()),
+                                   accent: true).Dock(Dock.Right));
+        updateList = Ui.List(("Program", 300, "CheckCell"), ("Installed", 150), ("New version", 150), ("Package", 260));
         updateStatus.Text = Ui.T("Updates come from winget, Windows' own package manager.");
+        AttachMenu(updateList, row => Programs.FindInstalled((ProgramUpdate)row.Tag!, programs), null, row => Update([(ProgramUpdate)row.Tag!]));
         tabs.Items.Add(Tab("Updates", updateList, bar));
 
-        // Ready lists of well-known apps, installed through winget like the updates.
+        // Ready lists of well-known apps, installed through winget, the Microsoft Store or their GitHub release.
         tabs.Items.Add(CatalogTab("Essential apps", Programs.EssentialApps));
         tabs.Items.Add(CatalogTab("Recommended apps", Programs.RecommendedApps));
         Children.Add(tabs);
@@ -66,40 +73,94 @@ public sealed class ProgramsPage : Page
         return new TabItem { Header = Ui.T(title), Content = body };
     }
 
+    /// <summary>The ticked rows; when none is ticked, the highlighted ones.</summary>
+    private static List<Row> Chosen(ListView list)
+    {
+        var ticked = list.Items.OfType<Row>().Where(row => row.Checked).ToList();
+        return ticked.Count > 0 ? ticked : Ui.Selected(list);
+    }
+
+    /// <summary>
+    /// The right-click menu, made for the row under the mouse: an installed program can be run,
+    /// shown in its folder and uninstalled (and updated, in the Updates list); an app that is not
+    /// installed can be installed or have its page opened.
+    /// </summary>
+    private void AttachMenu(ListView list, Func<Row, InstalledProgram?> installedOf, Func<Row, CatalogApp?>? appOf, Action<Row>? update)
+    {
+        var menu = new ContextMenu();
+        list.ContextMenu = menu;
+        list.ContextMenuOpening += (_, e) =>
+        {
+            menu.Items.Clear();
+            if (list.SelectedItem is not Row row)
+            {
+                e.Handled = true;
+                return;
+            }
+            var program = installedOf(row);
+            var app = appOf?.Invoke(row);
+            if (program is not null)
+            {
+                menu.Items.Add(Ui.Item("Run", () => Run(program)));
+                menu.Items.Add(Ui.Item("Open file location", () => OpenLocation(program)));
+                if (update is not null)
+                    menu.Items.Add(Ui.Item("Update", () => update(row)));
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Ui.Item("Uninstall…", () => Uninstall([program])));
+            }
+            else if (app is not null && app.Source != AppSource.Page)
+                menu.Items.Add(Ui.Item("Install", () => Install([app], catalogs.First(catalog => catalog.List == list).Status)));
+            if (app is not null)
+                menu.Items.Add(Ui.Item(app.Source == AppSource.Page ? "Open its page to get it" : "Open its web page", () => Shell.Open(app.Page)));
+            if (program is null && app is null)
+                menu.Items.Add(new MenuItem { Header = Ui.T("Not found among the installed programs."), IsEnabled = false });
+        };
+    }
+
     private TabItem CatalogTab(string title, CatalogApp[] apps)
     {
-        var list = Ui.List(("App", 260, "PlainCell"), ("Status", 120), ("What it does", 380), ("Package", 240));
-        var status = Ui.Muted(Ui.T("Select apps, then Install selected. Each installs from winget in a window of its own.")).Margin(10);
+        var list = Ui.List(("App", 260, "CheckCell"), ("Status", 120), ("What it does", 380), ("Package", 240));
+        var status = Ui.Muted(Ui.T("Tick apps, then Install selected. Each installs in a window of its own. Right-click an app for more.")).Margin(10);
         var bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Refresh"), RefreshInstalled));
         bar.Children.Add(status);
-        bar.Children.Add(Ui.Button(Ui.T("Install selected"), () => InstallSelected(list, status), accent: true).Dock(Dock.Right));
+        bar.Children.Add(Ui.Button(Ui.T("Install selected"), () => Install(Chosen(list).Select(row => (CatalogApp)row.Tag!).ToList(), status),
+                                   accent: true).Dock(Dock.Right));
+        AttachMenu(list, row => Programs.FindInstalled((CatalogApp)row.Tag!, programs), row => (CatalogApp)row.Tag!, null);
+        list.MouseDoubleClick += (_, e) =>
+        {
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Ui.RowAt(e.OriginalSource)?.Tag is CatalogApp app
+                && Programs.FindInstalled(app, programs) is { } program)
+                Run(program);
+        };
         catalogs.Add((list, apps, status));
         ShowCatalog(list, apps);
         return Tab(title, list, bar);
     }
 
-    private void ShowCatalog(ListView list, CatalogApp[] apps) =>
-        list.ItemsSource = apps.Select(app =>
-        {
-            var installed = Programs.IsInstalled(app, programs);
-            return new Row
+    /// <summary>Installed apps first (then the list's own order); a click on a heading sorts differently.</summary>
+    private void ShowCatalog(ListView list, CatalogApp[] apps)
+    {
+        var ticked = list.Items.OfType<Row>().Where(row => row.Checked).Select(row => ((CatalogApp)row.Tag!).Id).ToHashSet();
+        list.ItemsSource = apps
+            .Select(app => (App: app, Installed: Programs.IsInstalled(app, programs)))
+            .OrderByDescending(item => item.Installed)
+            .Select(item => new Row
             {
-                Name = app.Name, Tag = app, Dim = installed,
-                Cells = [Ui.T(app.Source == AppSource.Page ? "On its web page"
-                              : programs.Count > 0 ? installed ? "Is installed" : "Not installed" : ""),
-                         Ui.T(app.Description), app.Source == AppSource.Winget ? app.Id : app.Page],
-            };
-        }).ToList();
+                Name = item.App.Name, Tag = item.App, Dim = item.Installed, Checked = ticked.Contains(item.App.Id),
+                Cells = [Ui.T(item.App.Source == AppSource.Page ? "On its web page"
+                              : programs.Count > 0 ? item.Installed ? "Is installed" : "Not installed" : ""),
+                         Ui.T(item.App.Description), item.App.Source == AppSource.Winget ? item.App.Id : item.App.Page],
+            }).ToList();
+    }
 
-    private async void InstallSelected(ListView list, TextBlock status)
+    private async void Install(List<CatalogApp> apps, TextBlock status)
     {
         if (busy)
             return;
-        var apps = Ui.Selected(list).Select(row => (CatalogApp)row.Tag!).ToList();
         if (apps.Count == 0)
         {
-            Ui.Info("Programs", Ui.T("Select one or more apps first."));
+            Ui.Info("Programs", Ui.T("Tick or select one or more apps first."));
             return;
         }
         if (!Programs.WingetAvailable && apps.Any(app => app.Source is AppSource.Winget or AppSource.Store))
@@ -115,9 +176,8 @@ public sealed class ProgramsPage : Page
         {
             foreach (var app in apps)
             {
-                status.Text = Ui.T("Installing {0}: follow the winget window…", app.Name);
-                if (app.Source == AppSource.GitHub)
-                    status.Text = Ui.T("Downloading {0} from GitHub…", app.Name);
+                status.Text = app.Source == AppSource.GitHub ? Ui.T("Downloading {0} from GitHub…", app.Name)
+                                                             : Ui.T("Installing {0}: follow the winget window…", app.Name);
                 try
                 {
                     // Downloading a GitHub app's setup takes a while, so it happens off the window's thread.
@@ -136,7 +196,17 @@ public sealed class ProgramsPage : Page
             busy = false;
         }
         status.Text = Ui.T("Done. The list shows what is installed now.");
+        foreach (var (list, _, _) in catalogs)
+            foreach (var row in list.Items.OfType<Row>())
+                row.SetChecked(false);
         RefreshInstalled();
+    }
+
+    /// <summary>At launch: read the installed programs and ask winget for updates, so both tabs are ready when opened.</summary>
+    public void CheckAtLaunch()
+    {
+        Shown();
+        CheckUpdates();
     }
 
     /// <summary>Reading the list takes a moment, so it waits until the page is first opened.</summary>
@@ -191,61 +261,85 @@ public sealed class ProgramsPage : Page
         Shell.Open(launcher);
     }
 
-    private async void UninstallSelected()
+    private async void OpenLocation(InstalledProgram program)
+    {
+        var folder = await Task.Run(() => Programs.Folder(program));
+        if (folder is null)
+        {
+            Ui.Info("Programs", Ui.T("PC Butler could not find the folder {0} is installed in.", program.Name));
+            return;
+        }
+        Shell.Open(folder);
+    }
+
+    /// <summary>Uninstall the programs one after another, each with its own uninstaller and a look for what it left behind.</summary>
+    private async void Uninstall(List<InstalledProgram> chosen)
     {
         if (busy)
             return;
-        if (Ui.Selected(installedList).FirstOrDefault()?.Tag is not InstalledProgram program)
+        if (chosen.Count == 0)
         {
-            Ui.Info("Programs", Ui.T("Select a program first."));
+            Ui.Info("Programs", Ui.T("Tick or select a program first."));
             return;
         }
-        if (program.Name.StartsWith(AppInfo.Name, StringComparison.OrdinalIgnoreCase))
+        if (chosen.FirstOrDefault(program => program.Name.StartsWith(AppInfo.Name, StringComparison.OrdinalIgnoreCase)) is { } self)
         {
             Ui.Info("Programs", Ui.T("PC Butler can't uninstall itself while it is running. Use Windows' Settings for that."));
-            return;
+            chosen.Remove(self);
+            if (chosen.Count == 0)
+                return;
         }
-        if (!Ui.Ask("Uninstall", Ui.T("Uninstall {0}?\n\nIts own uninstaller will open. Afterwards PC Butler looks for what it left behind "
-                                      + "and lets you choose what to remove.", program.Name), warning: true))
+        var question = chosen.Count == 1
+            ? Ui.T("Uninstall {0}?\n\nIts own uninstaller will open. Afterwards PC Butler looks for what it left behind "
+                   + "and lets you choose what to remove.", chosen[0].Name)
+            : Ui.T("Uninstall these {0} programs, one after another?\n\n{1}\n\nEach one's own uninstaller will open.",
+                   chosen.Count, string.Join("\n", chosen.Select(program => program.Name)));
+        if (!Ui.Ask("Uninstall", question, warning: true))
             return;
         busy = true;
         try
         {
-            using var uninstaller = Programs.StartUninstall(program);
-            if (uninstaller is null)
-            {
-                Ui.Warn("Uninstall", Ui.T("The uninstaller of {0} could not be started.", program.Name));
-                return;
-            }
-            installedStatus.Text = Ui.T("Waiting for the uninstaller of {0}…", program.Name);
-            await uninstaller.WaitForExitAsync();
-            // Many uninstallers hand over to a second program and end at once, so the list is what tells when it is done.
-            for (var seconds = 0; seconds < 180 && Programs.StillInstalled(program); seconds++)
-                await Task.Delay(1000);
-            if (Programs.StillInstalled(program))
-            {
-                Ui.Info("Uninstall", Ui.T("{0} is still installed: the uninstaller was cancelled or has not finished yet.", program.Name));
-                return;
-            }
-            installedStatus.Text = Ui.T("Looking for what {0} left behind…", program.Name);
-            var leftovers = await Task.Run(() => Programs.Leftovers(program));
-            RefreshInstalled();
-            if (leftovers.Count == 0)
-            {
-                Ui.Info("Uninstall", Ui.T("{0} was uninstalled and left nothing behind.", program.Name));
-                return;
-            }
-            var chosen = LeftoversDialog.Ask(Main, program.Name, leftovers);
-            if (chosen.Count == 0)
-                return;
-            var errors = await Task.Run(() => Programs.RemoveLeftovers(chosen));
-            Ui.ReportResult(Ui.T("Removed {0} leftover(s) of {1}.", chosen.Count - errors.Count, program.Name), errors);
+            foreach (var program in chosen)
+                await UninstallOne(program);
         }
         finally
         {
             busy = false;
             installedStatus.Text = "";
+            RefreshInstalled();
         }
+    }
+
+    private async Task UninstallOne(InstalledProgram program)
+    {
+        using var uninstaller = Programs.StartUninstall(program);
+        if (uninstaller is null)
+        {
+            Ui.Warn("Uninstall", Ui.T("The uninstaller of {0} could not be started.", program.Name));
+            return;
+        }
+        installedStatus.Text = Ui.T("Waiting for the uninstaller of {0}…", program.Name);
+        await uninstaller.WaitForExitAsync();
+        // Many uninstallers hand over to a second program and end at once, so the list is what tells when it is done.
+        for (var seconds = 0; seconds < 180 && Programs.StillInstalled(program); seconds++)
+            await Task.Delay(1000);
+        if (Programs.StillInstalled(program))
+        {
+            Ui.Info("Uninstall", Ui.T("{0} is still installed: the uninstaller was cancelled or has not finished yet.", program.Name));
+            return;
+        }
+        installedStatus.Text = Ui.T("Looking for what {0} left behind…", program.Name);
+        var leftovers = await Task.Run(() => Programs.Leftovers(program));
+        if (leftovers.Count == 0)
+        {
+            Ui.Info("Uninstall", Ui.T("{0} was uninstalled and left nothing behind.", program.Name));
+            return;
+        }
+        var chosen = LeftoversDialog.Ask(Main, program.Name, leftovers);
+        if (chosen.Count == 0)
+            return;
+        var errors = await Task.Run(() => Programs.RemoveLeftovers(chosen));
+        Ui.ReportResult(Ui.T("Removed {0} leftover(s) of {1}.", chosen.Count - errors.Count, program.Name), errors);
     }
 
     // --- updates ---
@@ -280,14 +374,13 @@ public sealed class ProgramsPage : Page
         }
     }
 
-    private async void UpdateSelected()
+    private async void Update(List<ProgramUpdate> updates)
     {
         if (busy)
             return;
-        var updates = Ui.Selected(updateList).Select(row => (ProgramUpdate)row.Tag!).ToList();
         if (updates.Count == 0)
         {
-            Ui.Info("Updates", Ui.T("Check for updates, then select one or more programs."));
+            Ui.Info("Updates", Ui.T("Check for updates, then tick or select one or more programs."));
             return;
         }
         busy = true;
