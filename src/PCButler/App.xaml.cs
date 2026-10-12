@@ -17,8 +17,15 @@ namespace PCButler;
 /// </summary>
 public partial class App : Application
 {
-    private const string InstanceName = @"Local\PCButler.Instance";
-    private const string ShowSignalName = @"Local\PCButler.Show";
+    // A copy pointed at its own data folder (PCBUTLER_DATA, used for testing) counts as a
+    // separate program, so trying it out never disturbs the installed one.
+    private static readonly string Scope =
+        Environment.GetEnvironmentVariable("PCBUTLER_DATA") is { Length: > 0 } custom
+            ? "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                  System.Text.Encoding.UTF8.GetBytes(custom.ToLowerInvariant())))[..8]
+            : "";
+    private static readonly string InstanceName = @"Local\PCButler.Instance" + Scope;
+    private static readonly string ShowSignalName = @"Local\PCButler.Show" + Scope;
 
     private Mutex? instance;
     private EventWaitHandle? showSignal;

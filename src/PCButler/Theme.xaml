@@ -28,12 +28,18 @@
     <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Manrope, pack://application:,,,/PCButler;component/Fonts/#DM Sans, Segoe UI Semibold</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
-    <!-- Arabic text reads right to left, inside a layout that stays as it is. -->
+    <!-- In Arabic the whole window is laid out right to left (Ui.StyleWindow sets that). Each
+         piece of text still reads in its own direction: Arabic right to left, and file names,
+         paths and icon glyphs left to right, so they are never drawn mirrored. -->
     <local:TextDirection x:Key="TextDirection" />
-    <!-- Text sits on the left of its space, as in English, whichever way it reads. -->
+    <!-- "Left" here means the side text starts on: the right-hand side in a right-to-left window. -->
     <Style TargetType="{x:Type TextBlock}">
         <Setter Property="HorizontalAlignment" Value="Left" />
         <Setter Property="FlowDirection" Value="{Binding Text, RelativeSource={RelativeSource Self}, Converter={StaticResource TextDirection}}" />
+    </Style>
+    <!-- A right-to-left layout mirrors pictures too; the app icon must not flip. -->
+    <Style TargetType="{x:Type Image}">
+        <Setter Property="FlowDirection" Value="LeftToRight" />
     </Style>
 
     <Style TargetType="{x:Type ToolTip}">
@@ -215,6 +221,7 @@
                         <Border x:Name="Box" Width="18" Height="18" CornerRadius="3" Background="Transparent"
                                 BorderBrush="{StaticResource ControlLine}" BorderThickness="1" VerticalAlignment="Center">
                             <Path x:Name="Tick" Data="M 3.5,9 L 7.5,13 L 14,5" Stroke="{StaticResource PrimaryText}" StrokeThickness="2"
+                                  FlowDirection="LeftToRight"
                                   Visibility="Collapsed" />
                         </Border>
                         <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="False" />

@@ -281,7 +281,8 @@ public sealed class TopBar : Border
         BorderThickness = new Thickness(0, 0, 0, 1);
         var row = new DockPanel { LastChildFill = false, Margin = new Thickness(30, 0, 30, 0) };
         row.Children.Add(Ui.Row(0, Ui.Glyph("\uE838", 14), Ui.Muted(Ui.T("Workspace"), 12).Margin(10, 0, 8),
-                                Ui.Glyph("\uE76C", 10), page.Margin(8)));
+                                // The breadcrumb's chevron points the way the text reads.
+                                Ui.Glyph(Tr.IsArabic ? "\uE76B" : "\uE76C", 10), page.Margin(8)));
         row.Children.Add(Ui.Row(0, dot, status).Dock(Dock.Right));
         Child = row;
     }
@@ -340,7 +341,8 @@ public sealed class SplashWindow : Window
 
         // The icon between two corner marks, top-left and bottom-right, like the design.
         const double Stage = 150, Mark = 16;
-        var stage = new Canvas { Width = Stage, Height = Stage };
+        // The artwork is not mirrored in a right-to-left window.
+        var stage = new Canvas { Width = Stage, Height = Stage, FlowDirection = FlowDirection.LeftToRight };
         stage.Children.Add(new Polyline { Points = [new(0.5, Mark), new(0.5, 0.5), new(Mark, 0.5)], Stroke = Ui.Paint("ControlLine"), StrokeThickness = 1 });
         stage.Children.Add(new Polyline { Points = [new(Stage - Mark, Stage - 1.5), new(Stage - 1.5, Stage - 1.5), new(Stage - 1.5, Stage - Mark)],
                                            Stroke = Ui.Paint("ControlLine"), StrokeThickness = 1 });

@@ -208,6 +208,8 @@ public static class Ui
         window.Foreground = Paint("Text");
         window.FontFamily = (FontFamily)Application.Current.FindResource("TextFont");
         window.FontSize = 14;
+        // Arabic flips the whole layout: sidebar on the right, lists reading from the right.
+        window.FlowDirection = Tr.IsArabic ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         TextOptions.SetTextFormattingMode(window, TextFormattingMode.Display);
         window.SourceInitialized += (_, _) =>
         {
