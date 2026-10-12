@@ -484,21 +484,28 @@ public static partial class Programs
     /// <summary>Apps worth having: well-known, free and useful on most PCs.</summary>
     public static readonly CatalogApp[] RecommendedApps =
     [
+        new("WinRAR", "RARLab.WinRAR", "WinRAR", "Opens and makes rar and zip archives"),
+        new("Visual Studio Code", "Microsoft.VisualStudioCode", "Microsoft Visual Studio Code", "Code and text editor"),
+        new("Discord", "Discord.Discord", "Discord", "Voice, video and text chat"),
+        new("Google Chrome", "Google.Chrome", "Google Chrome", "Web browser"),
+        new("Steam", "Valve.Steam", "Steam", "Games store and launcher"),
+        new("Git (with Git Bash)", "Git.Git", "Git", "Version control, with the Git Bash terminal"),
+        new("Media Player Classic (MPC-HC)", "clsid2.mpc-hc", "MPC-HC", "A light video player that plays almost anything"),
+        new("TeraCopy", "CodeSector.TeraCopy", "TeraCopy", "Faster, safer file copying"),
+        new("WizTree", "AntibodySoftware.WizTree", "WizTree", "Shows what fills your drives, in seconds"),
         new("Everything", "voidtools.Everything", "Everything", "Finds any file on your PC the moment you type"),
         new("Microsoft PowerToys", "Microsoft.PowerToys", "PowerToys", "Extra tools for Windows from Microsoft"),
         new("ShareX", "ShareX.ShareX", "ShareX", "Screenshots and screen recordings"),
         new("Bitwarden", "Bitwarden.Bitwarden", "Bitwarden", "Keeps your passwords safe"),
         new("LibreOffice", "TheDocumentFoundation.LibreOffice", "LibreOffice", "Free office suite: documents, sheets and slides"),
-        new("Visual Studio Code", "Microsoft.VisualStudioCode", "Microsoft Visual Studio Code", "Code and text editor"),
         new("OBS Studio", "OBSProject.OBSStudio", "OBS Studio", "Records and streams your screen"),
-        new("TeraCopy", "CodeSector.TeraCopy", "TeraCopy", "Faster, safer file copying"),
-        new("Discord", "Discord.Discord", "Discord", "Voice, video and text chat"),
-        new("Steam", "Valve.Steam", "Steam", "Games store and launcher"),
     ];
 
     /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list.</summary>
     public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
-        installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase));
+        installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
+                                 // a whole name or word: "Git" is not "GitHub Desktop"
+                                 && (program.Name.Length == app.Match.Length || !char.IsLetterOrDigit(program.Name[app.Match.Length])));
 
     /// <summary>Install one app in a winget window of its own, so its questions and progress are visible.</summary>
     public static Process? StartInstall(CatalogApp app)
