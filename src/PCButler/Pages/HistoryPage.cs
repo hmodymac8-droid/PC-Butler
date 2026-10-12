@@ -47,7 +47,10 @@ public sealed class HistoryPage : Page
         next = Ui.Button(Ui.T("Next ›"), () => ShowPage(page + 1));
         footer.Children.Add(Ui.Row(0, Ui.Text(Ui.T("Rows per page")), pageSize.Margin(6, 0, 14), previous, pageLabel.Margin(6, 0, 6), next));
 
-        list = Ui.List(("File", 320, "FileCell"), ("When", 170), ("From", 170), ("To", 190), ("Status", 90));
+        var sortable = Ui.List(("File", 320, "FileCell"), ("When", 170), ("From", 170), ("To", 190), ("Status", 90));
+        // Only one page is in the list, so sorting re-reads the log, orders all of it and starts at page 1.
+        sortable.SortChanged += () => ShowPage(0);
+        list = sortable;
         Ui.AttachFileMenu(list, row => History.CurrentPath(((MoveRef)row.Tag!).Move), Main.RefreshPreview);
         panel.SetBody(list);
         Children.Add(panel);
@@ -95,6 +98,15 @@ public sealed class HistoryPage : Page
                     continue;
                 matches.Add((new MoveRef(run.Time, index, move), cells));
             }
+        }
+
+        if (list is SortableList { SortColumn: >= 0 } sorted)
+        {
+            // Order every match, not just the page on screen. OrderBy keeps equal rows newest first.
+            string Key((MoveRef Ref, string[] Cells) match) =>
+                sorted.SortColumn == 0 ? Path.GetFileName(match.Ref.Move[0]) : match.Cells[sorted.SortColumn - 1];
+            var comparer = Comparer<string>.Create(Ui.SmartCompare);
+            matches = (sorted.SortDescending ? matches.OrderByDescending(Key, comparer) : matches.OrderBy(Key, comparer)).ToList();
         }
 
         var size = int.Parse((string)pageSize.SelectedItem);

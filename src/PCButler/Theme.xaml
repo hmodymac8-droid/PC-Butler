@@ -416,6 +416,8 @@
         <Setter Property="Foreground" Value="{StaticResource Muted}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <!-- Clicking a heading sorts by that column (see SortableList). -->
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type GridViewColumnHeader}">
@@ -427,6 +429,11 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource Text}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
     <Style TargetType="{x:Type ListViewItem}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />

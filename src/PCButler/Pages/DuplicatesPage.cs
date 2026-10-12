@@ -353,13 +353,15 @@ public sealed class DuplicatesPage : Page
                 Name = Ui.T("Group {0}:  {1} files", group.Number, files.Count), Dim = true, CheckVisibility = Visibility.Collapsed,
                 Indent = new Thickness(16, 0, 0, 0), Tag = group,
                 Cells = [sameSize ? Ui.FormatSize(files[0].Size) : "", "", "", ""],
+                // Sorting by a column orders the files inside each group; the groups stay put.
+                SortGroup = shown.Count, SortHeader = true,
             });
             foreach (var entry in files)
             {
                 var parent = Path.GetDirectoryName(entry.Path) ?? "";
                 var row = new Row
                 {
-                    Name = entry.Name, Tag = entry, Indent = new Thickness(40, 0, 0, 0),
+                    Name = entry.Name, Tag = entry, Indent = new Thickness(40, 0, 0, 0), SortGroup = shown.Count,
                     Cells = [Ui.FormatSize(entry.Size), entry.Modified.ToString("yyyy-MM-dd HH:mm"),
                              Path.GetFileName(parent) is { Length: > 0 } leaf ? leaf : parent, entry.Path],
                 };

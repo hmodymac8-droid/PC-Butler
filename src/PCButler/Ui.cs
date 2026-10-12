@@ -241,7 +241,7 @@ public static class Ui
     /// "PlainCell"); the other columns show Row.Cells in order. The first column takes up the
     /// slack, and gives some back when the window is narrow.
     /// </summary>
-    public static ListView List((string Title, double Width, string Template) first, params (string Title, double Width)[] columns)
+    public static SortableList List((string Title, double Width, string Template) first, params (string Title, double Width)[] columns)
     {
         var view = new GridView { AllowsColumnReorder = false };
         view.Columns.Add(new GridViewColumn
@@ -256,7 +256,7 @@ public static class Ui
                 DisplayMemberBinding = new Binding($"Cells[{index}]"),
             });
         }
-        var list = new ListView { View = view, SelectionMode = SelectionMode.Extended };
+        var list = new SortableList { View = view, SelectionMode = SelectionMode.Extended };
         // Let the first column take up the slack, as the old program's lists did.
         list.SizeChanged += (_, _) =>
         {
@@ -267,6 +267,38 @@ public static class Ui
     }
 
     public static List<Row> Selected(ListView list) => list.SelectedItems.Cast<Row>().ToList();
+
+    /// <summary>
+    /// Compare two cells the way a person would: "9.8 KB" before "1.2 MB", "7 days" before
+    /// "12 days", and plain text without regard to case. Dates are written year first, so they
+    /// already sort correctly as text.
+    /// </summary>
+    public static int SmartCompare(string a, string b)
+    {
+        double? x = SortNumber(a), y = SortNumber(b);
+        if (x is not null && y is not null && x != y)
+            return x.Value.CompareTo(y.Value);
+        if (x is null != y is null)
+            return x is null ? 1 : -1; // numbers before words such as "never"
+        return string.Compare(a, b, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    /// <summary>The number a cell starts with (sizes in bytes), or null for text and dates.</summary>
+    private static double? SortNumber(string text)
+    {
+        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"^\s*\d{1,4}[-:/]\d"))
+            return null; // a date or a time
+        var match = System.Text.RegularExpressions.Regex.Match(text, @"^\s*(-?\d+(?:[.,]\d+)?)\s*(B|KB|MB|GB|TB)?\b");
+        if (!match.Success)
+            return null;
+        if (!double.TryParse(match.Groups[1].Value.Replace(',', '.'), System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out var number))
+            return null;
+        return number * match.Groups[2].Value switch
+        {
+            "KB" => 1024d, "MB" => 1024d * 1024, "GB" => 1024d * 1024 * 1024, "TB" => 1024d * 1024 * 1024 * 1024, _ => 1d,
+        };
+    }
 
     /// <summary>
     /// The right-click menu of a file list (show in Explorer, open, delete), and double-click to
@@ -358,6 +390,86 @@ public sealed class TextDirection : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>
+/// A list whose columns sort when their heading is clicked: first ascending, then descending,
+/// then back to the order the page gave. The heading shows an arrow while it sorts.
+/// </summary>
+public sealed class SortableList : ListView
+{
+    private string[]? titles; // the headings without arrows
+    private bool normalizing;
+
+    /// <summary>The sorted column (0 = the first, with the names), or -1 for the page's own order.</summary>
+    public int SortColumn { get; private set; } = -1;
+    public bool SortDescending { get; private set; }
+    /// <summary>Raised when the user clicks a heading (pages that show only part of their data re-read it).</summary>
+    public event Action? SortChanged;
+
+    public SortableList()
+    {
+        AddHandler(GridViewColumnHeader.ClickEvent, new RoutedEventHandler(HeaderClicked));
+    }
+
+    private void HeaderClicked(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not GridViewColumnHeader { Column: { } column } || View is not GridView view)
+            return;
+        var index = view.Columns.IndexOf(column);
+        if (index < 0)
+            return;
+        titles ??= view.Columns.Select(c => c.Header as string ?? "").ToArray();
+        if (SortColumn != index)
+            (SortColumn, SortDescending) = (index, false);
+        else if (!SortDescending)
+            SortDescending = true;
+        else
+            SortColumn = -1;
+        for (var i = 0; i < view.Columns.Count; i++)
+            view.Columns[i].Header = titles[i] + (i == SortColumn ? (SortDescending ? "  ▼" : "  ▲") : "");
+        ApplySort();
+        SortChanged?.Invoke();
+    }
+
+    protected override void OnItemsSourceChanged(System.Collections.IEnumerable oldValue, System.Collections.IEnumerable newValue)
+    {
+        base.OnItemsSourceChanged(oldValue, newValue);
+        if (normalizing)
+            return;
+        if (newValue is not null and not System.Collections.IList)
+        {
+            // Sorting needs a real list, not a query that is worked out again on every pass.
+            normalizing = true;
+            ItemsSource = newValue.Cast<object>().ToList();
+            normalizing = false;
+        }
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        if (ItemsSource is not null && CollectionViewSource.GetDefaultView(ItemsSource) is ListCollectionView view)
+            view.CustomSort = SortColumn < 0 ? null : new RowOrder(SortColumn, SortDescending);
+    }
+
+    private sealed class RowOrder(int column, bool descending) : System.Collections.IComparer
+    {
+        public int Compare(object? a, object? b)
+        {
+            if (a is not Row x || b is not Row y)
+                return 0;
+            // Groups keep their place, with the group's heading on top; sorting orders the rows inside.
+            if (x.SortGroup != y.SortGroup)
+                return x.SortGroup.CompareTo(y.SortGroup);
+            if (x.SortHeader != y.SortHeader)
+                return x.SortHeader ? -1 : 1;
+            var result = Ui.SmartCompare(Key(x), Key(y));
+            return descending ? -result : result;
+        }
+
+        private string Key(Row row) => column == 0 ? row.Name : column - 1 < row.Cells.Length ? row.Cells[column - 1] : "";
+    }
+}
+
 /// <summary>One line of a list. Cells are the text of the columns after the first.</summary>
 public sealed class Row : INotifyPropertyChanged
 {
@@ -376,6 +488,10 @@ public sealed class Row : INotifyPropertyChanged
     public bool Checked { get => isChecked; set { if (isChecked != value) { isChecked = value; Changed(nameof(Checked)); CheckedChanged?.Invoke(this); } } }
     public Visibility CheckVisibility { get; set; } = Visibility.Visible;
     public Thickness Indent { get; set; } = new(16, 0, 0, 0);
+    /// <summary>Rows with the same number stay together when the list is sorted (duplicate groups).</summary>
+    public int SortGroup { get; set; }
+    /// <summary>The heading of its group: always above the group's other rows.</summary>
+    public bool SortHeader { get; set; }
     /// <summary>What the row stands for (a planned move, a vault item...).</summary>
     public object? Tag { get; set; }
     public Action<Row>? CheckedChanged { get; set; }
