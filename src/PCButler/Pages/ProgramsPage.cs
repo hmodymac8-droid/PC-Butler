@@ -86,7 +86,9 @@ public sealed class ProgramsPage : Page
             return new Row
             {
                 Name = app.Name, Tag = app, Dim = installed,
-                Cells = [Ui.T(programs.Count > 0 ? installed ? "Is installed" : "Not installed" : ""), Ui.T(app.Description), app.Id],
+                Cells = [Ui.T(app.Source == AppSource.Page ? "On its web page"
+                              : programs.Count > 0 ? installed ? "Is installed" : "Not installed" : ""),
+                         Ui.T(app.Description), app.Source == AppSource.Winget ? app.Id : app.Page],
             };
         }).ToList();
 
@@ -100,7 +102,7 @@ public sealed class ProgramsPage : Page
             Ui.Info("Programs", Ui.T("Select one or more apps first."));
             return;
         }
-        if (!Programs.WingetAvailable)
+        if (!Programs.WingetAvailable && apps.Any(app => app.Source is AppSource.Winget or AppSource.Store))
         {
             Ui.Warn("Programs", Ui.T("winget is not installed on this PC (it comes with App Installer from the Microsoft Store)."));
             return;
@@ -114,9 +116,19 @@ public sealed class ProgramsPage : Page
             foreach (var app in apps)
             {
                 status.Text = Ui.T("Installing {0}: follow the winget window…", app.Name);
-                using var winget = Programs.StartInstall(app);
-                if (winget is not null)
-                    await winget.WaitForExitAsync();
+                if (app.Source == AppSource.GitHub)
+                    status.Text = Ui.T("Downloading {0} from GitHub…", app.Name);
+                try
+                {
+                    // Downloading a GitHub app's setup takes a while, so it happens off the window's thread.
+                    using var installer = await Task.Run(() => Programs.StartInstall(app));
+                    if (installer is not null)
+                        await installer.WaitForExitAsync();
+                }
+                catch (Exception error) when (error is System.IO.IOException or System.ComponentModel.Win32Exception)
+                {
+                    Ui.Warn("Programs", Ui.T("{0} could not be installed: {1}", app.Name, error.Message));
+                }
             }
         }
         finally

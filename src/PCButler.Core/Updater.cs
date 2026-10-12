@@ -30,7 +30,7 @@ public static class Updater
         return 0;
     }
 
-    private static HttpClient Client(int seconds)
+    internal static HttpClient Client(int seconds)
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(seconds) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("PCButler");

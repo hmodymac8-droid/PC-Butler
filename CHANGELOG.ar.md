@@ -7,6 +7,7 @@
 
 - الإعدادات: مفتاح Windows Sandbox يفعّل نسخة ويندوز المؤقتة الآمنة أو يوقفها (بصلاحيات المسؤول وإعادة تشغيل)، مع زر لفتحها. يحتاج إلى ويندوز Pro أو Enterprise أو Education.
 - البرامج: أُعيد ترتيب قائمتي التطبيقات الأساسية والموصى بها. الأساسية: Chrome وWinRAR وVisual C++ Redistributable و.NET Desktop Runtime 8 وDiscord وSteam وGit وMPC-HC وVisual Studio Code وTeraCopy وWizTree. والموصى بها أُضيف إليها GitHub Desktop وMSI Afterburner.
+- التطبيقات الموصى بها: أُضيف EchoSub وEchoSub Lens وATS CV Studio (تُثبَّت من آخر إصدار لها على GitHub بعد التحقق من بصمتها)، وAndroidDC (يفتح صفحته)، وPrayer Times Reminder (من متجر مايكروسوفت).
 
 ## 1.11.1
 

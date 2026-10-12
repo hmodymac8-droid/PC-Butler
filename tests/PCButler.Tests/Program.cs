@@ -266,6 +266,13 @@ var git = Programs.EssentialApps.First(app => app.Id == "Git.Git");
 Check(Programs.IsInstalled(git, [new InstalledProgram { Name = "Git", Hive = "HKCU", Key = "x" }]) && !Programs.IsInstalled(git, [new InstalledProgram { Name = "GitHub Desktop", Hive = "HKCU", Key = "x" }])
       && Programs.IsInstalled(Programs.EssentialApps.First(app => app.Id == "Microsoft.DotNet.DesktopRuntime.8"),
                               [new InstalledProgram { Name = "Microsoft Windows Desktop Runtime - 8.0.11 (x64)", Hive = "HKCU", Key = "x" }]), "app lists match whole names");
+var echo = Programs.RecommendedApps.First(app => app.Id == "mPhpMaster/echo-sub");
+Check(Programs.IsInstalled(echo, [new InstalledProgram { Name = "EchoSub", Hive = "HKCU", Key = "x" }])
+      && !Programs.IsInstalled(echo, [new InstalledProgram { Name = "EchoSub Lens", Hive = "HKCU", Key = "x" }]), "an exact app name is not taken from a longer one");
+// A GitHub app's setup comes down whole and matches its published checksum (it is not run).
+var lensSetup = Programs.DownloadRelease(Programs.RecommendedApps.First(app => app.Id == "mPhpMaster/echo-sub-lens"));
+Check(File.Exists(lensSetup) && new FileInfo(lensSetup).Length > 1_000_000, "a GitHub app's setup is downloaded and checked");
+File.Delete(lensSetup);
 Check(installed.Count > 3 && installed.All(p => p.Name.Length > 0 && (p.UninstallCommand.Length > 0 || p.Msi)), $"installed programs are listed ({installed.Count})");
 Check(Programs.CleanName("Example App 2.1.0 (64-bit)") == "Example App" && Programs.CleanName("Tool v3.2 x64") == "Tool"
       && Programs.CleanName("7-Zip 24.08 (x64)") == "7-Zip" && Programs.CleanName("Microsoft") == "" && Programs.CleanName("App 2") == "",

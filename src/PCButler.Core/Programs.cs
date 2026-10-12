@@ -499,22 +499,46 @@ public static partial class Programs
         new("Bitwarden", "Bitwarden.Bitwarden", "Bitwarden", "Keeps your passwords safe"),
         new("LibreOffice", "TheDocumentFoundation.LibreOffice", "LibreOffice", "Free office suite: documents, sheets and slides"),
         new("OBS Studio", "OBSProject.OBSStudio", "OBS Studio", "Records and streams your screen"),
+        new("EchoSub", "mPhpMaster/echo-sub", "EchoSub", "Live, translated captions for anything your PC plays", AppSource.GitHub, Exact: true),
+        new("EchoSub Lens", "mPhpMaster/echo-sub-lens", "EchoSub Lens", "Translates the text on your screen, in place", AppSource.GitHub),
+        new("ATS CV Studio", "mPhpMaster/ats-cv-studio", "ATS CV Studio", "Builds ATS-friendly CVs and checks any CV, in English and Arabic",
+            AppSource.GitHub),
+        new("AndroidDC", "mPhpMaster/androiddc", "AndroidDC", "Controls an Android phone from Windows over adb: mirroring, files, apps and more",
+            AppSource.Page),
+        new("Prayer Times Reminder", "9PFTWDWLNL7C", "Prayer Times Reminder", "Reminds you of prayer times and takes a break for them",
+            AppSource.Store),
     ];
 
     /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list.</summary>
     public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
-        installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
-                                 // a whole name or word: "Git" is not "GitHub Desktop"
-                                 && (program.Name.Length == app.Match.Length || !char.IsLetterOrDigit(program.Name[app.Match.Length])));
+        app.Source != AppSource.Page
+        && installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
+                                    // a whole name or word: "Git" is not "GitHub Desktop"
+                                    && (program.Name.Length == app.Match.Length
+                                        || !app.Exact && !char.IsLetterOrDigit(program.Name[app.Match.Length])));
 
-    /// <summary>Install one app in a winget window of its own, so its questions and progress are visible.</summary>
+    /// <summary>
+    /// Start installing one app, with its own window so its questions and progress are visible:
+    /// winget for winget and Microsoft Store apps, the release's setup file for GitHub apps.
+    /// An app with only a page gets that page opened, and null back. Throws IOException when
+    /// a GitHub download fails.
+    /// </summary>
     public static Process? StartInstall(CatalogApp app)
     {
+        switch (app.Source)
+        {
+            case AppSource.Page:
+                Shell.Open(app.Page);
+                return null;
+            case AppSource.GitHub:
+                return Process.Start(new ProcessStartInfo(DownloadRelease(app)) { UseShellExecute = true });
+        }
         if (!WingetAvailable || !PackageId().IsMatch(app.Id))
             return null;
+        var source = app.Source == AppSource.Store ? "msstore" : "winget";
         try
         {
-            return Process.Start(new ProcessStartInfo(Winget, $"install --id {app.Id} --exact --source winget") { UseShellExecute = true });
+            return Process.Start(new ProcessStartInfo(Winget, $"install --id {app.Id} --exact --source {source}") { UseShellExecute = true });
         }
         catch (System.ComponentModel.Win32Exception error)
         {
@@ -522,7 +546,60 @@ public static partial class Programs
             return null;
         }
     }
+
+    /// <summary>The setup file of the app's latest GitHub release, downloaded and checked against its .sha256 when it has one.</summary>
+    public static string DownloadRelease(CatalogApp app)
+    {
+        try
+        {
+            using var client = Updater.Client(600);
+            using var release = System.Text.Json.JsonDocument.Parse(
+                client.GetStringAsync($"https://api.github.com/repos/{app.Id}/releases/latest").GetAwaiter().GetResult());
+            var assets = release.RootElement.GetProperty("assets").EnumerateArray()
+                .Select(asset => (Name: asset.GetProperty("name").GetString() ?? "", Url: asset.GetProperty("browser_download_url").GetString() ?? ""))
+                .ToList();
+            var setup = assets.FirstOrDefault(asset => asset.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                                                       && asset.Name.Contains("setup", StringComparison.OrdinalIgnoreCase));
+            if (setup.Url.Length == 0 || Path.GetFileName(setup.Name) != setup.Name)
+                throw new IOException($"the latest release of {app.Name} has no setup file");
+            var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "PCButlerApps")).FullName;
+            var target = Path.Combine(folder, setup.Name);
+            using (var download = client.GetStreamAsync(setup.Url).GetAwaiter().GetResult())
+            using (var file = File.Create(target))
+                download.CopyTo(file);
+            var check = assets.FirstOrDefault(asset => asset.Name.Equals(setup.Name + ".sha256", StringComparison.OrdinalIgnoreCase));
+            if (check.Url.Length > 0)
+            {
+                var expected = client.GetStringAsync(check.Url).GetAwaiter().GetResult().Trim().Split(' ', '\t')[0];
+                using var stream = File.OpenRead(target);
+                var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+                if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    stream.Dispose();
+                    File.Delete(target);
+                    throw new IOException($"the download of {app.Name} did not match its checksum");
+                }
+            }
+            return target;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException
+                                          or KeyNotFoundException or InvalidOperationException)
+        {
+            throw new IOException(error.Message, error);
+        }
+    }
 }
 
+public enum AppSource { Winget, Store, GitHub, Page }
+
 /// <summary>An app that can be installed from the Programs page: its name, winget package, the start of its installed name, and what it does.</summary>
-public sealed record CatalogApp(string Name, string Id, string Match, string Description);
+/// Id is a winget or Microsoft Store package, or "owner/repo" on GitHub. Exact: only that very name counts as installed.
+public sealed record CatalogApp(string Name, string Id, string Match, string Description, AppSource Source = AppSource.Winget, bool Exact = false)
+{
+    public string Page => Source switch
+    {
+        AppSource.GitHub or AppSource.Page => $"https://github.com/{Id}",
+        AppSource.Store => $"https://apps.microsoft.com/detail/{Id.ToLowerInvariant()}",
+        _ => $"https://winstall.app/apps/{Id}",
+    };
+}

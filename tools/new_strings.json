@@ -1,11 +1,10 @@
 {
- "Windows Sandbox": "Windows Sandbox (البيئة المعزولة)",
- "Open Windows Sandbox": "فتح Windows Sandbox",
- "Windows Sandbox could not be started. If you just turned it on, restart the PC first.": "تعذّر تشغيل Windows Sandbox. إذا فعّلته للتو فأعد تشغيل الجهاز أولًا.",
- "Turn on Windows Sandbox?\n\nWindows asks for administrator rights, and the PC must restart before you can use it.": "تفعيل Windows Sandbox؟\n\nسيطلب ويندوز صلاحيات المسؤول، ويجب إعادة تشغيل الجهاز قبل أن تستخدمه.",
- "Turn off Windows Sandbox?\n\nWindows asks for administrator rights, and the change is finished by a restart.": "إيقاف Windows Sandbox؟\n\nسيطلب ويندوز صلاحيات المسؤول، ويكتمل التغيير بعد إعادة التشغيل.",
- "Windows Sandbox could not be changed: {0}\n\nIt needs Windows Pro, Enterprise or Education, and virtualization turned on in the PC's firmware (BIOS/UEFI).": "تعذّر تغيير Windows Sandbox: {0}\n\nيحتاج إلى ويندوز Pro أو Enterprise أو Education، وتفعيل المحاكاة الافتراضية (Virtualization) في إعدادات BIOS/UEFI.",
- "Done. Restart the PC now to finish?\n\nSave your work in other programs first.": "تم. إعادة تشغيل الجهاز الآن لإكمال التغيير؟\n\nاحفظ عملك في البرامج الأخرى أولًا.",
- "Windows Sandbox needs Windows Pro, Enterprise or Education.": "يحتاج Windows Sandbox إلى ويندوز Pro أو Enterprise أو Education.",
- "A throwaway copy of Windows for trying files and programs safely. Everything in it is deleted when you close it.": "نسخة مؤقتة من ويندوز لتجربة الملفات والبرامج بأمان. كل ما فيها يُحذف عند إغلاقها."
+ "Live, translated captions for anything your PC plays": "ترجمة فورية مكتوبة لكل ما يشغّله جهازك",
+ "Translates the text on your screen, in place": "يترجم النص على شاشتك في مكانه",
+ "Builds ATS-friendly CVs and checks any CV, in English and Arabic": "ينشئ سيرًا ذاتية متوافقة مع أنظمة ATS ويفحص أي سيرة، بالعربية والإنجليزية",
+ "Controls an Android phone from Windows over adb: mirroring, files, apps and more": "يتحكم في جوال أندرويد من ويندوز عبر adb: عرض الشاشة والملفات والتطبيقات وغيرها",
+ "Reminds you of prayer times and takes a break for them": "يذكّرك بأوقات الصلاة ويأخذ استراحة لها",
+ "On its web page": "من صفحته",
+ "Downloading {0} from GitHub…": "جارٍ تنزيل {0} من GitHub…",
+ "{0} could not be installed: {1}": "تعذّر تثبيت {0}: {1}"
 }
