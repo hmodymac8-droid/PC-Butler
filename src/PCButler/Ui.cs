@@ -21,7 +21,7 @@ public static class Ui
     public static FontFamily DisplayFont => (FontFamily)Application.Current.FindResource("DisplayFont");
 
     public const string Eyebrow = "YOUR DIGITAL SPACE, SORTED";
-    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#e581bc", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
+    private static readonly string[] Tones = ["#42d8a5", "#5aabf1", "#edb755", "#e581bc", "#b697f1", "#5cc6d6", "#d99a6c", "#9ccf6a"];
     private static readonly Dictionary<string, string> ToneOf = new(StringComparer.OrdinalIgnoreCase);
 
     public static string T(string english, params object[] arguments) => Tr.T(english, arguments);
@@ -151,7 +151,7 @@ public static class Ui
         else
         {
             var tone = Tone(group);
-            (back, fore) = (new SolidColorBrush(Mix(tone, "#141517", 0.14)), Hex(tone));
+            (back, fore) = (new SolidColorBrush(Mix(tone, "#101216", 0.14)), Hex(tone));
         }
         return (back, fore, label, label.Length <= 3 ? 10.5 : 8.5);
     }
@@ -218,7 +218,7 @@ public static class Ui
             const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
             DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
             // Windows 11: paint the title bar in the sidebar colour (COLORREF is 0x00BBGGRR).
-            var caption = 0x000c0a09;
+            var caption = 0x00090705;
             const int DWMWA_CAPTION_COLOR = 35;
             DwmSetWindowAttribute(handle, DWMWA_CAPTION_COLOR, ref caption, sizeof(int));
         };
@@ -527,9 +527,7 @@ public sealed class StatCard : Border
 
     public StatCard(string caption, string glyph)
     {
-        Background = Ui.Paint("Card");
-        BorderBrush = Ui.Paint("Line");
-        BorderThickness = new Thickness(1);
+        Widgets.StyleCard(this);
         Padding = new Thickness(18, 14, 18, 14);
         var top = new DockPanel { LastChildFill = false };
         top.Children.Add(Ui.Muted(Ui.T(caption), 13));
@@ -575,9 +573,7 @@ public sealed class CardPanel : Border
 
     public CardPanel(string title, string glyph)
     {
-        Background = Ui.Paint("Card");
-        BorderBrush = Ui.Paint("Line");
-        BorderThickness = new Thickness(1);
+        Widgets.StyleCard(this);
         countBadge = new Border
         {
             Background = Ui.Paint("Secondary"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1),

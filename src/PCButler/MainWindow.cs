@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window
     public DuplicatesPage Duplicates { get; }
     public HistoryPage History { get; }
     public VaultPage Vault { get; }
+    private readonly Dictionary<string, string> glyphs = [];
     public ShredderPage Shredder { get; }
     public SettingsPage Settings { get; }
     public AboutPage About { get; }
@@ -103,6 +104,7 @@ public sealed partial class MainWindow : Window
             page.Visibility = Visibility.Collapsed;
             pageHost.Children.Add(page);
             pages[key] = (page, Ui.T(name));
+            glyphs[key] = glyph;
             sidebar.Add(key, glyph, Ui.T(name), bottom);
         }
         sidebar.ShowStorage(ConfigStore.DetectDownloadsFolder());
@@ -152,7 +154,7 @@ public sealed partial class MainWindow : Window
         var (shown, name) = pages[key];
         shown.Visibility = Visibility.Visible;
         sidebar.Select(key);
-        topBar.SetPage(name);
+        topBar.SetPage(glyphs[key], name);
         shown.Shown();
     }
 

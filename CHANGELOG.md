@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.10.0
+
+- New look: the new PC Butler logo, a refreshed colour palette and the Manrope typeface.
+- Home page: ring gauges for the processor, graphics card, memory and time since the last restart, a free-space bar, and two panels for storage and the neatness score.
+- Sidebar and top bar: the logo beside the name, the open page marked with a dot, and a simpler top bar.
+
 ## 1.9.0
 
 - Shredder: deep delete. Files are overwritten with random data and then deleted, so recovery tools find nothing. It has its own page and cannot be undone.

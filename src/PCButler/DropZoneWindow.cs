@@ -38,7 +38,7 @@ public sealed class DropZoneWindow : Window
 
         label = Ui.Text(Ui.T("Drop here"), 12, "Muted");
         label.HorizontalAlignment = HorizontalAlignment.Center;
-        var icon = new Image { Source = Ui.AppIcon(), Width = 40, Height = 40, Margin = new Thickness(0, 0, 0, 8) };
+        var icon = new Image { Source = Ui.AppIcon(), Width = 52, Height = 52, Margin = new Thickness(0, 0, 0, 2) };
         tile = new Border
         {
             CornerRadius = new CornerRadius(18), Background = Ui.Paint("Card"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1.5),

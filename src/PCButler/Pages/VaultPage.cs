@@ -51,7 +51,7 @@ public sealed class VaultPage : Page
         var box = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 24, 0, 0), Width = 440 };
         box.Children.Add(new Border
         {
-            Background = new SolidColorBrush(Ui.Mix("#48d7a1", "#0d0e11", 0.10)), Padding = new Thickness(26, 22, 26, 22),
+            Background = new SolidColorBrush(Ui.Mix("#42d8a5", "#080a0e", 0.10)), Padding = new Thickness(26, 22, 26, 22),
             HorizontalAlignment = HorizontalAlignment.Center, Child = Ui.Glyph("\uE72E", 34, "Primary"),
         });
         var (heading, intro) = create

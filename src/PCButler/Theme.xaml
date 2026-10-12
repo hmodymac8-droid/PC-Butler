@@ -1,31 +1,33 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 <!-- Copyright (c) 2026 hmodymac8-droid -->
-<!-- The look of every control: a near-black workspace with one green accent. -->
+<!-- The look of every control: a near-black, slightly blue workspace with one mint accent. -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:local="clr-namespace:PCButler">
 
-    <Color x:Key="BackgroundColor">#0d0e11</Color>
-    <SolidColorBrush x:Key="Background" Color="#0d0e11" />
-    <SolidColorBrush x:Key="Card" Color="#141517" />
-    <SolidColorBrush x:Key="SidebarBack" Color="#090a0c" />
-    <SolidColorBrush x:Key="Secondary" Color="#1c1e21" />
-    <SolidColorBrush x:Key="Raised" Color="#24272a" />
-    <SolidColorBrush x:Key="Line" Color="#2a2b2e" />
+    <Color x:Key="BackgroundColor">#080a0e</Color>
+    <SolidColorBrush x:Key="Background" Color="#080a0e" />
+    <SolidColorBrush x:Key="Card" Color="#101216" />
+    <SolidColorBrush x:Key="SidebarBack" Color="#050709" />
+    <SolidColorBrush x:Key="Secondary" Color="#181b1f" />
+    <SolidColorBrush x:Key="Raised" Color="#23272c" />
+    <SolidColorBrush x:Key="Line" Color="#22252b" />
     <SolidColorBrush x:Key="ControlLine" Color="#7a7d82" />
-    <SolidColorBrush x:Key="Text" Color="#e9ebee" />
-    <SolidColorBrush x:Key="Muted" Color="#a7abb1" />
+    <SolidColorBrush x:Key="Text" Color="#e8ebf0" />
+    <SolidColorBrush x:Key="Muted" Color="#8a9098" />
     <SolidColorBrush x:Key="Dim" Color="#5c5f64" />
-    <SolidColorBrush x:Key="Primary" Color="#48d7a1" />
-    <SolidColorBrush x:Key="PrimaryHover" Color="#62e0b0" />
-    <SolidColorBrush x:Key="PrimaryText" Color="#041b12" />
-    <SolidColorBrush x:Key="PrimaryTint" Color="#12271f" />
-    <SolidColorBrush x:Key="Amber" Color="#e6b55d" />
+    <SolidColorBrush x:Key="Primary" Color="#42d8a5" />
+    <SolidColorBrush x:Key="PrimaryHover" Color="#5fe0b6" />
+    <SolidColorBrush x:Key="PrimaryText" Color="#06150f" />
+    <SolidColorBrush x:Key="PrimaryTint" Color="#0a231b" />
+    <SolidColorBrush x:Key="Amber" Color="#edb755" />
     <SolidColorBrush x:Key="Red" Color="#f45a56" />
+    <SolidColorBrush x:Key="Blue" Color="#5aabf1" />
+    <SolidColorBrush x:Key="Lilac" Color="#b697f1" />
 
-    <!-- DM Sans is bundled; Segoe UI covers anything it lacks (Arabic). -->
-    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler;component/Fonts/#DM Sans, Segoe UI</FontFamily>
-    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Manrope, pack://application:,,,/PCButler;component/Fonts/#DM Sans, Segoe UI Semibold</FontFamily>
+    <!-- Manrope for text and Sora for headings and figures, both bundled; Segoe UI covers what they lack (Arabic). -->
+    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler;component/Fonts/#Manrope, Segoe UI</FontFamily>
+    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Sora, pack://application:,,,/PCButler;component/Fonts/#Manrope, Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
     <!-- In Arabic the whole window is laid out right to left (Ui.StyleWindow sets that). Each

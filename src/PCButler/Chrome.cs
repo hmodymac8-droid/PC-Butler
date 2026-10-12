@@ -20,6 +20,7 @@ public abstract class Page : DockPanel
     private readonly TextBlock eyebrow;
     private readonly TextBlock description;
     private readonly DockPanel header;
+    private readonly StackPanel heading;
     private readonly List<FrameworkElement> statRows = [];
 
     protected MainWindow Main { get; }
@@ -36,8 +37,17 @@ public abstract class Page : DockPanel
         var titleText = Ui.Text(Ui.T(title), 27, weight: FontWeights.Bold);
         titleText.FontFamily = Ui.DisplayFont;
         description = Ui.Muted(Ui.T(descriptionText)).Margin(0, 4);
-        header.Children.Add(new StackPanel { Children = { eyebrow, titleText, description } });
+        heading = new StackPanel { Children = { eyebrow, titleText, description } };
+        header.Children.Add(heading);
         Children.Add(header.Dock(Dock.Top));
+    }
+
+    /// <summary>The Home page shows the version in a pill where other pages have their headline.</summary>
+    protected void ShowVersionInsteadOfHeading()
+    {
+        heading.Visibility = Visibility.Collapsed;
+        header.Margin = new Thickness(0, 0, 0, 12);
+        header.Children.Add(Widgets.VersionPill());
     }
 
     /// <summary>Add a page button to the header, to the left of those added before.</summary>
@@ -85,7 +95,7 @@ public abstract class Page : DockPanel
 
 /// <summary>
 /// Navigation down the left: the brand, the main pages, and at the bottom the disk space,
-/// Settings, Help &amp; about, the version and a Donate link.
+/// Settings, Help &amp; about and a link to support the creator.
 /// </summary>
 public sealed class Sidebar : Border
 {
@@ -95,7 +105,7 @@ public sealed class Sidebar : Border
     private readonly Action<string> onSelect;
     private readonly StackPanel storage;
     private readonly Border barFill = new() { Height = 5, HorizontalAlignment = HorizontalAlignment.Left };
-    private readonly Grid bar = new() { Height = 5, Background = Ui.Paint("Secondary"), Margin = new Thickness(0, 10, 0, 10) };
+    private readonly Grid bar = new() { Height = 5, Background = Ui.Paint("Raised"), Margin = new Thickness(0, 10, 0, 10) };
     private readonly TextBlock used = Ui.Muted("", 11);
     private readonly TextBlock total = Ui.Muted("", 11);
     private string? selected;
@@ -104,25 +114,21 @@ public sealed class Sidebar : Border
     public Sidebar(Action<string> onSelect)
     {
         this.onSelect = onSelect;
-        Width = 228;
+        Width = 242;
         Background = Ui.Paint("SidebarBack");
         BorderBrush = Ui.Paint("Line");
         BorderThickness = new Thickness(0, 0, 1, 0);
         var layout = new DockPanel();
 
-        // The brand: the icon, and the name in two lines ending in an accent full stop. It stays in every language.
-        var mark = new Image { Source = Ui.AppIcon(), Width = 42, Height = 42 };
+        // The brand: the logo, and the name ending in an accent full stop. It stays in every language.
+        var mark = new Image { Source = Ui.AppIcon(), Width = 66, Height = 66 };
         RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
-        var parts = AppInfo.Name.Split(' ', 2);
-        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 15, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
-                                   VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0), LineHeight = 20 };
-        name.Inlines.Add(parts[0]);
-        name.Inlines.Add(new System.Windows.Documents.LineBreak());
-        name.Inlines.Add(parts.Length > 1 ? parts[1] : "");
+        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+                                   VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        name.Inlines.Add(AppInfo.Name);
         name.Inlines.Add(new System.Windows.Documents.Run(".") { Foreground = Ui.Paint("Primary") });
-        var brand = Ui.Row(0, mark, name).Margin(22, 26, 22, 0);
+        var brand = Ui.Row(0, mark, name).Margin(14, 18, 8, 20);
         layout.Children.Add(brand.Dock(Dock.Top));
-        layout.Children.Add(Ui.Text(Ui.T("WORKSPACE"), 10, "Muted", FontWeights.Bold).Margin(28, 30, 0, 8).Dock(Dock.Top));
 
         // The disk the downloads are on, like the design's "Local storage" bar.
         var bottom = new StackPanel { Margin = new Thickness(14, 0, 14, 16) };
@@ -139,13 +145,10 @@ public sealed class Sidebar : Border
         bottom.Children.Add(storage);
         bottom.Children.Add(bottomItems);
 
-        var version = new DockPanel { LastChildFill = false, Margin = new Thickness(14, 10, 14, 0) };
-        version.Children.Add(Ui.Muted(Ui.T("Version {0}", AppInfo.Version), 11));
-        var donate = Ui.Text(Ui.T("Donate") + " ↗", 11, "Primary").Dock(Dock.Right);
-        donate.Cursor = Cursors.Hand;
-        donate.MouseLeftButtonUp += (_, _) => Shell.Open(AppInfo.DonateUrl);
-        version.Children.Add(donate);
-        bottom.Children.Add(version);
+        var support = Ui.Text(Ui.T("Support the creator") + " ↗", 12, "Primary", FontWeights.SemiBold).Margin(14, 12, 14, 0);
+        support.Cursor = Cursors.Hand;
+        support.MouseLeftButtonUp += (_, _) => Shell.Open(AppInfo.DonateUrl);
+        bottom.Children.Add(support);
         layout.Children.Add(bottom.Dock(Dock.Bottom));
         layout.Children.Add(main);
         Child = layout;
@@ -197,12 +200,14 @@ public sealed class Sidebar : Border
 /// <summary>One sidebar entry: a glyph, the page name and an optional count badge.</summary>
 public sealed class NavItem : Border
 {
-    private static readonly Brush CurrentFill = new SolidColorBrush(Ui.Mix("#48d7a1", "#090a0c", 0.10));
-    private static readonly Brush BadgeFill = new SolidColorBrush(Ui.Mix("#48d7a1", "#090a0c", 0.12));
+    private static readonly Brush CurrentFill = Ui.Paint("PrimaryTint");
+    private static readonly Brush BadgeFill = new SolidColorBrush(Ui.Mix("#42d8a5", "#050709", 0.12));
     private readonly TextBlock glyph;
     private readonly TextBlock text;
     private readonly TextBlock badge = new() { FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border badgeBox;
+    private readonly Ellipse currentDot = new() { Width = 5, Height = 5, Fill = Ui.Paint("Primary"), VerticalAlignment = VerticalAlignment.Center,
+                                                 Margin = new Thickness(0, 0, 15, 0), Visibility = Visibility.Collapsed };
     private readonly Action onClick;
     private bool current;
 
@@ -210,7 +215,7 @@ public sealed class NavItem : Border
     {
         this.onClick = onClick;
         System.Windows.Automation.AutomationProperties.SetName(this, label);
-        Height = 42;
+        Height = 40;
         CornerRadius = new CornerRadius(6);
         Margin = new Thickness(0, 2, 0, 2);
         Cursor = Cursors.Hand;
@@ -222,6 +227,7 @@ public sealed class NavItem : Border
         var layout = new DockPanel { LastChildFill = false };
         layout.Children.Add(glyph);
         layout.Children.Add(text);
+        layout.Children.Add(currentDot.Dock(Dock.Right));
         layout.Children.Add(badgeBox.Dock(Dock.Right));
         Child = layout;
         MouseEnter += (_, _) => Paint();
@@ -264,30 +270,30 @@ public sealed class NavItem : Border
         Background = current ? CurrentFill : IsMouseOver ? Ui.Paint("Secondary") : Brushes.Transparent;
         var ink = Ui.Paint(current ? "Primary" : IsMouseOver ? "Text" : "Muted");
         glyph.Foreground = text.Foreground = badge.Foreground = ink;
+        currentDot.Visibility = current ? Visibility.Visible : Visibility.Collapsed;
     }
 }
 
 /// <summary>A strip across the top of the page area: where you are, and how things stand.</summary>
 public sealed class TopBar : Border
 {
-    private readonly TextBlock page = Ui.Text("", 12);
+    private readonly TextBlock page = Ui.Text("", 15, weight: FontWeights.SemiBold);
+    private readonly TextBlock pageGlyph = Ui.Glyph("", 16);
     private readonly TextBlock dot = Ui.Text("●", 11, "Primary");
-    private readonly TextBlock status = Ui.Muted("", 11).Margin(6);
+    private readonly TextBlock status = Ui.Muted("", 13).Margin(8);
 
     public TopBar()
     {
-        Height = 61;
+        Height = 58;
         BorderBrush = Ui.Paint("Line");
         BorderThickness = new Thickness(0, 0, 0, 1);
         var row = new DockPanel { LastChildFill = false, Margin = new Thickness(30, 0, 30, 0) };
-        row.Children.Add(Ui.Row(0, Ui.Glyph("\uE838", 14), Ui.Muted(Ui.T("Workspace"), 12).Margin(10, 0, 8),
-                                // The breadcrumb's chevron points the way the text reads.
-                                Ui.Glyph(Tr.IsArabic ? "\uE76B" : "\uE76C", 10), page.Margin(8)));
-        row.Children.Add(Ui.Row(0, dot, status).Dock(Dock.Right));
+        row.Children.Add(Ui.Row(0, pageGlyph, page.Margin(10)));
+        row.Children.Add(Ui.Row(0, dot, status, Ui.Glyph("\uEA18", 15, "Primary").Margin(14)).Dock(Dock.Right));
         Child = row;
     }
 
-    public void SetPage(string title) => page.Text = title;
+    public void SetPage(string glyph, string title) => (pageGlyph.Text, page.Text) = (glyph, title);
 
     public void SetStatus(string text, Brush color)
     {
@@ -366,7 +372,7 @@ public sealed class SplashWindow : Window
         for (var index = 0; index < 3; index++)
         {
             var slot = new Grid { Width = (116 - 10) / 3.0, Margin = new Thickness(index == 0 ? 0 : 5, 0, 0, 0) };
-            bars[index] = new Rectangle { Fill = colors[index].Length > 0 ? Ui.Paint(colors[index]) : Ui.Hex("#69acf3"), Width = 0, HorizontalAlignment = HorizontalAlignment.Left };
+            bars[index] = new Rectangle { Fill = colors[index].Length > 0 ? Ui.Paint(colors[index]) : Ui.Hex("#5aabf1"), Width = 0, HorizontalAlignment = HorizontalAlignment.Left };
             slot.Children.Add(bars[index]);
             barRow.Children.Add(slot);
         }

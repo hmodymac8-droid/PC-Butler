@@ -8,56 +8,102 @@ using PCButler.Core;
 namespace PCButler;
 
 /// <summary>
-/// The PC at a glance: how busy the processor, memory and graphics card are, how full the
-/// drives are, when Windows last restarted, and a score for how tidy things are.
+/// The PC at a glance: gauges for the processor, the graphics card, the memory and the time
+/// since the last restart, the free space, and under them the drives, the temperatures and
+/// the neatness score with what is holding it back.
 /// </summary>
 public sealed class HomePage : Page
 {
-    private readonly StatCard[] live;
-    private readonly StatCard[] facts;
+    private readonly MetricCard processor = new("Processor", "", "CPU");
+    private readonly MetricCard graphics = new("Graphics card", "", "GPU");
+    private readonly MetricCard memory = new("Memory", "", "RAM");
+    private readonly MetricCard restart = new("Last restart", "", "Uptime");
+    private readonly AmountCard space = new("Free space", "");
     private readonly StackPanel drives = new();
-    private readonly StackPanel notes = new();
-    private readonly TextBlock sensorsText = Ui.Muted("", wrap: true);
+    private readonly TextBlock gpuTemperature = Ui.Text("—", 13);
+    private readonly TextBlock sensorsText = Ui.Muted("", 12.5, wrap: true);
     private readonly Button sensorsButton;
+    private readonly TextBlock score = new() { FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Primary"), FontFamily = Ui.DisplayFont, Text = "—" };
+    private readonly MeterBar scoreBar = new();
+    private readonly TextBlock scoreNote = Ui.Muted("", 12.5, wrap: true);
+    private readonly StackPanel notes = new();
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(UsageMonitor.IntervalSeconds) };
     private bool scoring;
 
     public HomePage(MainWindow main) : base(main, "Welcome back.", "Your PC at a glance.")
     {
         AddAction("Refresh", Recalculate);
-        live = AddStats(("Processor", ""), ("Memory", ""), ("Graphics card", ""));
-        facts = AddStats(("Neatness score", ""), ("Last restart", ""), ("Free space", ""));
-        foreach (var card in live.Concat(facts))
-            card.Set("—");
+        ShowVersionInsteadOfHeading();
 
-        var panel = new CardPanel("Details", "");
-        var body = new Grid { Margin = new Thickness(20, 14, 20, 14) };
-        body.ColumnDefinitions.Add(new ColumnDefinition());
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        body.ColumnDefinitions.Add(new ColumnDefinition());
+        // Three gauges, then the restart gauge beside the free space, which takes two columns.
+        var cards = new Grid();
+        for (var column = 0; column < 3; column++)
+            cards.ColumnDefinitions.Add(new ColumnDefinition());
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        cards.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Place(cards, processor, 0, 0);
+        Place(cards, graphics, 0, 1);
+        Place(cards, memory, 0, 2);
+        Place(cards, restart, 1, 0);
+        Place(cards, space, 1, 1, 2);
 
-        var left = new StackPanel();
-        left.Children.Add(Heading("Storage"));
-        left.Children.Add(drives);
-        left.Children.Add(Heading("Temperature and fans").Margin(0, 18));
-        left.Children.Add(sensorsText);
+        var under = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 14, 0, 8) };
+        var underTitle = Ui.Text(Ui.T("Under the hood"), 17, weight: FontWeights.Medium);
+        underTitle.FontFamily = Ui.DisplayFont;
+        under.Children.Add(underTitle);
+        under.Children.Add(Ui.Row(6, Ui.Glyph("", 13), Ui.Muted(Ui.T("System overview"), 13)).Dock(Dock.Right));
+
+        // Storage: every drive, the graphics card's temperature, and what else can be read.
+        var storage = new StackPanel { Margin = new Thickness(20, 14, 20, 14) };
+        storage.Children.Add(PanelTitle("", "Storage"));
+        storage.Children.Add(drives);
+        var temperature = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 10, 0, 0) };
+        temperature.Children.Add(Ui.Row(8, Ui.Glyph("", 14), Ui.Text(Ui.T("Graphics card temperature"), 13)));
+        temperature.Children.Add(gpuTemperature.Dock(Dock.Right));
+        storage.Children.Add(Line(temperature, 10));
+        var sensors = new StackPanel { Margin = new Thickness(0, 9, 0, 0) };
+        sensors.Children.Add(sensorsText);
         sensorsButton = Ui.Button(Ui.T("Read the motherboard's sensors too (asks for administrator rights)"), TurnOnSensors);
         sensorsButton.HorizontalAlignment = HorizontalAlignment.Left;
-        left.Children.Add(sensorsButton.Margin(0, 8));
-        body.Children.Add(left.At(0, 0));
+        sensors.Children.Add(sensorsButton.Margin(0, 8));
+        storage.Children.Add(Line(sensors, 10));
 
-        var right = new StackPanel();
-        right.Children.Add(Heading("What lowers your score"));
-        right.Children.Add(notes);
+        // The neatness score, and under it what is holding it back.
+        var neat = new StackPanel { Margin = new Thickness(20, 14, 20, 14) };
+        var neatTitle = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 10) };
+        neatTitle.Children.Add(Ui.Row(9, Ui.Glyph("", 15), Ui.Text(Ui.T("Neatness score"), 14, weight: FontWeights.Medium)));
+        var outOf = Ui.Muted(Ui.T("out of 100"), 13).Margin(6, 0, 0, 3);
+        outOf.VerticalAlignment = VerticalAlignment.Bottom;
+        neatTitle.Children.Add(Ui.Row(0, score, outOf).Dock(Dock.Right));
+        neat.Children.Add(neatTitle);
+        neat.Children.Add(scoreBar);
+        var ends = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 7, 0, 0) };
+        ends.Children.Add(Ui.Muted(Ui.T("Needs work"), 12.5));
+        ends.Children.Add(Ui.Muted(Ui.T("Pristine"), 12.5).Dock(Dock.Right));
+        neat.Children.Add(ends);
+        neat.Children.Add(scoreNote.Margin(0, 9, 0, 4));
+        neat.Children.Add(notes);
         var alerts = Ui.Switch(Ui.T("Warn me when the processor or memory stays nearly full"), main.Config.UsageAlerts,
                                on => Main.UpdateConfig(config => config.UsageAlerts = on));
         alerts.HorizontalAlignment = HorizontalAlignment.Left;
-        right.Children.Add(alerts.Margin(0, 18));
-        body.Children.Add(right.At(0, 2));
+        neat.Children.Add(Line(alerts, 9));
 
-        panel.SetBody(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
-        Children.Add(panel);
+        var panels = new Grid();
+        panels.ColumnDefinitions.Add(new ColumnDefinition());
+        panels.ColumnDefinitions.Add(new ColumnDefinition());
+        var left = new Border { Child = storage, Margin = new Thickness(0, 0, 6, 0) };
+        var right = new Border { Child = neat, Margin = new Thickness(6, 0, 0, 0) };
+        Widgets.StyleCard(left);
+        Widgets.StyleCard(right);
+        panels.Children.Add(left.At(0, 0));
+        panels.Children.Add(right.At(0, 1));
 
+        var all = new StackPanel { Children = { cards, under, panels } };
+        Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+
+        processor.Set("—", "", 0, "Primary", "", "", "");
+        graphics.Set("—", "", 0, "Primary", "", "", "");
+        memory.Set("—", "", 0, "Blue", "", "", "");
         timer.Tick += (_, _) => ShowLive();
         IsVisibleChanged += (_, _) =>
         {
@@ -67,12 +113,20 @@ public sealed class HomePage : Page
         };
     }
 
-    private static TextBlock Heading(string text)
+    private static void Place(Grid grid, FrameworkElement card, int row, int column, int span = 1)
     {
-        var heading = Ui.Text(Ui.T(text), 14, weight: FontWeights.Bold);
-        heading.Margin = new Thickness(0, 0, 0, 8);
-        return heading;
+        // Gaps of 12 between cards, none at the outer edges.
+        var last = column + span == 3;
+        card.Margin = new Thickness(column == 0 ? 0 : 6, row == 0 ? 0 : 12, last ? 0 : 6, 0);
+        grid.Children.Add(card.At(row, column, span));
     }
+
+    private static UIElement PanelTitle(string glyph, string text) =>
+        Ui.Row(9, Ui.Glyph(glyph, 15), Ui.Text(Ui.T(text), 14, weight: FontWeights.Medium)).Margin(0, 0, 0, 12);
+
+    /// <summary>The element under a hairline, as the design separates the parts of a panel.</summary>
+    private static Border Line(UIElement child, double space) =>
+        new() { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Margin = new Thickness(0, space, 0, 0), Child = child };
 
     public override void Shown()
     {
@@ -85,13 +139,31 @@ public sealed class HomePage : Page
     {
         if (App.Current.Usage.Latest is not { } sample)
             return;
-        live[0].Set(sample.Cpu.ToString(), "%", Ui.T("{0} processor threads", Environment.ProcessorCount));
+        var busy = sample.Cpu >= 85;
+        processor.Set(sample.Cpu.ToString(), Ui.T("% usage"), sample.Cpu, busy ? "Amber" : "Primary",
+                      Ui.T(busy ? "Working hard" : sample.Cpu >= 50 ? "Busy" : "Running smoothly"),
+                      Ui.T("{0} processor threads", Environment.ProcessorCount), Ui.T(busy ? "High activity" : "Normal activity"));
+        var full = sample.MemoryPercent >= 85;
         var used = Ui.FormatSize(sample.MemoryUsed).Split(' ');
-        live[1].Set(used[0], used[1], Ui.T("{0}% of {1} total", sample.MemoryPercent, Ui.FormatSize(sample.MemoryTotal)));
+        memory.Set(used[0], Ui.T("{0} in use", used[1]), sample.MemoryPercent, full ? "Amber" : "Blue",
+                   Ui.T("{0}% of total memory", sample.MemoryPercent), Ui.T("{0} installed", Ui.FormatSize(sample.MemoryTotal)),
+                   Ui.T(full ? "High usage" : "Normal usage"));
         if (sample.Gpu is { } gpu)
         {
-            var temperature = gpu.Temperature is { } degrees ? Ui.T("{0} °C", degrees) + "  ·  " : "";
-            live[2].Set(gpu.Usage?.ToString() ?? "—", gpu.Usage is null ? "" : "%", temperature + gpu.Name);
+            if (gpu.Temperature is { } degrees)
+            {
+                var hot = degrees >= 85;
+                graphics.Set(degrees.ToString(), "°C", degrees * 100.0 / 110, hot ? "Amber" : "Primary", gpu.Name,
+                             gpu.Usage is { } use ? Ui.T("{0}% in use", use) : "", Ui.T(hot ? "Running hot" : "Normal temperature"));
+                gpuTemperature.Text = $"{degrees}°C  ·  " + Ui.T(hot ? "Hot" : "Normal");
+                gpuTemperature.Foreground = Ui.Paint(hot ? "Amber" : "Text");
+            }
+            else
+            {
+                graphics.Set(gpu.Usage?.ToString() ?? "—", gpu.Usage is null ? "" : Ui.T("% usage"), gpu.Usage ?? 0, "Primary", gpu.Name,
+                             Ui.T("It does not report a temperature"), Ui.T("Normal activity"));
+                gpuTemperature.Text = "—";
+            }
         }
         ShowSensors();
     }
@@ -99,27 +171,35 @@ public sealed class HomePage : Page
     private void ShowFacts()
     {
         var since = DateTime.Now - UsageMonitor.LastRestart;
-        var ago = since.TotalDays >= 1 ? Ui.T("{0} d {1} h", (int)since.TotalDays, since.Hours)
-                : since.TotalHours >= 1 ? Ui.T("{0} h {1} min", (int)since.TotalHours, since.Minutes)
-                : Ui.T("{0} min", Math.Max(1, (int)since.TotalMinutes));
-        facts[1].Set(ago, Ui.T("ago"), UsageMonitor.LastRestart.ToString("yyyy-MM-dd HH:mm"));
+        var (number, unit) = since.TotalDays >= 2 ? (((int)since.TotalDays).ToString(), Ui.T("days ago"))
+                           : since.TotalHours >= 1 ? (((int)since.TotalHours).ToString(), Ui.T("hours ago"))
+                           : (Math.Max(1, (int)since.TotalMinutes).ToString(), Ui.T("minutes ago"));
+        var length = since.TotalDays >= 1 ? Ui.T("{0} d {1} h", (int)since.TotalDays, since.Hours) : Ui.T("{0} h {1} min", (int)since.TotalHours, since.Minutes);
+        var stale = since.TotalDays >= 7;
+        // A full ring is one day; after that it stays full.
+        restart.Set(number, unit, since.TotalHours * 100 / 24, stale ? "Amber" : "Blue", length, UsageMonitor.LastRestart.ToString("yyyy-MM-dd HH:mm"),
+                    Ui.T(stale ? "A restart would help" : "Up and running"));
 
         var all = UsageMonitor.Drives();
-        var free = Ui.FormatSize(all.Sum(drive => drive.Free)).Split(' ');
-        facts[2].Set(free[0], free[1], Ui.T("of {0} on {1} drive(s)", Ui.FormatSize(all.Sum(drive => drive.Total)), all.Count));
+        long total = all.Sum(drive => drive.Total), free = all.Sum(drive => drive.Free);
+        var freeShare = total > 0 ? free * 100.0 / total : 0;
+        var parts = Ui.FormatSize(free).Split(' ');
+        space.Set(parts[0], Ui.T("{0} available", parts[1]), 100 - freeShare, freeShare < 10 ? "Red" : freeShare < 20 ? "Amber" : "Primary",
+                  Ui.T("Used · {0}", Ui.FormatSize(total - free)), Ui.T("Free · {0}", Ui.FormatSize(free)),
+                  Ui.T(freeShare < 20 ? "Consider a cleanup" : "Plenty of room"), Ui.T("{0} drive(s)", all.Count));
+
         drives.Children.Clear();
         foreach (var drive in all)
         {
-            var percent = drive.Total > 0 ? (double)drive.Used / drive.Total : 0;
-            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 4) };
-            row.Children.Add(Ui.Text(drive.Name, 13));
-            row.Children.Add(Ui.Muted(Ui.T("{0} free of {1}", Ui.FormatSize(drive.Free), Ui.FormatSize(drive.Total)), 12).Dock(Dock.Right));
+            var percent = drive.Total > 0 ? drive.Used * 100.0 / drive.Total : 0;
+            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 8) };
+            row.Children.Add(Ui.Text(Ui.T("Local disk ({0})", drive.Name), 13));
+            row.Children.Add(Ui.Muted(Ui.T("{0} free of {1}", Ui.FormatSize(drive.Free), Ui.FormatSize(drive.Total)), 12.5).Dock(Dock.Right));
             drives.Children.Add(row);
-            // Red once a drive is nine-tenths full.
-            var fill = new Border { Background = Ui.Paint(percent >= 0.9 ? "Red" : "Primary"), HorizontalAlignment = HorizontalAlignment.Left, Height = 6 };
-            var bar = new Border { Background = Ui.Paint("Raised"), Height = 6, Margin = new Thickness(0, 0, 0, 12), Child = fill };
-            bar.SizeChanged += (_, _) => fill.Width = Math.Max(0, bar.ActualWidth * percent);
-            drives.Children.Add(bar);
+            var bar = new MeterBar(5);
+            // Amber once a drive is four-fifths full, red at nine-tenths.
+            bar.Set(percent, percent >= 90 ? "Red" : percent >= 80 ? "Amber" : "Primary");
+            drives.Children.Add(bar.Margin(0, 0, 0, 12));
         }
     }
 
@@ -127,8 +207,8 @@ public sealed class HomePage : Page
     {
         var lines = new List<string>();
         var gpu = App.Current.Usage.Latest?.Gpu;
-        if (gpu?.Temperature is { } gpuDegrees)
-            lines.Add(Ui.T("Graphics card: {0} °C", gpuDegrees) + (gpu.Fan is { } gpuFan ? "  ·  " + Ui.T("fan {0} RPM", gpuFan) : ""));
+        if (gpu?.Fan is { } gpuFan)
+            lines.Add(Ui.T("Graphics card fan: {0} RPM", gpuFan));
         var monitor = Sensors.MonitorApp();
         var reading = Sensors.Latest();
         var fans = monitor?.Fans.Count > 0 ? monitor.Value.Fans : reading?.Fans ?? [];
@@ -174,18 +254,24 @@ public sealed class HomePage : Page
         }).ContinueWith(task => Dispatcher.BeginInvoke(() =>
         {
             scoring = false;
-            var (score, list) = task.Result;
-            if (score < 0)
+            var (points, list) = task.Result;
+            if (points < 0)
                 return;
-            facts[0].Set(score.ToString(), Ui.T("of 100"), score >= 90 ? Ui.T("Tidy. Well done.") : score >= 70 ? Ui.T("Good, with a little to clear") : Ui.T("Worth a clean-up"));
+            score.Text = points.ToString();
+            var tone = points >= 90 ? "Primary" : points >= 70 ? "Amber" : "Red";
+            score.Foreground = Ui.Paint(tone);
+            scoreBar.Set(points, tone);
+            scoreNote.Text = list.Count == 0
+                ? Ui.T("Nothing is holding the score back. Everything is in order.")
+                : Ui.T("The score weighs files waiting to be sorted, temporary files, loose desktop files, free drive space and startup apps. "
+                       + "Clear what is listed below and it reaches 100.");
             notes.Children.Clear();
-            if (list.Count == 0)
-                notes.Children.Add(Ui.Muted(Ui.T("Nothing. Everything is in order.")));
             foreach (var note in list)
             {
-                var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 8) };
-                row.Children.Add(Ui.Text(Ui.T(note.Text, note.Arguments), 13));
-                row.Children.Add(Ui.Text($"−{note.Lost}", 13, "Amber").Dock(Dock.Right));
+                var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 4, 0, 4) };
+                row.Children.Add(Ui.Glyph("", 14, "Amber").Margin(0, 0, 10));
+                row.Children.Add(Ui.Muted(Ui.T(note.Text, note.Arguments), 12.5));
+                row.Children.Add(Ui.Text(Ui.T("−{0} pts", note.Lost), 12.5, "Amber").Dock(Dock.Right));
                 notes.Children.Add(row);
             }
         }));

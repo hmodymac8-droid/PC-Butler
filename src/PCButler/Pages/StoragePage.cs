@@ -262,7 +262,7 @@ public sealed class TreemapView : Canvas
 {
     /// <summary>Children beyond this many are drawn together as one "everything else" block.</summary>
     private const int MaxBlocks = 60;
-    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#e581bc", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
+    private static readonly string[] Tones = ["#42d8a5", "#5aabf1", "#edb755", "#e581bc", "#b697f1", "#5cc6d6", "#d99a6c", "#9ccf6a"];
 
     public StorageNode? Node { get; private set; }
     public event Action<StorageNode>? Opened;
@@ -318,7 +318,7 @@ public sealed class TreemapView : Canvas
             if (width < 2 || height < 2)
                 continue;
             var tone = (Color)ColorConverter.ConvertFromString(item.IsFolder ? Tones[index % Tones.Length] : "#7a7d82");
-            var card = (Color)ColorConverter.ConvertFromString("#141517");
+            var card = (Color)ColorConverter.ConvertFromString("#101216");
             Color Mix(double amount) => Color.FromRgb((byte)(tone.R * amount + card.R * (1 - amount)),
                                                       (byte)(tone.G * amount + card.G * (1 - amount)),
                                                       (byte)(tone.B * amount + card.B * (1 - amount)));
