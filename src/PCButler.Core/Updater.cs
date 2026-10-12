@@ -190,13 +190,34 @@ public sealed class BackgroundService
             {
                 CheckUpdates(config);
                 // With automatic sorting off the program keeps running, for the tray icon and updates.
+                var schedule = config.Schedule;
+                var now = DateTime.Now;
+                if (schedule.Sort != "interval" && schedule.LastSort.Length == 0
+                    || schedule.Clean != "off" && schedule.LastClean.Length == 0)
+                {
+                    // A schedule just switched on starts counting from now: its first run is the next scheduled time.
+                    SaveSchedule(s =>
+                    {
+                        if (s.LastSort.Length == 0) s.LastSort = now.ToString(ScheduleSettings.Stamp);
+                        if (s.LastClean.Length == 0) s.LastClean = now.ToString(ScheduleSettings.Stamp);
+                    });
+                }
                 var due = config.AutoSortOn && !config.IsPaused
-                          && (DateTime.Now - lastRun).TotalMinutes >= config.ScanIntervalMinutes;
+                          && (schedule.Sort == "interval"
+                              ? (now - lastRun).TotalMinutes >= config.ScanIntervalMinutes
+                              : schedule.IsDue(schedule.Sort, schedule.LastSort, now));
                 if (sortNow || due)
                 {
                     sortNow = false;
-                    lastRun = DateTime.Now;
+                    lastRun = now;
+                    if (due && schedule.Sort != "interval")
+                        SaveSchedule(s => s.LastSort = now.ToString(ScheduleSettings.Stamp));
                     SortPass(config);
+                }
+                if (!config.IsPaused && schedule.IsDue(schedule.Clean, schedule.LastClean, now))
+                {
+                    SaveSchedule(s => s.LastClean = now.ToString(ScheduleSettings.Stamp));
+                    CleanPass(config);
                 }
             }
             catch (Exception error) // whatever goes wrong, the loop (and the tray icon) keeps going
@@ -205,6 +226,39 @@ public sealed class BackgroundService
             }
             ShowState(config);
             wake.WaitOne(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    /// <summary>Change the schedule's bookkeeping on top of whatever is on disk now.</summary>
+    private static void SaveSchedule(Action<ScheduleSettings> change)
+    {
+        var config = ConfigStore.Load();
+        change(config.Schedule);
+        ConfigStore.Save(config);
+    }
+
+    /// <summary>
+    /// Scheduled cleaning: the items ticked on the Cleaner page go to the Recycle Bin (never
+    /// deleted for good while nobody is watching) and are listed in History.
+    /// </summary>
+    private void CleanPass(Config config)
+    {
+        var keys = config.Cleaner.Categories
+                   ?? Cleaner.Categories.Where(category => category.Checked).Select(category => category.Key).ToList();
+        var known = keys.Where(key => Cleaner.Categories.Any(category => category.Key == key)).ToList();
+        if (known.Count == 0)
+            return;
+        var found = Cleaner.Scan(known, CancellationToken.None);
+        var files = found.SelectMany(result => result.Files).ToList();
+        if (files.Count == 0)
+            return;
+        var (count, _) = Sorter.DeleteFiles(files);
+        Cleaner.RemoveEmptyFolders(found.SelectMany(result => result.Folders));
+        Log.Info($"Scheduled cleaning: {count} file(s)");
+        if (count > 0)
+        {
+            Notify?.Invoke("Scheduled cleaning sent {0} file(s) to the Recycle Bin. They are listed in History.", [count]);
+            DataChanged?.Invoke();
         }
     }
 

@@ -20,6 +20,15 @@ public sealed partial class SettingsPage : Page
     private readonly TextBox age;
     private readonly TextBox interval;
     private readonly ComboBox afterRun = new() { Width = 260 };
+    private static readonly (string Key, string Label)[] SortModes =
+        [("interval", "Every few minutes"), ("daily", "Once a day"), ("weekly", "Once a week")];
+    private static readonly (string Key, string Label)[] CleanModes =
+        [("off", "Off"), ("daily", "Once a day"), ("weekly", "Once a week")];
+    private static readonly string[] Days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    private readonly ComboBox sortMode = new() { Width = 190 };
+    private readonly ComboBox cleanMode = new() { Width = 190 };
+    private readonly ComboBox scheduleDay = new() { Width = 140 };
+    private readonly TextBox scheduleTime;
     private readonly TextBox other;
     private readonly TextBox ignore;
     private readonly ComboBox language = new() { Width = 130 };
@@ -33,8 +42,8 @@ public sealed partial class SettingsPage : Page
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        for (var index = 0; index < 9; index++)
-            grid.RowDefinitions.Add(new RowDefinition { Height = index == 7 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        for (var index = 0; index < 10; index++)
+            grid.RowDefinitions.Add(new RowDefinition { Height = index == 8 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
 
         grid.Children.Add(Ui.Text(Ui.T("Folders to sort")).Margin(0, 6, 12).At(0, 0));
         folderValues = [.. config.Folders];
@@ -66,20 +75,36 @@ public sealed partial class SettingsPage : Page
 
         age = Ui.Field(config.MinAgeDays.ToString(), 80);
         Setting(1, "Move files older than (days)", age, "a category can have its own number");
+        // When automatic sorting and cleaning run: every few minutes, or at a set time each day or week.
         interval = Ui.Field(config.ScanIntervalMinutes.ToString(), 80);
-        Setting(2, "Background check every (minutes)", interval, "0 turns automatic sorting off");
+        foreach (var (_, label) in SortModes)
+            sortMode.Items.Add(Ui.T(label));
+        sortMode.SelectedIndex = Math.Max(0, Array.FindIndex(SortModes, choice => choice.Key == config.Schedule.Sort));
+        var minutes = Ui.Row(8, interval, Ui.Muted(Ui.T("minutes between checks; 0 turns automatic sorting off")));
+        void ShowInterval() => minutes.Visibility = sortMode.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+        sortMode.SelectionChanged += (_, _) => ShowInterval();
+        ShowInterval();
+        Setting(2, "Automatic sorting runs", Ui.Row(8, sortMode, minutes));
+        foreach (var (_, label) in CleanModes)
+            cleanMode.Items.Add(Ui.T(label));
+        cleanMode.SelectedIndex = Math.Max(0, Array.FindIndex(CleanModes, choice => choice.Key == config.Schedule.Clean));
+        foreach (var day in Days)
+            scheduleDay.Items.Add(Ui.T(day));
+        scheduleDay.SelectedIndex = Math.Clamp(config.Schedule.Day, 0, 6);
+        scheduleTime = Ui.Field(config.Schedule.Time, 70);
+        Setting(3, "Automatic cleaning", Ui.Row(8, cleanMode, Ui.Text(Ui.T("Daily and weekly runs start at")), scheduleTime, scheduleDay));
         foreach (var (_, label) in AfterRunChoices)
             afterRun.Items.Add(Ui.T(label));
         afterRun.SelectedIndex = Math.Max(0, Array.FindIndex(AfterRunChoices, choice => choice.Key == config.AfterRun));
-        Setting(3, "After an automatic run", afterRun);
+        Setting(4, "After an automatic run", afterRun);
         other = Ui.Field(config.OtherFolder, 260);
-        Setting(4, "Folder for all other file types", other, "leave blank to leave those files alone");
+        Setting(5, "Folder for all other file types", other, "leave blank to leave those files alone");
         ignore = Ui.Field(string.Join(", ", config.Ignore), 480);
-        Setting(5, "Never move (names or patterns)", ignore, "e.g. *.torrent, taxes*");
+        Setting(6, "Never move (names or patterns)", ignore, "e.g. *.torrent, taxes*");
 
         var section = Ui.Text(Ui.T("Destination folders"), 16, weight: FontWeights.Bold).Margin(0, 18, 0, 8);
         section.FontFamily = Ui.DisplayFont;
-        grid.Children.Add(section.At(6, 0, 3));
+        grid.Children.Add(section.At(7, 0, 3));
         categories = Ui.List(("Destination folder", 220, "FileCell"), ("Extensions", 430), ("Move after", 110), ("Clean up after", 130));
         categories.SelectionMode = SelectionMode.Single;
         categories.MouseDoubleClick += (_, e) =>
@@ -88,7 +113,7 @@ public sealed partial class SettingsPage : Page
                 EditCategory();
         };
         categories.ItemsSource = new System.Collections.ObjectModel.ObservableCollection<Row>(config.Categories.Select(CategoryRow));
-        grid.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), Child = categories, MinHeight = 120 }.At(7, 0, 3));
+        grid.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), Child = categories, MinHeight = 200 }.At(8, 0, 3));
 
         var buttons = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 6, 0, 0) };
         buttons.Children.Add(Ui.Button(Ui.T("Add…"), AddCategory));
@@ -99,8 +124,9 @@ public sealed partial class SettingsPage : Page
         language.SelectedIndex = Math.Max(0, Array.FindIndex(Languages, choice => choice.Key == config.Language));
         buttons.Children.Add(language.Margin(6, 0, 0).Dock(Dock.Right));
         buttons.Children.Add(Ui.Text(Ui.T("Language")).Dock(Dock.Right));
-        grid.Children.Add(buttons.At(8, 0, 3));
-        Children.Add(grid);
+        grid.Children.Add(buttons.At(9, 0, 3));
+        // More settings than a short window can show: the page scrolls rather than squeezing the list.
+        Children.Add(new ScrollViewer { Content = grid, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
     }
 
     private System.Collections.ObjectModel.ObservableCollection<Row> CategoryRows => (System.Collections.ObjectModel.ObservableCollection<Row>)categories.ItemsSource;
@@ -173,6 +199,12 @@ public sealed partial class SettingsPage : Page
             Ui.Warn("Settings", Ui.T("Days and minutes must be whole numbers, 0 or more."));
             return;
         }
+        if (!TimeSpan.TryParseExact(scheduleTime.Text.Trim(), ["h\\:mm", "hh\\:mm"], System.Globalization.CultureInfo.InvariantCulture, out var startAt)
+            || startAt >= TimeSpan.FromDays(1))
+        {
+            Ui.Warn("Settings", Ui.T("Write the time as hours and minutes, like 09:00 or 18:30."));
+            return;
+        }
         if (folderValues.Count == 0)
         {
             folderValues.Add("");
@@ -191,9 +223,18 @@ public sealed partial class SettingsPage : Page
             config.OtherFolder = other.Text.Trim();
             config.Ignore = ListSeparators().Split(ignore.Text).Select(part => part.Trim()).Where(part => part.Length > 0).ToList();
             config.AfterRun = AfterRunChoices[Math.Max(0, afterRun.SelectedIndex)].Key;
+            var schedule = config.Schedule;
+            var (sort, clean) = (SortModes[Math.Max(0, sortMode.SelectedIndex)].Key, CleanModes[Math.Max(0, cleanMode.SelectedIndex)].Key);
+            var (time, day) = (startAt.ToString("hh\\:mm"), Math.Max(0, scheduleDay.SelectedIndex));
+            // A changed schedule starts counting afresh, so nothing runs the moment it is saved.
+            if (sort != schedule.Sort || time != schedule.Time || day != schedule.Day)
+                schedule.LastSort = "";
+            if (clean != schedule.Clean || time != schedule.Time || day != schedule.Day)
+                schedule.LastClean = "";
+            (schedule.Sort, schedule.Clean, schedule.Time, schedule.Day) = (sort, clean, time, day);
         });
         var message = Ui.T("Settings saved. The Sorter page shows the result.");
-        if (minutes == 0)
+        if (minutes == 0 && Main.Config.Schedule.Sort == "interval")
         {
             if (wasOn)
                 message = Ui.T("Settings saved. The Sorter page shows the result.\n\nAutomatic sorting has been turned off because the interval is 0.");

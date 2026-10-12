@@ -407,6 +407,8 @@ public sealed class SortableList : ListView
 
     public SortableList()
     {
+        // Styles are looked up by exact type, so a class derived from ListView has to ask for ListView's look.
+        SetResourceReference(StyleProperty, typeof(ListView));
         AddHandler(GridViewColumnHeader.ClickEvent, new RoutedEventHandler(HeaderClicked));
     }
 

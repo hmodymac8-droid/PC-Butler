@@ -44,6 +44,48 @@ public sealed class DuplicatesSettings
     [JsonPropertyName("check_subfolders")] public bool CheckSubfolders { get; set; } = true;
 }
 
+/// <summary>When automatic sorting and automatic cleaning run.</summary>
+public sealed class ScheduleSettings
+{
+    /// <summary>"interval" = every scan_interval_minutes, "daily" or "weekly" = at the time below.</summary>
+    [JsonPropertyName("sort")] public string Sort { get; set; } = "interval";
+    /// <summary>"off", "daily" or "weekly": clean the items ticked on the Cleaner page at the time below.</summary>
+    [JsonPropertyName("clean")] public string Clean { get; set; } = "off";
+    /// <summary>"HH:mm", for daily and weekly runs.</summary>
+    [JsonPropertyName("time")] public string Time { get; set; } = "09:00";
+    /// <summary>Day of the week for weekly runs: 0 = Sunday ... 6 = Saturday.</summary>
+    [JsonPropertyName("day")] public int Day { get; set; } = 1;
+    /// <summary>"yyyy-MM-dd HH:mm" of the last scheduled run of each kind ("" = none yet).</summary>
+    [JsonPropertyName("last_sort")] public string LastSort { get; set; } = "";
+    [JsonPropertyName("last_clean")] public string LastClean { get; set; } = "";
+
+    public const string Stamp = "yyyy-MM-dd HH:mm";
+
+    /// <summary>The most recent moment a "daily" or "weekly" run was scheduled for, at or before now.</summary>
+    public DateTime LastSlot(string mode, DateTime now)
+    {
+        var time = TimeSpan.TryParseExact(Time, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed : TimeSpan.FromHours(9);
+        var slot = now.Date + time;
+        if (mode == "weekly")
+        {
+            slot = slot.AddDays(-(((int)slot.DayOfWeek - Day) % 7 + 7) % 7);
+            return slot > now ? slot.AddDays(-7) : slot;
+        }
+        return slot > now ? slot.AddDays(-1) : slot;
+    }
+
+    /// <summary>
+    /// True when a scheduled moment has passed since the last run. A PC that was off at
+    /// the scheduled time catches up when it is next on.
+    /// </summary>
+    public bool IsDue(string mode, string lastRun, DateTime now) =>
+        mode is "daily" or "weekly"
+        && DateTime.TryParseExact(lastRun, Stamp, System.Globalization.CultureInfo.InvariantCulture,
+                                  System.Globalization.DateTimeStyles.None, out var last)
+        && last < LastSlot(mode, now);
+}
+
 public sealed class CleanerSettings
 {
     /// <summary>Keys ticked on the Cleaner page; null = the defaults.</summary>
@@ -71,6 +113,7 @@ public sealed class Config
     [JsonPropertyName("after_run")] public string AfterRun { get; set; } = "window";
     [JsonPropertyName("duplicates")] public DuplicatesSettings Duplicates { get; set; } = new();
     [JsonPropertyName("cleaner")] public CleanerSettings Cleaner { get; set; } = new();
+    [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
     /// <summary>The main window's last size and position, as "WIDTHxHEIGHT+LEFT+TOP".</summary>
     [JsonPropertyName("window_geometry")] public string WindowGeometry { get; set; } = "";
     /// <summary>true = install new versions by itself; false = notify and offer.</summary>
@@ -92,7 +135,8 @@ public sealed class Config
     public List<string> WatchedFolders() =>
         Folders.Select(folder => folder.Length > 0 ? folder : ConfigStore.DetectDownloadsFolder()).ToList();
 
-    public bool AutoSortOn => AutoSort && ScanIntervalMinutes > 0;
+    /// <summary>An interval of 0 turns sorting off; daily and weekly schedules don't use the interval.</summary>
+    public bool AutoSortOn => AutoSort && (Schedule.Sort != "interval" || ScanIntervalMinutes > 0);
 
     public bool IsPaused => string.CompareOrdinal(PausedUntil, DateTime.Now.ToString("yyyy-MM-dd HH:mm")) > 0;
 
@@ -161,6 +205,7 @@ public static class ConfigStore
         config.Ignore ??= [];
         config.Duplicates ??= new DuplicatesSettings();
         config.Cleaner ??= new CleanerSettings();
+        config.Schedule ??= new ScheduleSettings();
         return config;
     }
 

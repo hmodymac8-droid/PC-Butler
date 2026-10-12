@@ -4,7 +4,13 @@ namespace PCButler.Core;
 
 /// <summary>One kind of junk the Cleaner page can remove.</summary>
 public sealed record CleanerCategory(string Key, string Label, string Description, Func<List<string>> Folders,
-                                     bool Checked = true);
+                                     bool Checked = true)
+{
+    /// <summary>Traces of what you did (not junk): cleaned whatever their age, since the point is that they go.</summary>
+    public bool Privacy { get; init; }
+    /// <summary>How many folders deep to look below each root (0 = only the root itself).</summary>
+    public int MaxDepth { get; init; } = int.MaxValue;
+}
 
 /// <summary>What a scan found for one category.</summary>
 public sealed class CleanerFound(CleanerCategory category)
@@ -88,12 +94,20 @@ public static class Cleaner
             () => Existing(Under(Env("LOCALAPPDATA"), @"Microsoft\Windows\Explorer"))),
         new("update_cache", "Windows Update downloads", "Already-installed update files (needs administrator rights)",
             () => Existing(Under(Env("SystemRoot"), @"SoftwareDistribution\Download")), Checked: false),
+        // Privacy: traces of what was opened. Off until the user asks for them.
+        new("recent_files", "Recent files list", "Windows' list of files you opened lately and the taskbar jump lists. "
+            + "The files themselves are not touched",
+            () => Existing(Under(Env("APPDATA"), @"Microsoft\Windows\Recent")), Checked: false) { Privacy = true },
+        new("program_logs", "Program log files", "Activity logs (.log) that programs leave in their settings folders",
+            () => Existing(Env("LOCALAPPDATA"), Env("APPDATA")), Checked: false) { Privacy = true, MaxDepth = 3 },
     ];
 
     public static CleanerCategory ByKey(string key) => Categories.First(category => category.Key == key);
 
     private static bool Wanted(CleanerCategory category, string path)
     {
+        if (category.Key == "program_logs")
+            return Path.GetExtension(path).Equals(".log", StringComparison.OrdinalIgnoreCase);
         if (category.Key != "thumbnails")
             return true;
         var name = Path.GetFileName(path);
@@ -130,19 +144,20 @@ public static class Cleaner
                     continue;
                 found.Folders.Add(root);
                 progress?.Invoke("Scanning: {0}…", [category.Label]);
-                var pending = new Stack<string>();
-                pending.Push(root);
+                var pending = new Stack<(string Folder, int Depth)>();
+                pending.Push((root, 0));
                 while (pending.Count > 0)
                 {
                     cancel.ThrowIfCancellationRequested();
-                    var folder = pending.Pop();
+                    var (folder, depth) = pending.Pop();
                     string[] files;
                     try
                     {
                         files = Directory.GetFiles(folder);
-                        foreach (var sub in Directory.GetDirectories(folder))
-                            if (!SkipDirs.Contains(Path.GetFileName(sub)) && !IsLink(sub))
-                                pending.Push(sub);
+                        if (depth < category.MaxDepth)
+                            foreach (var sub in Directory.GetDirectories(folder))
+                                if (!SkipDirs.Contains(Path.GetFileName(sub)) && !IsLink(sub))
+                                    pending.Push((sub, depth + 1));
                     }
                     catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                     {
@@ -156,7 +171,7 @@ public static class Cleaner
                         try
                         {
                             var info = new FileInfo(path);
-                            if (info.LastWriteTimeUtc > cutoff)
+                            if (!category.Privacy && info.LastWriteTimeUtc > cutoff)
                                 continue;
                             seen.Add(keyPath);
                             found.Files.Add(path);

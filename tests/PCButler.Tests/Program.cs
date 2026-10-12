@@ -180,7 +180,7 @@ var scan = Cleaner.Scan(["user_temp"], CancellationToken.None);
 Environment.SetEnvironmentVariable("TEMP", originalTemp);
 Check(scan.Count == 1 && scan[0].Files.Count == 2 && scan[0].Size == 8 && scan[0].Folders.SequenceEqual([junk]),
       $"only files untouched for a day, never the program's own data ({scan[0].Files.Count} files, {scan[0].Size} bytes)");
-Check(Cleaner.Categories.Count == 6 && !Cleaner.ByKey("update_cache").Checked && Cleaner.ByKey("user_temp").Checked, "categories");
+Check(Cleaner.Categories.Count == 8 && !Cleaner.ByKey("update_cache").Checked && Cleaner.ByKey("user_temp").Checked, "categories");
 foreach (var file in scan[0].Files) File.Delete(file);
 Cleaner.RemoveEmptyFolders([junk]);
 Check(Directory.Exists(junk) && !Directory.Exists(Path.Combine(junk, "deep")) && Directory.Exists(Path.Combine(junk, "PCButler")), "emptied folders go, the root stays");
@@ -281,6 +281,37 @@ if (args.Length >= 2)
 }
 
 // ---------------------------------------------------------------- translations and updates
+// privacy items are cleaned whatever their age; program logs only a few folders deep
+var profile = Path.Combine(temp, "Profile");
+Make(Path.Combine(profile, "Roaming", "Microsoft", "Windows", "Recent"), "report.lnk");
+Make(Path.Combine(profile, "Roaming", "Microsoft", "Windows", "Recent", "AutomaticDestinations"), "jump.automaticDestinations-ms");
+Make(Path.Combine(profile, "Local", "App"), "today.log"); Make(Path.Combine(profile, "Local", "App"), "settings.json");
+Make(Path.Combine(profile, "Local", "App", "logs"), "b.log"); Make(Path.Combine(profile, "Local", "App", "a", "b", "c"), "deep.log");
+var (oldRoaming, oldLocal) = (Environment.GetEnvironmentVariable("APPDATA"), Environment.GetEnvironmentVariable("LOCALAPPDATA"));
+Environment.SetEnvironmentVariable("APPDATA", Path.Combine(profile, "Roaming"));
+Environment.SetEnvironmentVariable("LOCALAPPDATA", Path.Combine(profile, "Local"));
+var privacy = Cleaner.Scan(["recent_files", "program_logs"], CancellationToken.None);
+Environment.SetEnvironmentVariable("APPDATA", oldRoaming);
+Environment.SetEnvironmentVariable("LOCALAPPDATA", oldLocal);
+Check(privacy[0].Files.Count == 2 && privacy[1].Files.Select(Path.GetFileName).Order().SequenceEqual(["b.log", "today.log"]),
+      "privacy: " + string.Join(", ", privacy.SelectMany(p => p.Files).Select(Path.GetFileName)));
+Check(Cleaner.ByKey("recent_files") is { Privacy: true, Checked: false } && !Cleaner.ByKey("user_temp").Privacy, "privacy items are off until chosen");
+
+// ---------------------------------------------------------------- schedule
+Section("schedule");
+var plan9 = new ScheduleSettings { Time = "09:00", Day = 1 };
+var morning = new DateTime(2026, 10, 14, 10, 0, 0);
+Check(plan9.LastSlot("daily", morning) == new DateTime(2026, 10, 14, 9, 0, 0) && plan9.LastSlot("daily", morning.AddHours(-2)) == new DateTime(2026, 10, 13, 9, 0, 0), "daily slot");
+var weekSlot = plan9.LastSlot("weekly", morning);
+Check(weekSlot.DayOfWeek == DayOfWeek.Monday && weekSlot.Hour == 9 && weekSlot <= morning && (morning - weekSlot).TotalDays < 7
+      && plan9.LastSlot("weekly", weekSlot.AddMinutes(-1)) == weekSlot.AddDays(-7) && plan9.LastSlot("weekly", weekSlot) == weekSlot, "weekly slot");
+Check(plan9.IsDue("daily", "2026-10-13 09:30", morning) && !plan9.IsDue("daily", "2026-10-14 09:00", morning) && !plan9.IsDue("daily", "", morning)
+      && !plan9.IsDue("off", "2020-01-01 00:00", morning) && !plan9.IsDue("interval", "2020-01-01 00:00", morning)
+      && plan9.IsDue("weekly", "2026-10-01 12:00", morning) && !plan9.IsDue("weekly", weekSlot.AddHours(1).ToString(ScheduleSettings.Stamp), morning), "due only once per slot");
+Check(new Config { AutoSort = true, ScanIntervalMinutes = 0, Schedule = { Sort = "daily" } }.AutoSortOn && !new Config { AutoSort = true, ScanIntervalMinutes = 0 }.AutoSortOn, "daily and weekly schedules don't need the interval");
+ConfigStore.Save(new Config { Schedule = { Sort = "weekly", Clean = "daily", Time = "18:30", Day = 5 } });
+Check(ConfigStore.Load().Schedule is { Sort: "weekly", Clean: "daily", Time: "18:30", Day: 5, LastSort: "" }, "schedule round trip");
+
 // ---------------------------------------------------------------- storage
 Section("storage");
 var disk = Path.Combine(temp, "Disk");
