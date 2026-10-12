@@ -21,7 +21,11 @@ public static class Ui
     public static FontFamily DisplayFont => (FontFamily)Application.Current.FindResource("DisplayFont");
 
     public const string Eyebrow = "YOUR DIGITAL SPACE, SORTED";
-    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#e581bc", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
+    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
+
+    /// <summary>Drive bars, one colour per drive: the app's green, then blue, amber and purple.</summary>
+    public static Brush DriveTone(int index) =>
+        new SolidColorBrush((Color)ColorConverter.ConvertFromString(new[] { "#48d7a1", "#69acf3", "#e6b55d", "#a993f0" }[index % 4]));
     private static readonly Dictionary<string, string> ToneOf = new(StringComparer.OrdinalIgnoreCase);
 
     public static string T(string english, params object[] arguments) => Tr.T(english, arguments);

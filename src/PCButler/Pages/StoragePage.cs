@@ -25,9 +25,6 @@ public sealed class StoragePage : Page
         ("Any time", 0), ("1 month", 1), ("3 months", 3), ("6 months", 6), ("1 year", 12),
     ];
 
-    /// <summary>The drive bars: the app's green, then blue, amber and purple.</summary>
-    private static readonly string[] DriveTones = ["#48d7a1", "#69acf3", "#e6b55d", "#a993f0"];
-
     private readonly Button scanButton;
     private readonly Button stopButton;
     private readonly StatCard[] stats;
@@ -147,7 +144,7 @@ public sealed class StoragePage : Page
                 continue;
             var root = drive.RootDirectory.FullName;
             var letter = drive.Name.TrimEnd('\\');
-            var tone = new SolidColorBrush((Color)ColorConverter.ConvertFromString(DriveTones[index++ % DriveTones.Length]));
+            var tone = Ui.DriveTone(index++);
 
             var name = new TextBlock { FontSize = 13, Foreground = Ui.Paint("Text"), VerticalAlignment = VerticalAlignment.Center };
             name.Inlines.Add(new System.Windows.Documents.Run(label.Length > 0 ? label : Ui.T("Local disk")) { FontWeight = FontWeights.Bold });
@@ -164,7 +161,7 @@ public sealed class StoragePage : Page
             var track = new Border { Background = Ui.Paint("Raised"), CornerRadius = new CornerRadius(3) };
             Grid.SetColumnSpan(track, 2);
             bar.Children.Add(track);
-            bar.Children.Add(new Border { Background = tone, CornerRadius = new CornerRadius(3) });
+            bar.Children.Add(new Border { Background = used >= 0.9 ? Ui.Paint("Red") : tone, CornerRadius = new CornerRadius(3) });
 
             var row = new Border
             {

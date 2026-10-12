@@ -56,14 +56,6 @@ public sealed class AboutPage : Page
         auto.ToolTip = Ui.T("Off: you get a notification and choose when to update. On: while automatic sorting is running, "
                             + "new versions install by themselves when no PC Butler window is open.");
         rows.Children.Add(auto);
-
-        rows.Children.Add(Ui.SettingRow(Ui.T("Show PC Butler in File Explorer"), Ui.T("Sort, lock or shred files right from their right-click menu."),
-                                        Ui.Switch("", main.Config.ExplorerMenu, on =>
-                                        {
-                                            Main.UpdateConfig(config => config.ExplorerMenu = on);
-                                            if (App.SyncExplorerMenu(on) is { } error)
-                                                Ui.Warn("File Explorer", error);
-                                        })));
         card.SetBody(rows);
         tab.Children.Add(card);
         Children.Add(new ScrollViewer { Content = tab, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });

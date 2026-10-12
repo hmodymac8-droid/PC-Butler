@@ -108,16 +108,19 @@ public sealed class HomePage : Page
         var free = Ui.FormatSize(all.Sum(drive => drive.Free)).Split(' ');
         facts[2].Set(free[0], free[1], Ui.T("of {0} on {1} drive(s)", Ui.FormatSize(all.Sum(drive => drive.Total)), all.Count));
         drives.Children.Clear();
+        var index = 0;
         foreach (var drive in all)
         {
+            var tone = Ui.DriveTone(index++);
             var percent = drive.Total > 0 ? (double)drive.Used / drive.Total : 0;
             var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 4) };
             row.Children.Add(Ui.Text(drive.Name, 13));
             row.Children.Add(Ui.Muted(Ui.T("{0} free of {1}", Ui.FormatSize(drive.Free), Ui.FormatSize(drive.Total)), 12).Dock(Dock.Right));
             drives.Children.Add(row);
-            // Red once a drive is nine-tenths full.
-            var fill = new Border { Background = Ui.Paint(percent >= 0.9 ? "Red" : "Primary"), HorizontalAlignment = HorizontalAlignment.Left, Height = 6 };
-            var bar = new Border { Background = Ui.Paint("Raised"), Height = 6, Margin = new Thickness(0, 0, 0, 12), Child = fill };
+            // Each drive its own colour, as on the Storage page; red once it is nine-tenths full.
+            var fill = new Border { Background = percent >= 0.9 ? Ui.Paint("Red") : tone, HorizontalAlignment = HorizontalAlignment.Left, Height = 6,
+                                    CornerRadius = new CornerRadius(3) };
+            var bar = new Border { Background = Ui.Paint("Raised"), Height = 6, CornerRadius = new CornerRadius(3), Margin = new Thickness(0, 0, 0, 12), Child = fill };
             bar.SizeChanged += (_, _) => fill.Width = Math.Max(0, bar.ActualWidth * percent);
             drives.Children.Add(bar);
         }
