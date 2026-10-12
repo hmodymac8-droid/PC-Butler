@@ -89,6 +89,8 @@ public sealed partial class MainWindow : Window
                      ("cleaner", "\uE74D", "Cleaner", new CleanerPage(this), false),
                      ("storage", "\uEDA2", "Storage", new StoragePage(this), false),
                      ("booster", "\uE945", "Booster", new BoosterPage(this), false),
+                     ("programs", "\uE71D", "Programs", new ProgramsPage(this), false),
+                     ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
                      ("settings", "\uE713", "Settings", Settings, true),

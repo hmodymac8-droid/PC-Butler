@@ -83,6 +83,9 @@ public static class History
     }
 
     /// <summary>True while the file is still where the program moved it.</summary>
+    /// <summary>Forget every entry. The files stay where they are; what was logged can no longer be undone from here.</summary>
+    public static void Clear() => Save([]);
+
     public static bool IsActive(List<string> move) => move.Count == 2;
 
     public static bool CanUndo(List<string> move) => IsActive(move) || move[2] == "deleted";

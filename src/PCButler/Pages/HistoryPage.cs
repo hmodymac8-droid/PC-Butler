@@ -23,6 +23,7 @@ public sealed class HistoryPage : Page
     public HistoryPage(MainWindow main) : base(main, "History", "Every change, all in one place.")
     {
         AddAction("Undo selected", UndoSelected, accent: true);
+        AddAction("Clear history", ClearHistory);
         stats = AddStats(("Changes logged", "\uE81C"), ("Undo available", "\uE7A7"), ("Last activity", "\uE823"));
 
         var hint = Ui.Muted(Ui.T("Select rows with Ctrl or Shift (Ctrl+A for the whole page). Undo puts moved files back "
@@ -54,6 +55,23 @@ public sealed class HistoryPage : Page
         Ui.AttachFileMenu(list, row => History.CurrentPath(((MoveRef)row.Tag!).Move), Main.RefreshPreview);
         panel.SetBody(list);
         Children.Add(panel);
+    }
+
+    private void ClearHistory()
+    {
+        var count = History.Load().Sum(run => run.Moves.Count);
+        if (count == 0)
+        {
+            Ui.Info("History", Ui.T("The history is already empty."));
+            return;
+        }
+        if (!Ui.Ask("Clear history", Ui.T("Clear all {0} entries from the history?\n\nNo file is touched: everything stays where it is now. "
+                                          + "But these changes can no longer be undone from here.", count), warning: true))
+            return;
+        History.Clear();
+        page = 0;
+        Refresh();
+        Main.RefreshPreview();
     }
 
     /// <summary>Background runs change the log while the window is open.</summary>

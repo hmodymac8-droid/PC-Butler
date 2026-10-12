@@ -259,6 +259,46 @@ using (var helperStop = new CancellationTokenSource())
 Check(asked.SequenceEqual(["stop Spooler", "stop SysMain", "start Spooler"]), "the helper did exactly that");
 Check(AdminHelper.PausableServices.Length == 3 && AdminHelper.IsRunning("RpcSs") && !AdminHelper.IsRunning("no-such-service"), "service state can be read");
 
+// ---------------------------------------------------------------- installed programs
+Section("programs");
+var installed = Programs.Installed();
+Check(installed.Count > 3 && installed.All(p => p.Name.Length > 0 && (p.UninstallCommand.Length > 0 || p.Msi)), $"installed programs are listed ({installed.Count})");
+Check(Programs.CleanName("Example App 2.1.0 (64-bit)") == "Example App" && Programs.CleanName("Tool v3.2 x64") == "Tool"
+      && Programs.CleanName("7-Zip 24.08 (x64)") == "7-Zip" && Programs.CleanName("Microsoft") == "" && Programs.CleanName("App 2") == "",
+      "names are cleaned for matching, and general ones refused");
+var oldHome = Path.Combine(temp, "Apps", "Gone App");
+Directory.CreateDirectory(Path.Combine(oldHome, "data"));
+File.WriteAllText(Path.Combine(oldHome, "data", "left.txt"), "12345");
+using (var leftKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\PCButlerTestGone"))
+    leftKey.SetValue("x", 1);
+var gone = new InstalledProgram { Name = "PCButlerTestGone 1.2 (64-bit)", Hive = "HKCU", Key = "PCButlerTestGone", Location = oldHome };
+var left = Programs.Leftovers(gone, []);
+Check(left.Count == 2 && left.Any(l => l.Kind == "folder" && l.Path == oldHome && l.Size == 5)
+      && left.Any(l => l.Kind == "registry" && l.Path == @"HKCU\Software\PCButlerTestGone"), $"leftovers are found ({left.Count})");
+var neighbour = new InstalledProgram { Name = "Other", Hive = "HKCU", Key = "Other", Location = Path.Combine(oldHome, "data") };
+Check(Programs.Leftovers(gone, [neighbour]).All(l => l.Kind != "folder"), "a folder another program lives in is never offered");
+Check(Programs.Leftovers(new InstalledProgram { Name = "Windows", Hive = "HKCU", Key = "w", Location = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) }, []).Count == 0,
+      "shared folders and general names are never offered");
+Check(Programs.RemoveLeftovers(left.Where(l => l.Kind == "registry")).Count == 0
+      && Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTestGone") is null
+      && Directory.GetFiles(Programs.RegistryBackupFolder, "PCButlerTestGone-*.reg").Length == 1, "a registry key is backed up, then removed");
+var wingetTable = "   - \r   \\ \rName                 Id                  Version   Available Source\n"
+    + "------------------------------------------------------------------------\n"
+    + "Mozilla Firefox (x64) Mozilla.Firefox     130.0     131.0.2   winget\n"
+    + "7-Zip                7zip.7zip           23.01     24.08     winget\n"
+    + "A very long name th… Some.Truncat…       1.0       2.0       winget\n"
+    + "2 upgrades available.\n\n"
+    + "The following packages have an upgrade available, but require explicit targeting for upgrade:\n"
+    + "Name    Id              Version Available Source\n"
+    + "-------------------------------------------------\n"
+    + "Discord Discord.Discord 1.0.90  1.0.91    winget\n";
+var found = Programs.ParseUpdates(wingetTable);
+Check(found.Count == 3 && found[0] == new ProgramUpdate("Mozilla Firefox (x64)", "Mozilla.Firefox", "130.0", "131.0.2")
+      && found[1].Id == "7zip.7zip" && found[2].Name == "Discord", $"winget's table is read ({found.Count})");
+var oneSource = Programs.ParseUpdates(string.Join('\n', "Name      Id                    Version Available",
+    "---------------------------------------------", "AviSynth+ AviSynth.AviSynthPlus 3.7.3   3.7.3.4003", "1 upgrades available.", ""));
+Check(oneSource.Count == 1 && oneSource[0] == new ProgramUpdate("AviSynth+", "AviSynth.AviSynthPlus", "3.7.3", "3.7.3.4003"), "also without the source column");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.
