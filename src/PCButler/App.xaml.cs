@@ -163,6 +163,7 @@ public partial class App : Application
     private void StartTray()
     {
         tray = new Forms.NotifyIcon { Text = AppInfo.Name, Visible = true, ContextMenuStrip = new Forms.ContextMenuStrip() };
+        TrayMenu.Style(tray.ContextMenuStrip);
         try
         {
             using var stream = GetResourceStream(new Uri("pack://application:,,,/PCButler;component/icon.ico"))!.Stream;
@@ -190,25 +191,21 @@ public partial class App : Application
 
     private void BuildTrayMenu(Forms.ContextMenuStrip menu)
     {
-        menu.Items.Clear();
-        Forms.ToolStripMenuItem Add(string text, Action action)
-        {
-            var item = new Forms.ToolStripMenuItem(text);
-            item.Click += (_, _) => action();
-            menu.Items.Add(item);
-            return item;
-        }
-
-        var open = Add(Ui.T($"Open {AppInfo.Name}"), () => ShowMainWindow());
-        open.Font = new System.Drawing.Font(open.Font, System.Drawing.FontStyle.Bold);
-        Add(Ui.T("Sort now"), Background.RequestSort);
-        Add(Ui.T(ConfigStore.Load().IsPaused ? "Resume sorting" : "Pause for today"), Background.TogglePause);
-        Add(Ui.T("Show report"), ShowReport);
-        // Only shown once a newer version is found.
-        if (Background.Update is { } update)
-            Add(Ui.T("Install version {0}", update.Version), () => Task.Run(() => InstallUpdate(update)));
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        Add(Ui.T("Exit"), ExitProgram);
+        var config = ConfigStore.Load();
+        var update = Background.Update;
+        TrayMenu.Fill(menu, config,
+        [
+            new("\uE8A7", Ui.T($"Open {AppInfo.Name}"), () => ShowMainWindow(), Main: true),
+            new("\uE8FD", Ui.T("Sort now"), Background.RequestSort),
+            // Pausing only means something while automatic sorting is on, as in the window's status bar.
+            config.IsPaused ? new("\uE768", Ui.T("Resume sorting"), Background.TogglePause, config.AutoSortOn)
+                            : new("\uE769", Ui.T("Pause for today"), Background.TogglePause, config.AutoSortOn),
+            new("\uE81C", Ui.T("Show report"), ShowReport),
+            // Only shown once a newer version is found.
+            update is null ? null : new("\uE896", Ui.T("Install version {0}", update.Version), () => Task.Run(() => InstallUpdate(update))),
+            null,
+            new("\uE7E8", Ui.T("Exit"), ExitProgram),
+        ]);
     }
 
     private void Notify(string message, object[] arguments)

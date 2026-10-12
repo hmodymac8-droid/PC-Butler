@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace PCButler.Core;
@@ -98,19 +99,116 @@ public sealed class Vault
         File.Move(temp, path, overwrite: true);
     }
 
-    private static byte[] Wrap(byte[] vaultKey, string password)
+    /// <summary>
+    /// The header: the vault key sealed with the password, and (when one was made) sealed again
+    /// with the recovery key. recovery = null keeps the one already in the header.
+    /// </summary>
+    private static byte[] Wrap(byte[] vaultKey, string password, JsonObject? recovery = null)
     {
         byte[] salt = RandomNumberGenerator.GetBytes(16), nonce = RandomNumberGenerator.GetBytes(12);
         var passwordKey = Scrypt.DeriveKey(Encoding.UTF8.GetBytes(password), salt, ScryptN, ScryptR, ScryptP, 32);
         var wrapped = Seal(passwordKey, nonce, vaultKey, "vault-key"u8.ToArray());
-        var header = new Dictionary<string, object>
+        var header = new JsonObject
         {
             ["version"] = 1, ["kdf"] = "scrypt",
-            ["params"] = new Dictionary<string, int> { ["n"] = ScryptN, ["r"] = ScryptR, ["p"] = ScryptP },
+            ["params"] = new JsonObject { ["n"] = ScryptN, ["r"] = ScryptR, ["p"] = ScryptP },
             ["salt"] = Convert.ToBase64String(salt), ["nonce"] = Convert.ToBase64String(nonce),
             ["key"] = Convert.ToBase64String(wrapped),
         };
+        recovery ??= ReadRecovery();
+        if (recovery is not null)
+            header["recovery"] = recovery.DeepClone();
         return JsonSerializer.SerializeToUtf8Bytes(header, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    // --- the recovery key: a file that lets its holder set a new password ---
+
+    /// <summary>The name the recovery key file is looked for under, next to the program.</summary>
+    public const string RecoveryFileName = "PCButler.vaultkey";
+    private const string RecoveryTitle = "PC Butler vault recovery key";
+
+    /// <summary>Where a recovery key file placed next to the program would be.</summary>
+    public static string RecoveryFileBesideProgram => Path.Combine(AppContext.BaseDirectory, RecoveryFileName);
+
+    private static JsonObject? ReadRecovery()
+    {
+        try
+        {
+            return JsonNode.Parse(File.ReadAllText(HeaderFile))?["recovery"] as JsonObject;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>True when a recovery key was made for this vault.</summary>
+    public static bool HasRecoveryKey => Exists && ReadRecovery() is not null;
+
+    /// <summary>
+    /// Make a new recovery key and save it to file. A key made before stops working. With the
+    /// file, anyone who also has the vault can set a new password, so it must be kept safe.
+    /// </summary>
+    public void CreateRecoveryKey(string file, string password)
+    {
+        Unlock(password); // the password is asked again, so an unattended unlocked vault can't hand out keys
+        byte[] recoveryKey = RandomNumberGenerator.GetBytes(32), id = RandomNumberGenerator.GetBytes(8),
+               nonce = RandomNumberGenerator.GetBytes(12);
+        var recovery = new JsonObject
+        {
+            ["id"] = Convert.ToHexString(id).ToLowerInvariant(), ["nonce"] = Convert.ToBase64String(nonce),
+            ["key"] = Convert.ToBase64String(Seal(recoveryKey, nonce, key, "vault-recovery"u8.ToArray())),
+        };
+        var text = $"{RecoveryTitle}\r\n"
+                   + "Keep this file somewhere safe, away from this PC. With it, anyone who also has the vault can set a new password.\r\n"
+                   + $"To use it, put it beside PCButler.exe and click \"Forgot your password?\" on the Vault page.\r\n\r\n"
+                   + $"id: {recovery["id"]}\r\nkey: {Convert.ToBase64String(recoveryKey)}\r\n";
+        File.WriteAllText(file, text);
+        WriteAtomic(HeaderFile, Wrap(key, password, recovery));
+    }
+
+    /// <summary>Set a new password with a recovery key file instead of the old password, and open the vault.</summary>
+    public static Vault ResetPassword(string file, string newPassword)
+    {
+        if (newPassword.Length < MinPassword)
+            throw new VaultException(Tr.T("Use a password of at least {0} characters.", MinPassword));
+        string? id = null, encoded = null;
+        try
+        {
+            foreach (var line in File.ReadAllLines(file))
+            {
+                if (line.StartsWith("id:", StringComparison.Ordinal))
+                    id = line[3..].Trim();
+                else if (line.StartsWith("key:", StringComparison.Ordinal))
+                    encoded = line[4..].Trim();
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new VaultException(Tr.T("The recovery key file could not be read: {0}", error.Message));
+        }
+        var recovery = ReadRecovery();
+        if (recovery is null)
+            throw new VaultException(Tr.T("This vault has no recovery key."));
+        if (id is null || encoded is null)
+            throw new VaultException(Tr.T("This is not a recovery key file."));
+        if (id != (string?)recovery["id"])
+            throw new VaultException(Tr.T("This recovery key belongs to another vault, or a newer key replaced it."));
+        byte[] vaultKey;
+        try
+        {
+            vaultKey = Unseal(Convert.FromBase64String(encoded), Convert.FromBase64String((string)recovery["nonce"]!),
+                              Convert.FromBase64String((string)recovery["key"]!), "vault-recovery"u8.ToArray());
+        }
+        catch (Exception error) when (error is CryptographicException or FormatException or ArgumentException
+                                          or InvalidOperationException or NullReferenceException)
+        {
+            throw new VaultException(Tr.T("This recovery key does not open the vault."));
+        }
+        WriteAtomic(HeaderFile, Wrap(vaultKey, newPassword, recovery));
+        var vault = new Vault(vaultKey);
+        vault.LoadIndex();
+        return vault;
     }
 
     public static Vault Create(string password)

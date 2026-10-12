@@ -154,12 +154,15 @@ var
   DataDir: String;
 begin
   // Lets the program announce "Updated to version X" when it starts again.
+  // (Not for a TestBuild, which must leave the real data folder alone.)
+#ifndef TestBuild
   if (CurStep = ssPostInstall) and WizardSilent then
   begin
     DataDir := ExpandConstant('{userappdata}\{#DataFolder}');
     ForceDirectories(DataDir);
     SaveStringToFile(DataDir + '\updated.txt', '{#AppVersion}', False);
   end;
+#endif
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

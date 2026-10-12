@@ -129,6 +129,65 @@ public sealed partial class CategoryDialog : Dialog
     }
 }
 
+/// <summary>
+/// A short explanation and one or more password fields. accept gets what was typed and returns
+/// an error to show, or null to close the dialog.
+/// </summary>
+public sealed class PasswordsDialog : Dialog
+{
+    private readonly PasswordBox[] boxes;
+    private readonly TextBlock message = Ui.Text("", brush: "Amber", wrap: true);
+    private readonly Func<string[], string?> accept;
+    private bool accepted;
+
+    private PasswordsDialog(Window owner, string title, string intro, string[] labels, string acceptText, Func<string[], string?> accept)
+        : base(owner, title)
+    {
+        this.accept = accept;
+        var body = new StackPanel { Margin = new Thickness(18), Width = 420 };
+        body.Children.Add(Ui.Text(intro, wrap: true).Margin(0, 0, 0, 12));
+        boxes = labels.Select(_ => new PasswordBox()).ToArray();
+        for (var index = 0; index < labels.Length; index++)
+        {
+            body.Children.Add(Ui.Muted(Ui.T(labels[index])));
+            body.Children.Add(boxes[index].Margin(0, 4, 0, 10));
+        }
+        body.Children.Add(message);
+        body.Children.Add(Buttons(acceptText));
+        Content = body;
+        Loaded += (_, _) => boxes[0].Focus();
+    }
+
+    /// <summary>True when accept succeeded and closed the dialog.</summary>
+    public static bool Show(Window owner, string title, string intro, string[] labels, string acceptText, Func<string[], string?> accept)
+    {
+        var dialog = new PasswordsDialog(owner, title, intro, labels, acceptText, accept);
+        dialog.ShowDialog();
+        return dialog.accepted;
+    }
+
+    protected override void Accept()
+    {
+        Cursor = Cursors.Wait;
+        string? error;
+        try
+        {
+            error = accept(boxes.Select(box => box.Password).ToArray());
+        }
+        finally
+        {
+            Cursor = null;
+        }
+        if (error is not null)
+        {
+            message.Text = error;
+            return;
+        }
+        accepted = true;
+        Close();
+    }
+}
+
 /// <summary>Change the vault's password (the files stay as they are; only their key is re-wrapped).</summary>
 public sealed class ChangePasswordDialog : Dialog
 {

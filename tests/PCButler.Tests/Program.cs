@@ -225,6 +225,31 @@ Check(File.ReadAllText(copy) == "my secret", "open decrypts a copy");
 File.WriteAllText(copy, "my edited secret");
 File.SetLastWriteTimeUtc(copy, DateTime.UtcNow.AddSeconds(5));
 Check(vault.CloseAll().Count == 0 && !File.Exists(copy) && vault.Items[0].Size == "my edited secret".Length, "locking saves edits and removes the copy");
+// The recovery key: sets a new password without the old one.
+Check(!Vault.HasRecoveryKey, "no recovery key yet");
+var keyFile = Path.Combine(temp, "first.vaultkey");
+var askedAgain = false;
+try { vault.CreateRecoveryKey(keyFile, "not the password"); } catch (WrongPasswordException) { askedAgain = true; }
+Check(askedAgain && !File.Exists(keyFile), "making a recovery key needs the password");
+vault.CreateRecoveryKey(keyFile, "correct horse");
+Check(Vault.HasRecoveryKey && File.ReadAllText(keyFile).Contains("key: "), "recovery key file written");
+var recovered = Vault.ResetPassword(keyFile, "forgot it once");
+Check(recovered.Items.Count == 3 && Vault.Unlock("forgot it once").Items.Count == 3, "recovery key sets a new password");
+vault = Vault.Unlock("forgot it once");
+vault.ChangePassword("forgot it once", "correct horse");
+Check(Vault.HasRecoveryKey && Vault.ResetPassword(keyFile, "forgot it twice").Items.Count == 3, "the key survives a password change");
+vault = Vault.Unlock("forgot it twice");
+var secondKey = Path.Combine(temp, "second.vaultkey");
+vault.CreateRecoveryKey(secondKey, "forgot it twice");
+var replaced = false;
+try { Vault.ResetPassword(keyFile, "should not work"); } catch (VaultException) { replaced = true; }
+Check(replaced && Vault.Unlock("forgot it twice").Items.Count == 3, "a newer key retires the old one");
+var forged = Path.Combine(temp, "forged.vaultkey");
+File.WriteAllText(forged, File.ReadAllText(secondKey).Replace("key: ", "key: AAAA"));
+var forgedRefused = false;
+try { Vault.ResetPassword(forged, "should not work"); } catch (VaultException) { forgedRefused = true; }
+Check(forgedRefused, "a damaged key file is refused");
+vault = Vault.ResetPassword(secondKey, "correct horse");
 vault.ChangePassword("correct horse", "new password");
 vault = Vault.Unlock("new password");
 var outFolder = Path.Combine(temp, "Out");

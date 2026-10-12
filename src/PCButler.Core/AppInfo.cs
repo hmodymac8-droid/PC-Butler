@@ -6,8 +6,8 @@ namespace PCButler.Core;
 public static class AppInfo
 {
     public const string Name = "PC Butler";
-    /// <summary>Must match the tag of the GitHub release this is published as (v1.0.1).</summary>
-    public const string Version = "1.0.1";
+    /// <summary>Must match the tag of the GitHub release this is published as (v1.0.2).</summary>
+    public const string Version = "1.0.2";
     /// <summary>Where updates are looked for.</summary>
     public const string Repo = "hmodymac8-droid/PC-Butler";
     public const string ExeName = "PCButler.exe";
@@ -44,21 +44,23 @@ public static class AppInfo
     {
         try
         {
-            if (Directory.Exists(DataDir) || !Directory.Exists(LegacyDataDir))
+            // The settings file, not the folder: the installer may have made the folder already.
+            if (File.Exists(ConfigFile) || !Directory.Exists(LegacyDataDir))
                 return;
             Directory.CreateDirectory(DataDir);
             foreach (var name in new[] { "config.json", "history.json" })
             {
-                var source = Path.Combine(LegacyDataDir, name);
-                if (File.Exists(source))
-                    File.Copy(source, Path.Combine(DataDir, name));
+                string source = Path.Combine(LegacyDataDir, name), target = Path.Combine(DataDir, name);
+                if (File.Exists(source) && !File.Exists(target))
+                    File.Copy(source, target);
             }
             var vault = Path.Combine(LegacyDataDir, "Vault");
             if (Directory.Exists(vault))
             {
                 var target = Directory.CreateDirectory(Path.Combine(DataDir, "Vault")).FullName;
                 foreach (var file in Directory.GetFiles(vault))
-                    File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
+                    if (!File.Exists(Path.Combine(target, Path.GetFileName(file))))
+                        File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)

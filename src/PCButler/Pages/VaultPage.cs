@@ -79,6 +79,15 @@ public sealed class VaultPage : Page
         form.Children.Add(message);
         var submitButton = Ui.Button(Ui.T(create ? "Create vault" : "Unlock"), () => { }, accent: true).Margin(0, 8);
         form.Children.Add(submitButton);
+        if (!create && Core.Vault.HasRecoveryKey)
+        {
+            // A link-like button: quiet, but reachable by keyboard and screen readers.
+            var forgot = Ui.Button(Ui.T("Forgot your password?"), ResetWithRecoveryKey).Margin(0, 10);
+            forgot.Background = forgot.BorderBrush = Brushes.Transparent;
+            forgot.Foreground = Ui.Paint("Primary");
+            forgot.HorizontalAlignment = HorizontalAlignment.Center;
+            form.Children.Add(forgot);
+        }
         box.Children.Add(form);
         if (create)
         {
@@ -148,6 +157,7 @@ public sealed class VaultPage : Page
         top.Children.Add(Ui.Button(Ui.T("Delete…"), Delete).Margin(6));
         top.Children.Add(Ui.Button(Ui.T("Lock"), Lock).Dock(Dock.Right));
         top.Children.Add(Ui.Button(Ui.T("Change password…"), ChangePassword).Margin(0, 0, 6, 0).Dock(Dock.Right));
+        top.Children.Add(Ui.Button(Ui.T("Recovery key…"), MakeRecoveryKey).Margin(0, 0, 6, 0).Dock(Dock.Right));
         layout.Children.Add(top.Dock(Dock.Top));
 
         panel = new CardPanel("Vault files", "\uE72E");
@@ -383,5 +393,93 @@ public sealed class VaultPage : Page
         Touch();
         if (vault is not null)
             ChangePasswordDialog.Show(Window.GetWindow(this)!, vault);
+    }
+
+    /// <summary>Save a recovery key file: with it, a forgotten password can be replaced.</summary>
+    private void MakeRecoveryKey()
+    {
+        Touch();
+        if (vault is null)
+            return;
+        var owner = Window.GetWindow(this)!;
+        var intro = Ui.T("A recovery key is a file that lets you set a new password if you forget this one. "
+                         + "Keep it somewhere safe away from this PC, such as a USB stick: anyone who has it and this PC can open the vault.");
+        if (Core.Vault.HasRecoveryKey)
+            intro += "\n\n" + Ui.T("This vault already has a recovery key. Making a new one makes the old file stop working.");
+        string? password = null;
+        if (!PasswordsDialog.Show(owner, "Recovery key", intro, ["Current password"], "Continue", typed =>
+            {
+                try
+                {
+                    Core.Vault.Unlock(typed[0]);
+                }
+                catch (VaultException error)
+                {
+                    return error.Message;
+                }
+                password = typed[0];
+                return null;
+            }))
+            return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = Ui.T("Save the recovery key"), FileName = Core.Vault.RecoveryFileName,
+            Filter = Ui.T("Recovery key") + " (*.vaultkey)|*.vaultkey", DefaultExt = ".vaultkey",
+        };
+        if (dialog.ShowDialog(owner) != true)
+            return;
+        try
+        {
+            vault.CreateRecoveryKey(dialog.FileName, password!);
+        }
+        catch (Exception error) when (error is VaultException or IOException or UnauthorizedAccessException)
+        {
+            Ui.Warn("Recovery key", error.Message);
+            return;
+        }
+        Ui.Info("Recovery key", Ui.T("The recovery key is saved:\n{0}\n\nIf you forget the password, put this file in the program's folder:\n{1}\n"
+                                     + "then click \"Forgot your password?\" on the Vault page.",
+                                     dialog.FileName, AppContext.BaseDirectory.TrimEnd('\\')));
+    }
+
+    /// <summary>Set a new password with the recovery key file beside the program (or one picked by hand).</summary>
+    private void ResetWithRecoveryKey()
+    {
+        var owner = Window.GetWindow(this)!;
+        var file = Core.Vault.RecoveryFileBesideProgram;
+        if (!File.Exists(file))
+        {
+            if (!Ui.Ask("Recovery key", Ui.T("Put your recovery key file ({0}) in the program's folder:\n{1}\n\nOr choose the file now?",
+                                             Core.Vault.RecoveryFileName, AppContext.BaseDirectory.TrimEnd('\\'))))
+                return;
+            var pick = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = Ui.T("Recovery key"), Filter = Ui.T("Recovery key") + " (*.vaultkey)|*.vaultkey|*.*|*.*",
+            };
+            if (pick.ShowDialog(owner) != true)
+                return;
+            file = pick.FileName;
+        }
+        if (!PasswordsDialog.Show(owner, "Recovery key", Ui.T("The recovery key was found. Choose a new password for the vault."),
+                                  ["New password", "Type it again"], "Change", typed =>
+            {
+                if (typed[0] != typed[1])
+                    return Ui.T("The new passwords are not the same.");
+                try
+                {
+                    vault = Core.Vault.ResetPassword(file, typed[0]);
+                }
+                catch (VaultException error)
+                {
+                    return error.Message;
+                }
+                return null;
+            }))
+            return;
+        Touch();
+        ShowScreen();
+        var beside = string.Equals(Path.GetFullPath(file), Path.GetFullPath(Core.Vault.RecoveryFileBesideProgram), StringComparison.OrdinalIgnoreCase);
+        Ui.Info("Recovery key", Ui.T("The password is changed and the vault is open.")
+                                + (beside ? "\n\n" + Ui.T("Take the recovery key file out of the program's folder again and keep it safe: anyone who has it can do the same.") : ""));
     }
 }
