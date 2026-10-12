@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Windows Forms is used only for the tray icon. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>PCButler</AssemblyName>
+    <RootNamespace>PCButler</RootNamespace>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <Product>PC Butler</Product>
+    <Company>hmodymac8-droid</Company>
+    <Copyright>Copyright (c) 2026 hmodymac8-droid. GPL-3.0-only.</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Both UI frameworks define Application, Button, MessageBox...; WPF's are the ones meant here. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <Resource Include="icon.png" />
+    <Resource Include="icon.ico" />
+    <Resource Include="Fonts\*.ttf" />
+  </ItemGroup>
+
+</Project>
