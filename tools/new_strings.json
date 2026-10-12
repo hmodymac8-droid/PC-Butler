@@ -1,7 +1,1 @@
-{
- "The {0} file(s) on the Sorter page will be moved now, and from then on files will be checked every {1} minutes and moved without asking.\n\nAfter each run you can review, approve or undo what moved.\n\nIt works while PC Butler is running, also from the taskbar tray.\n\nTurn it on?": "سيتم الآن نقل الملفات المعروضة في صفحة «الفرز» وعددها {0}، وبعد ذلك تُفحص الملفات كل {1} دقيقة وتُنقل دون سؤال.\n\nبعد كل عملية يمكنك مراجعة ما نُقل والموافقة عليه أو التراجع عنه.\n\nيعمل ما دام PC Butler يعمل، ولو من أيقونته بجانب الساعة.\n\nهل تريد تشغيله؟",
- "Start PC Butler when Windows starts": "تشغيل PC Butler مع بدء تشغيل ويندوز",
- "It waits in the taskbar tray, for automatic sorting, updates and the drop zone.": "ينتظر في أيقونته بجانب الساعة، للفرز التلقائي والتحديثات ومنطقة الإفلات.",
- "Sort automatically": "الفرز التلقائي",
- "Moves files on the schedule below, without asking, while PC Butler is running.": "ينقل الملفات حسب الجدول أدناه، دون سؤال، ما دام PC Butler يعمل."
-}
+{"Applied when you save.": "يُطبَّق عند الحفظ."}

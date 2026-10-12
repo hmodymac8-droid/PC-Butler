@@ -174,14 +174,19 @@ public sealed partial class SettingsPage : Page
         buttons.Children.Add(Ui.Button(Ui.T("Add…"), AddCategory));
         buttons.Children.Add(Ui.Button(Ui.T("Edit…"), EditCategory).Margin(6, 0, 6));
         buttons.Children.Add(Ui.Button(Ui.T("Remove"), RemoveCategory));
+        grid.Children.Add(buttons.At(9, 0, 3));
+        // More settings than a short window can show: the page scrolls rather than squeezing the list.
+        // The language comes first, at the top of the page; like the form below, it applies when you save.
         foreach (var (_, label) in Languages)
             language.Items.Add(label);
         language.SelectedIndex = Math.Max(0, Array.FindIndex(Languages, choice => choice.Key == config.Language));
-        buttons.Children.Add(language.Margin(6, 0, 0).Dock(Dock.Right));
-        buttons.Children.Add(Ui.Text(Ui.T("Language")).Dock(Dock.Right));
-        grid.Children.Add(buttons.At(9, 0, 3));
-        // More settings than a short window can show: the page scrolls rather than squeezing the list.
+        var languageRow = Ui.Row(10, Ui.Text(Ui.T("Language"), 16, weight: FontWeights.Bold), language,
+                                 Ui.Muted(Ui.T("Applied when you save."), 12)).Margin(0, 0, 0, 18);
+        ((TextBlock)languageRow.Children[0]).FontFamily = Ui.DisplayFont;
+        foreach (UIElement child in languageRow.Children)
+            ((FrameworkElement)child).VerticalAlignment = VerticalAlignment.Center;
         var all = new DockPanel();
+        all.Children.Add(languageRow.Dock(Dock.Top));
         all.Children.Add(quick.Dock(Dock.Top));
         all.Children.Add(grid);
         Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
