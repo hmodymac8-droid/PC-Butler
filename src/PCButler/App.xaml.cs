@@ -57,6 +57,17 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        if (arguments.Length >= 3 && arguments[0] == "--act")
+        {
+            // An item of File Explorer's "PC Butler" submenu. With several items selected, the
+            // first copy gathers the others' paths and acts once; the rest just hand theirs over.
+            Tr.Language = ConfigStore.Load().EffectiveLanguage();
+            if (MenuBatch.Gather(arguments[1], arguments[2]) is { } batch)
+                MenuActions.Run(arguments[1], batch);
+            Shutdown();
+            return;
+        }
+        // The single entry of versions before 1.9.1 (until the program starts and rewrites the menu).
         if (arguments.Length >= 2 && arguments[0] == "--process")
         {
             // File Explorer's right-click entry: one small window in a process of its own, whether or not PC Butler is running.
@@ -167,7 +178,7 @@ public partial class App : Application
     /// </summary>
     public static string? SyncExplorerMenu(bool wanted) =>
         !AppInfo.IsInstalled ? null
-            : ExplorerMenu.Sync(wanted, Environment.ProcessPath!, Ui.T($"Process with {AppInfo.Name}"));
+            : ExplorerMenu.Sync(wanted, Environment.ProcessPath!, english => Ui.T(english));
 
     private void ShowDropZone(bool show)
     {

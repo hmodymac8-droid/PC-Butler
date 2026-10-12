@@ -1,5 +1,9 @@
 {
- "Use the classic full right-click menu instead of Windows 11's short one": "استخدام قائمة الزر الأيمن الكلاسيكية الكاملة بدل قائمة ويندوز 11 المختصرة",
- "File Explorer uses the new menu after it restarts.\n\nRestart it now? Open folder windows will close, and the taskbar disappears for a moment. Otherwise it changes the next time you sign in.": "يستخدم File Explorer القائمة الجديدة بعد إعادة تشغيله.\n\nإعادة تشغيله الآن؟ ستُغلق نوافذ المجلدات المفتوحة ويختفي شريط المهام للحظة. وإلا فسيتغيّر عند تسجيل دخولك التالي.",
- "The classic menu shows every entry at once, including “Process with PC Butler”. Switch it off to get Windows 11's short menu back.": "القائمة الكلاسيكية تعرض كل الخيارات مباشرة، ومنها «معالجة بـ PC Butler». أوقفه لتعود قائمة ويندوز 11 المختصرة."
+ "Sort into its category folder": "فرز إلى مجلد تصنيفه",
+ "Lock in the Vault": "قفل في الخزنة",
+ "Shred (deep delete, cannot be undone)": "حذف عميق (لا يمكن التراجع عنه)",
+ "Nothing to sort: no category takes these files.": "لا شيء للفرز: لا يوجد تصنيف يأخذ هذه الملفات.",
+ "Only files can be locked in the Vault, not folders.": "يمكن قفل الملفات فقط في الخزنة، وليس المجلدات.",
+ "Show the “PC Butler” menu when I right-click files or folders": "إظهار قائمة «PC Butler» عند الضغط بالزر الأيمن على الملفات أو المجلدات",
+ "The classic menu shows every entry at once, including the “PC Butler” menu. Switch it off to get Windows 11's short menu back.": "تعرض القائمة الكلاسيكية كل الخيارات مباشرة، ومنها قائمة «PC Butler». أطفئ هذا المفتاح لاستعادة قائمة ويندوز 11 المختصرة."
 }

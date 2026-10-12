@@ -8,7 +8,7 @@ using PCButler.Core;
 namespace PCButler;
 
 /// <summary>
-/// The small window behind File Explorer's "Process with PC Butler": what to do with the
+/// The small window behind the single "Process with PC Butler" entry of versions 1.8 to 1.9.0: what to do with the
 /// file or folder that was right-clicked. Everything done here is logged in History and
 /// can be undone there.
 /// </summary>
