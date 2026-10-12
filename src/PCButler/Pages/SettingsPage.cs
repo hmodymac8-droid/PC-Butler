@@ -81,6 +81,7 @@ public sealed partial class SettingsPage : Page
         quick.Children.Add(Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on)).Margin(0, 12, 0, 0));
         quick.Children.Add(Ui.Muted(Ui.T("A small tile that stays on top of other windows. Drag files or folders onto it to sort them, lock them in "
                                          + "the Vault, shred them or recycle them. Drag the tile to move it."), 12, wrap: true).Margin(0, 2, 0, 0));
+        AddSandbox(quick);
         quick.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 18, 0, 0) });
 
         // Save settings sits at the bottom, always in view, because nothing in the form below applies until it is pressed.
@@ -190,6 +191,59 @@ public sealed partial class SettingsPage : Page
         all.Children.Add(quick.Dock(Dock.Top));
         all.Children.Add(grid);
         Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+    }
+
+    /// <summary>Windows Sandbox: a switch (administrator rights and a restart), and a button to open it once it is on.</summary>
+    private static void AddSandbox(StackPanel quick)
+    {
+        var state = WindowsSandbox.Current();
+        var showing = false; // set while the switch is put back, so that is not taken as a click
+        CheckBox? toggle = null;
+        var open = Ui.Button(Ui.T("Open Windows Sandbox"), () =>
+        {
+            if (!WindowsSandbox.Open())
+                Ui.Warn("Windows Sandbox", Ui.T("Windows Sandbox could not be started. If you just turned it on, restart the PC first."));
+        });
+        open.Visibility = state == WindowsSandbox.State.On ? Visibility.Visible : Visibility.Collapsed;
+        toggle = Ui.Switch(Ui.T("Windows Sandbox"), state == WindowsSandbox.State.On, async on =>
+        {
+            if (showing)
+                return;
+            void PutBack()
+            {
+                showing = true;
+                toggle!.IsChecked = !on;
+                showing = false;
+            }
+            if (!Ui.Ask("Windows Sandbox", Ui.T(on
+                    ? "Turn on Windows Sandbox?\n\nWindows asks for administrator rights, and the PC must restart before you can use it."
+                    : "Turn off Windows Sandbox?\n\nWindows asks for administrator rights, and the change is finished by a restart.")))
+            {
+                PutBack();
+                return;
+            }
+            toggle!.IsEnabled = false;
+            var error = await Task.Run(() => WindowsSandbox.Set(on));
+            toggle.IsEnabled = true;
+            if (error is not null)
+            {
+                PutBack();
+                if (error.Length > 0)
+                    Ui.Warn("Windows Sandbox", Ui.T("Windows Sandbox could not be changed: {0}\n\nIt needs Windows Pro, Enterprise or Education, "
+                                                    + "and virtualization turned on in the PC's firmware (BIOS/UEFI).", error));
+                return;
+            }
+            open.Visibility = Visibility.Collapsed; // usable only after the restart
+            if (Ui.Ask("Windows Sandbox", Ui.T("Done. Restart the PC now to finish?\n\nSave your work in other programs first.")))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", "/r /t 5") { CreateNoWindow = true })?.Dispose();
+        });
+        quick.Children.Add(Ui.Row(12, toggle, open).Margin(0, 12, 0, 0));
+        if (state == WindowsSandbox.State.NotAvailable)
+            toggle.IsEnabled = false;
+        quick.Children.Add(Ui.Muted(Ui.T(state == WindowsSandbox.State.NotAvailable
+            ? "Windows Sandbox needs Windows Pro, Enterprise or Education."
+            : "A throwaway copy of Windows for trying files and programs safely. Everything in it is deleted when you close it."),
+            12, wrap: true).Margin(0, 2, 0, 0));
     }
 
     private System.Collections.ObjectModel.ObservableCollection<Row> CategoryRows => (System.Collections.ObjectModel.ObservableCollection<Row>)categories.ItemsSource;

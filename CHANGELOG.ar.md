@@ -3,8 +3,9 @@
 يُعرض هذا الملف داخل البرنامج (المساعدة وحول، ومرة بعد كل تحديث).
 كل نسخة عنوان يبدأ بـ `##` تليه أسطر تبدأ بـ `- `.
 
-## 1.11.2
+## 1.12.0
 
+- الإعدادات: مفتاح Windows Sandbox يفعّل نسخة ويندوز المؤقتة الآمنة أو يوقفها (بصلاحيات المسؤول وإعادة تشغيل)، مع زر لفتحها. يحتاج إلى ويندوز Pro أو Enterprise أو Education.
 - البرامج: أُعيد ترتيب قائمتي التطبيقات الأساسية والموصى بها. الأساسية: Chrome وWinRAR وVisual C++ Redistributable و.NET Desktop Runtime 8 وDiscord وSteam وGit وMPC-HC وVisual Studio Code وTeraCopy وWizTree. والموصى بها أُضيف إليها GitHub Desktop وMSI Afterburner.
 
 ## 1.11.1
