@@ -55,11 +55,38 @@ public static class RecycleBin
     /// The bin keeps each file as a pair: $R&lt;id&gt; holds the content and $I&lt;id&gt; records
     /// the original path and deletion time.
     /// </summary>
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint size);
+
+    /// <summary>
+    /// The path with its folders spelled out in full ("C:\Users\Administrator", not
+    /// "C:\Users\ADMINI~1"), as the Recycle Bin records it. The file itself may be gone, so
+    /// only its folder is looked up.
+    /// </summary>
+    private static string LongPath(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            var folder = Path.GetDirectoryName(full);
+            if (folder is null || !full.Contains('~'))
+                return full;
+            var buffer = new StringBuilder(1024);
+            var length = GetLongPathName(folder, buffer, (uint)buffer.Capacity);
+            return length > 0 && length < buffer.Capacity ? Path.Combine(buffer.ToString(), Path.GetFileName(full)) : full;
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path;
+        }
+    }
+
     public static void Restore(string original)
     {
         if (File.Exists(original))
             throw new IOException("a file with that name is already there");
         (long DeletedAt, string Record)? newest = null;
+        var wanted = Sorter.Norm(LongPath(original));
         string[] userBins;
         try
         {
@@ -104,7 +131,7 @@ public static class RecycleBin
                 else
                     name = Encoding.Unicode.GetString(data, 24, data.Length - 24);
                 name = name.Split('\0')[0];
-                if (Sorter.Norm(name) == Sorter.Norm(original) && (newest is null || deletedAt > newest.Value.DeletedAt))
+                if (Sorter.Norm(LongPath(name)) == wanted && (newest is null || deletedAt > newest.Value.DeletedAt))
                     newest = (deletedAt, record);
             }
         }

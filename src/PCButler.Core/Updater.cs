@@ -199,7 +199,7 @@ public sealed class BackgroundService
                     SortPass(config);
                 }
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) // whatever goes wrong, the loop (and the tray icon) keeps going
             {
                 Log.Error($"Scan failed: {error.Message}");
             }

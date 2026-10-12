@@ -116,7 +116,7 @@ public static class Ui
         return element;
     }
 
-    public static BitmapImage AppIcon() => new(new Uri("pack://application:,,,/icon.png"));
+    public static BitmapImage AppIcon() => new(new Uri("pack://application:,,,/PCButler;component/icon.png"));
 
     /// <summary>The tone for a destination folder: rows going to the same folder share one.</summary>
     public static string Tone(string group)
@@ -126,7 +126,8 @@ public static class Ui
         return tone;
     }
 
-    private static Color Mix(string color, string @base, double amount)
+    /// <summary>`amount` of `color` laid over `base`, like CSS color-mix.</summary>
+    public static Color Mix(string color, string @base, double amount)
     {
         Color a = (Color)ColorConverter.ConvertFromString(color), b = (Color)ColorConverter.ConvertFromString(@base);
         byte Blend(byte x, byte y) => (byte)Math.Round(x * amount + y * (1 - amount));
@@ -157,20 +158,28 @@ public static class Ui
 
     // --- message boxes (Windows' own, like the Python program used) ---
 
+    /// <summary>Arabic message boxes read right to left.</summary>
+    public static MessageBoxOptions Reading => Tr.IsArabic ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : MessageBoxOptions.None;
+
     public static void Info(string title, string message) =>
-        MessageBox.Show(Owner(), message, T(title), MessageBoxButton.OK, MessageBoxImage.Information);
+        Show(message, T(title), MessageBoxButton.OK, MessageBoxImage.Information, MessageBoxResult.OK, Reading);
 
     public static void Warn(string title, string message) =>
-        MessageBox.Show(Owner(), message, T(title), MessageBoxButton.OK, MessageBoxImage.Warning);
+        Show(message, T(title), MessageBoxButton.OK, MessageBoxImage.Warning, MessageBoxResult.OK, Reading);
 
     public static bool Ask(string title, string message, bool warning = false) =>
-        MessageBox.Show(Owner(), message, T(title), MessageBoxButton.YesNo, warning ? MessageBoxImage.Warning : MessageBoxImage.Question)
-        == MessageBoxResult.Yes;
+        Show(message, T(title), MessageBoxButton.YesNo, warning ? MessageBoxImage.Warning : MessageBoxImage.Question,
+                        MessageBoxResult.No, Reading) == MessageBoxResult.Yes;
 
-    private static Window Owner() =>
+    private static Window? Owner() =>
         Application.Current.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
-        ?? Application.Current.Windows.OfType<Window>().FirstOrDefault(window => window.IsVisible)
-        ?? new Window();
+        ?? Application.Current.Windows.OfType<Window>().FirstOrDefault(window => window.IsVisible);
+
+    private static MessageBoxResult Show(string message, string title, MessageBoxButton buttons, MessageBoxImage image,
+                                         MessageBoxResult defaultResult, MessageBoxOptions options) =>
+        Owner() is { } owner
+            ? MessageBox.Show(owner, message, title, buttons, image, defaultResult, options)
+            : MessageBox.Show(message, title, buttons, image, defaultResult, options);
 
     /// <summary>"Done": the outcome of a batch, listing up to ten failures.</summary>
     public static void ReportResult(string message, List<string> errors)
@@ -206,10 +215,14 @@ public static class Ui
             var dark = 1;
             const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
             DwmSetWindowAttribute(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+            // Windows 11: paint the title bar in the sidebar colour (COLORREF is 0x00BBGGRR).
+            var caption = 0x000c0a09;
+            const int DWMWA_CAPTION_COLOR = 35;
+            DwmSetWindowAttribute(handle, DWMWA_CAPTION_COLOR, ref caption, sizeof(int));
         };
         try
         {
-            window.Icon = BitmapFrame.Create(new Uri("pack://application:,,,/icon.ico"));
+            window.Icon = BitmapFrame.Create(new Uri("pack://application:,,,/PCButler;component/icon.ico"));
         }
         catch (Exception error) when (error is IOException or NotSupportedException)
         {
@@ -223,7 +236,8 @@ public static class Ui
 
     /// <summary>
     /// A dark list with columns. first = (title, width, cell template: "FileCell", "CheckCell" or
-    /// "PlainCell"); the other columns show Row.Cells in order.
+    /// "PlainCell"); the other columns show Row.Cells in order. The first column takes up the
+    /// slack, and gives some back when the window is narrow.
     /// </summary>
     public static ListView List((string Title, double Width, string Template) first, params (string Title, double Width)[] columns)
     {
@@ -245,7 +259,7 @@ public static class Ui
         list.SizeChanged += (_, _) =>
         {
             var others = view.Columns.Skip(1).Sum(column => column.Width);
-            view.Columns[0].Width = Math.Max(first.Width, list.ActualWidth - others - 30);
+            view.Columns[0].Width = Math.Max(Math.Min(first.Width, 160), list.ActualWidth - others - 30);
         };
         return list;
     }
@@ -329,6 +343,19 @@ public static class Ui
     }
 }
 
+/// <summary>
+/// Text with Arabic in it reads right to left; anything else (file names, paths, sizes) stays
+/// left to right. Theme.xaml applies this to every TextBlock, so the layout itself is not mirrored.
+/// </summary>
+public sealed class TextDirection : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+        value is string text && text.Any(c => c is >= '\u0600' and <= '\u06FF') ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+
+    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>One line of a list. Cells are the text of the columns after the first.</summary>
 public sealed class Row : INotifyPropertyChanged
 {
@@ -354,6 +381,9 @@ public sealed class Row : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Changed(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 
+    /// <summary>What screen readers and UI Automation call the row.</summary>
+    public override string ToString() => Name;
+
     public Row WithTile(string extension, string group = "", bool faded = false)
     {
         (TileBack, TileFore, TileText, TileFontSize) = Ui.Tile(extension, group, faded);
@@ -371,7 +401,7 @@ public sealed class Row : INotifyPropertyChanged
 /// <summary>A summary card: a caption, a big number with its unit, and a note.</summary>
 public sealed class StatCard : Border
 {
-    private readonly TextBlock value = new() { FontSize = 30, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
+    private readonly TextBlock value = new() { FontSize = 27, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
     private readonly TextBlock unit = Ui.Muted("", 15).Margin(8, 0, 0, 5);
     private readonly TextBlock note = Ui.Muted("", 12).Margin(0, 6, 0, 0);
 

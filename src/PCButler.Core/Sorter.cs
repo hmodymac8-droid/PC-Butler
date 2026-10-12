@@ -37,7 +37,11 @@ public sealed record MoveRef(string RunTime, int Index, List<string> Move);
 public static class History
 {
     public const string TimeFormat = "yyyy-MM-dd HH:mm:ss";
-    private static readonly object Gate = new();
+    /// <summary>
+    /// Held for each whole load-change-save, so the window and the background sorter never
+    /// overwrite each other's changes. Re-entrant, so the steps inside can take it again.
+    /// </summary>
+    internal static readonly object Gate = new();
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -70,9 +74,12 @@ public static class History
 
     public static void AddRun(List<List<string>> moves, bool review = false)
     {
-        var history = Load();
-        history.Add(new Run { Time = DateTime.Now.ToString(TimeFormat), Moves = moves, Review = review });
-        Save(history);
+        lock (History.Gate)
+        {
+            var history = Load();
+            history.Add(new Run { Time = DateTime.Now.ToString(TimeFormat), Moves = moves, Review = review });
+            Save(history);
+        }
     }
 
     /// <summary>True while the file is still where the program moved it.</summary>
@@ -95,10 +102,13 @@ public static class History
 
     public static void ApprovePending()
     {
-        var history = Load();
-        foreach (var run in history)
-            run.Review = false;
-        Save(history);
+        lock (History.Gate)
+        {
+            var history = Load();
+            foreach (var run in history)
+                run.Review = false;
+            Save(history);
+        }
     }
 }
 
@@ -237,65 +247,68 @@ public static class Sorter
     /// </summary>
     public static (int Count, List<string> Errors) UndoMoves(IEnumerable<(string RunTime, int Index)> selection)
     {
-        var history = History.Load();
-        var runs = new Dictionary<string, Run>();
-        foreach (var run in history)
-            runs[run.Time] = run;
-        var restored = 0;
-        var errors = new List<string>();
-        var folders = new HashSet<string>();
-        foreach (var (runTime, index) in selection)
+        lock (History.Gate)
         {
-            if (!runs.TryGetValue(runTime, out var run) || index < 0 || index >= run.Moves.Count)
-                continue;
-            var move = run.Moves[index];
-            if (!History.CanUndo(move))
-                continue;
-            string source = move[0], destination = move[1];
-            try
+            var history = History.Load();
+            var runs = new Dictionary<string, Run>();
+            foreach (var run in history)
+                runs[run.Time] = run;
+            var restored = 0;
+            var errors = new List<string>();
+            var folders = new HashSet<string>();
+            foreach (var (runTime, index) in selection)
             {
-                if (History.IsActive(move))
+                if (!runs.TryGetValue(runTime, out var run) || index < 0 || index >= run.Moves.Count)
+                    continue;
+                var move = run.Moves[index];
+                if (!History.CanUndo(move))
+                    continue;
+                string source = move[0], destination = move[1];
+                try
                 {
-                    var parent = Path.GetDirectoryName(source)!;
-                    Directory.CreateDirectory(parent);
-                    // Record where it actually landed in case the old name was taken.
-                    move[0] = UniqueDestination(parent, Path.GetFileName(source));
-                    File.Move(destination, move[0]);
-                    move.Add("undone");
-                    folders.Add(Path.GetDirectoryName(destination)!);
+                    if (History.IsActive(move))
+                    {
+                        var parent = Path.GetDirectoryName(source)!;
+                        Directory.CreateDirectory(parent);
+                        // Record where it actually landed in case the old name was taken.
+                        move[0] = UniqueDestination(parent, Path.GetFileName(source));
+                        File.Move(destination, move[0]);
+                        move.Add("undone");
+                        folders.Add(Path.GetDirectoryName(destination)!);
+                    }
+                    else if (destination.Length > 0)
+                    {
+                        // Deleted after being moved: back to where it was moved to.
+                        RecycleBin.Restore(destination);
+                        move.RemoveAt(2);
+                    }
+                    else
+                    {
+                        // Deleted where it lay.
+                        RecycleBin.Restore(source);
+                        move[2] = "restored";
+                    }
+                    restored++;
+                    Log.Info($"Restored {Path.GetFileName(source)}");
                 }
-                else if (destination.Length > 0)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {
-                    // Deleted after being moved: back to where it was moved to.
-                    RecycleBin.Restore(destination);
-                    move.RemoveAt(2);
+                    errors.Add($"{Path.GetFileName(source)}: {error.Message}");
                 }
-                else
-                {
-                    // Deleted where it lay.
-                    RecycleBin.Restore(source);
-                    move[2] = "restored";
-                }
-                restored++;
-                Log.Info($"Restored {Path.GetFileName(source)}");
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            foreach (var folder in folders)
             {
-                errors.Add($"{Path.GetFileName(source)}: {error.Message}");
+                try
+                {
+                    Directory.Delete(folder); // only succeeds if undoing left it empty
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
             }
+            History.Save(history);
+            return (restored, errors);
         }
-        foreach (var folder in folders)
-        {
-            try
-            {
-                Directory.Delete(folder); // only succeeds if undoing left it empty
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
-        History.Save(history);
-        return (restored, errors);
     }
 
     /// <summary>Undo every remaining move of one run: the given one, or the latest.</summary>
@@ -318,43 +331,46 @@ public static class Sorter
         IReadOnlyList<string> paths, bool permanent = false, Action<int, int>? progress = null,
         CancellationToken cancel = default)
     {
-        var history = History.Load();
-        var active = new Dictionary<string, List<string>>();
-        foreach (var move in history.SelectMany(run => run.Moves).Where(History.IsActive))
-            active[Norm(move[1])] = move;
-        var unlogged = new List<List<string>>();
-        var errors = new List<string>();
-        var count = 0;
-        for (var done = 0; done < paths.Count; done++)
+        lock (History.Gate)
         {
-            if (cancel.IsCancellationRequested)
-                break;
-            progress?.Invoke(done, paths.Count);
-            var path = paths[done];
-            try
+            var history = History.Load();
+            var active = new Dictionary<string, List<string>>();
+            foreach (var move in history.SelectMany(run => run.Moves).Where(History.IsActive))
+                active[Norm(move[1])] = move;
+            var unlogged = new List<List<string>>();
+            var errors = new List<string>();
+            var count = 0;
+            for (var done = 0; done < paths.Count; done++)
             {
-                if (permanent)
-                    File.Delete(path);
+                if (cancel.IsCancellationRequested)
+                    break;
+                progress?.Invoke(done, paths.Count);
+                var path = paths[done];
+                try
+                {
+                    if (permanent)
+                        File.Delete(path);
+                    else
+                        RecycleBin.Send(path);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{Path.GetFileName(path)}: {error.Message}");
+                    continue;
+                }
+                count++;
+                var status = permanent ? "erased" : "deleted";
+                Log.Info($"Deleted ({(permanent ? "permanently" : "Recycle Bin")}) {path}");
+                if (active.TryGetValue(Norm(path), out var logged))
+                    logged.Add(status);
                 else
-                    RecycleBin.Send(path);
+                    unlogged.Add([path, "", status]);
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-                errors.Add($"{Path.GetFileName(path)}: {error.Message}");
-                continue;
-            }
-            count++;
-            var status = permanent ? "erased" : "deleted";
-            Log.Info($"Deleted ({(permanent ? "permanently" : "Recycle Bin")}) {path}");
-            if (active.TryGetValue(Norm(path), out var logged))
-                logged.Add(status);
-            else
-                unlogged.Add([path, "", status]);
+            if (unlogged.Count > 0)
+                history.Add(new Run { Time = DateTime.Now.ToString(History.TimeFormat), Moves = unlogged, Review = false });
+            History.Save(history);
+            return (count, errors);
         }
-        if (unlogged.Count > 0)
-            history.Add(new Run { Time = DateTime.Now.ToString(History.TimeFormat), Moves = unlogged, Review = false });
-        History.Save(history);
-        return (count, errors);
     }
 
     /// <summary>
@@ -364,44 +380,47 @@ public static class Sorter
     /// </summary>
     public static int CleanupExpired(Config config)
     {
-        var limits = new Dictionary<string, int>();
-        foreach (var root in config.WatchedFolders())
-            foreach (var category in config.Categories.Where(c => c.RecycleAfterDays > 0))
-                limits[Norm(Path.Combine(root, category.Folder))] = category.RecycleAfterDays;
-        if (limits.Count == 0)
-            return 0;
-        var history = History.Load();
-        var count = 0;
-        foreach (var run in history)
+        lock (History.Gate)
         {
-            if (!DateTime.TryParseExact(run.Time, History.TimeFormat, CultureInfo.InvariantCulture,
-                                        DateTimeStyles.None, out var movedAt))
-                continue;
-            foreach (var move in run.Moves)
+            var limits = new Dictionary<string, int>();
+            foreach (var root in config.WatchedFolders())
+                foreach (var category in config.Categories.Where(c => c.RecycleAfterDays > 0))
+                    limits[Norm(Path.Combine(root, category.Folder))] = category.RecycleAfterDays;
+            if (limits.Count == 0)
+                return 0;
+            var history = History.Load();
+            var count = 0;
+            foreach (var run in history)
             {
-                if (!History.IsActive(move))
+                if (!DateTime.TryParseExact(run.Time, History.TimeFormat, CultureInfo.InvariantCulture,
+                                            DateTimeStyles.None, out var movedAt))
                     continue;
-                var destination = move[1];
-                if (!limits.TryGetValue(Norm(Path.GetDirectoryName(destination) ?? ""), out var days)
-                    || (DateTime.Now - movedAt).TotalDays < days || !File.Exists(destination))
-                    continue;
-                try
+                foreach (var move in run.Moves)
                 {
-                    RecycleBin.Send(destination);
+                    if (!History.IsActive(move))
+                        continue;
+                    var destination = move[1];
+                    if (!limits.TryGetValue(Norm(Path.GetDirectoryName(destination) ?? ""), out var days)
+                        || (DateTime.Now - movedAt).TotalDays < days || !File.Exists(destination))
+                        continue;
+                    try
+                    {
+                        RecycleBin.Send(destination);
+                    }
+                    catch (IOException error)
+                    {
+                        Log.Warning($"Could not clean up {Path.GetFileName(destination)}: {error.Message}");
+                        continue;
+                    }
+                    move.Add("deleted");
+                    count++;
+                    Log.Info($"Cleaned up (Recycle Bin) {destination} after {days} days");
                 }
-                catch (IOException error)
-                {
-                    Log.Warning($"Could not clean up {Path.GetFileName(destination)}: {error.Message}");
-                    continue;
-                }
-                move.Add("deleted");
-                count++;
-                Log.Info($"Cleaned up (Recycle Bin) {destination} after {days} days");
             }
+            if (count > 0)
+                History.Save(history);
+            return count;
         }
-        if (count > 0)
-            History.Save(history);
-        return count;
     }
 }
 
@@ -428,6 +447,13 @@ public static class Glob
                 regex.Append(Regex.Escape(c.ToString()));
         }
         regex.Append('$');
-        return Regex.IsMatch(name, regex.ToString(), RegexOptions.Singleline);
+        try
+        {
+            return Regex.IsMatch(name, regex.ToString(), RegexOptions.Singleline);
+        }
+        catch (ArgumentException)
+        {
+            return false; // a broken pattern such as "[z-a]" matches nothing, as in Python
+        }
     }
 }

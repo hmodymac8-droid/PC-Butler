@@ -12,7 +12,7 @@ Rebuild the Python/Tkinter program **Downloads Sorter** in **C#** as **PC Butler
   product, PCKeeper, so "PC Butler" was chosen instead and matches this repository's name).
 - New repository: `hmodymac8-droid/PC-Butler` (this one).
 - License: **GPL v3** (`LICENSE` is the official text). Copyright line: `hmodymac8-droid`.
-  The owner has not yet said whether to use a real name instead; ask before a release.
+  The owner confirmed it stays that way (no real name).
 - Releases start again at **1.0.0** (tag `v1.0.0`).
 
 ## The reference: the Python program
@@ -28,9 +28,9 @@ It is still being changed by its owner, so pull the latest before porting a page
 | `booster.py` | Startup apps, running programs, power plan | `Booster.cs` | **Done, read-only parts tested** |
 | `vault.py` | Password-protected encrypted storage | `Vault.cs` (includes `Scrypt`) | **Done, tested, opens Python-made vaults** |
 | `i18n.py`, `translations_ar.py` | Arabic interface | `Tr.cs`, `Translations/ar.json` | **Done** (425 strings converted) |
-| `theme.py` | Colours, fonts, widgets | `src/PCButler/Theme.xaml`, `Ui.cs` | **Written, never compiled or run** |
-| `sort_gui.pyw` | All windows and pages | `src/PCButler/` | **Not started** (see below) |
-| `installer.iss`, `build.py` | Inno Setup installer and build | `installer/`, a build script | **Not started** |
+| `theme.py` | Colours, fonts, widgets | `src/PCButler/Theme.xaml`, `Ui.cs`, `Chrome.cs` | **Done** |
+| `sort_gui.pyw` | All windows and pages | `src/PCButler/` (`App.xaml.cs`, `MainWindow.cs`, `Pages/`, `Dialogs.cs`, `ReportWindow.cs`) | **Done, builds with 0 warnings** (see "Testing") |
+| `installer.iss`, `build.py` | Inno Setup installer and build | `installer/installer.iss`, `build.ps1` | **Done, built and test-installed** |
 
 ## What exists and works
 
@@ -56,8 +56,8 @@ password, also proves the C# vault opens it. That was run and passed.
   Python program, and the vault format is byte-compatible (`DSV1`, AES-256-GCM in 1 MB
   chunks, scrypt n=2^17 r=8 p=1).
 - **Data folder** is `%APPDATA%\PCButler`. On first run `AppInfo.ImportLegacyData()` copies
-  (never moves) settings, history and the vault from `%APPDATA%\DownloadsSorter`. Nothing
-  calls it yet; the app's startup should.
+  (never moves) settings, history and the vault from `%APPDATA%\DownloadsSorter`. The app's
+  startup calls it.
 - **One process, not two.** The Python program runs a separate background process for the
   tray icon. The C# design is a single process: tray icon plus a window that can be closed and
   reopened. `BackgroundService` (in `Updater.cs`) is the 5-second loop; it raises events
@@ -74,29 +74,61 @@ password, also proves the C# vault opens it. That was run and passed.
   `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` (plus `/reopen=1` when started from the window).
   `AppInfo.IsInstalled` is true when `unins000.exe` sits beside the program.
 
-## What is missing: the whole interface
+## The interface
 
-`src/PCButler` has only the project file, the manifest, `Theme.xaml` and `Ui.cs`. **It does
-not build yet**: there is no `App.xaml`, no `MainWindow`, and `Ui.cs` and `Theme.xaml` have
-never been compiled, so expect errors in them.
+All of it is written in WPF (`net10.0-windows`), built from code; the only XAML is
+`App.xaml` and `Theme.xaml`.
 
-Still to write, all in WPF (`net10.0-windows`, .NET SDK 10 is installed):
+- `App.xaml.cs`: one process. Single instance (a second launch brings up the running
+  program's window; a second `--background` launch just exits), the tray icon (`NotifyIcon`,
+  its menu rebuilt each time it opens), `BackgroundService` wired to tray notifications, the
+  report window and the main window, the legacy data import, and the arguments `--background`,
+  `--no-splash` and `--auto-on`. The window can be closed and reopened; Exit in the tray menu
+  ends the program.
+- `MainWindow.cs`: sidebar, breadcrumb bar, update banner, status bar, saved size and
+  position (`window_geometry`, in screen pixels), and a compact mode below 720 px of height
+  (the summary cards and the headers' small print hide).
+- `Chrome.cs`: the `Page` base class (header, page buttons, summary cards), `Sidebar`,
+  `NavItem`, `TopBar`, `SplashWindow`.
+- `Pages/`: the eight pages. `Dialogs.cs`: the category and vault change-password dialogs.
+  `ReportWindow.cs`: the window after an automatic run. `Ui.cs`: shared building blocks.
+- Arabic: text goes through `Ui.T`. The layout is not mirrored. An implicit `TextBlock` style
+  in `Theme.xaml` makes any text containing Arabic read right to left, so full stops and
+  quotes land on the correct side; WPF ignores the RLE/PDF control characters, so don't use
+  them. Message boxes use right-to-left reading in Arabic.
+- Resource URIs name the assembly (`pack://application:,,,/PCButler;component/...`), so they
+  also resolve when another program hosts the window (a test harness).
 
-1. `App.xaml` / `App.xaml.cs`: merge `Theme.xaml`, single instance, tray icon
-   (`System.Windows.Forms.NotifyIcon`), `BackgroundService`, arguments `--background`
-   (start hidden), `--no-splash`, `--auto-on` (set `auto_sort` true, used by the installer).
-2. `MainWindow`: sidebar, breadcrumb bar, page header, status bar, update banner.
-3. Eight pages: Sorter, Duplicates, Cleaner, Booster, Vault, History, Settings, Help & about.
-4. Windows: splash, the report window after an automatic run, category dialog, vault
-   change-password dialog. (`DeleteHowDialog` is already in `Ui.cs`.)
-5. `installer/installer.iss` (adapt the Python project's) and a build script
-   (`dotnet publish` self-contained, then Inno Setup's `ISCC.exe`).
-6. `README.md` in English and Arabic, as the Python project has.
+### Testing
 
-`Ui.cs` already provides: colours, `Text`/`Muted`/`Glyph`/`Button`/`Switch`/`Field`, the
-`Row` class used by every list, `Ui.List(...)`, `Ui.AttachFileMenu(...)` (right-click: show in
-Explorer, open, delete; double-click shows in Explorer), `StatCard`, `CardPanel`,
-`DeleteHowDialog`, message boxes and `Ui.StyleWindow` (dark title bar).
+- Every page, the launch screen and the report window were rendered in English and Arabic
+  and compared with `docs/reference/`.
+- Driven live through UI Automation against a scratch data folder (`PCBUTLER_DATA`, with
+  `TEMP` pointed at a fake temp folder for the Cleaner), all of which worked:
+  - Sorter: Organize, Sort all now, Undo last move.
+  - Duplicates: scan, the pre-ticked copy, delete to the Recycle Bin; History then brought the
+    file back out of the Recycle Bin.
+  - Cleaner: scan, clean only the ticked category (empty folders removed).
+  - Booster: a startup entry switched off and on (StartupApproved 3, then 2), a program ended
+    and its memory reported freed. Power plans were listed but not switched.
+  - Vault: create, add, move out, lock, a wrong password refused, unlock, change password,
+    delete, unlock with the new password.
+  - Settings: save (age and never-move list written, Sorter updated), switch to Arabic and back
+    (the window reopens in the new language).
+  - An automatic run: files moved by the background sorter, the report window listed them,
+    Undo all put them back, and the next automatic pass left them alone.
+- Bugs this found and fixed: Recycle Bin restore failed for paths written with short
+  (8.3) folder names; the language switch did not reopen the window; Booster's tabs and the
+  sidebar were invisible to screen readers and UI Automation.
+- Not exercised: the tray menu (UI Automation can't reach the notification area) and an update
+  from a real release.
+- `build.ps1 -Test` built a TestBuild installer. It installed silently into a scratch folder,
+  the installed program started without the .NET SDK, and it uninstalled cleanly.
+
+### Still to do
+
+1. Try the tray menu by hand, and the update path once a second release exists.
+2. The copyright line stays `hmodymac8-droid` (the owner's decision).
 
 ## The design to match
 
@@ -144,13 +176,18 @@ run the Python program.
 
 ## Building and releasing
 
-- Build: `dotnet build src/PCButler.Core` (works today). For the app, once it exists:
-  `dotnet publish src/PCButler -c Release -r win-x64 --self-contained`.
-- Installer: Inno Setup 6 is installed at `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`.
-  The Python project's `installer.iss` is a working template: per-user install, English and
-  Arabic, closes the running program, keeps automatic sorting as it was on silent updates,
-  writes `%APPDATA%\...\updated.txt` so the program can announce the update. Change the
-  names, the AppId, the data folder name (`PCButler`) and the executable (`PCButler.exe`).
+- Build: `dotnet build src/PCButler`. Installer: `./build.ps1` publishes the program
+  self-contained into `artifacts/dist` and writes `PCButlerSetup.exe` next to the script.
+  `-Test` builds the TestBuild variant; `-Dotnet <path>` picks the SDK when the first `dotnet`
+  on PATH is older than 10. The script refuses to build when `AppInfo.Version` and the
+  `<Version>` in `PCButler.csproj` differ.
+- Inno Setup 6 is installed at `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`.
+  `installer/installer.iss` is adapted from the Python project's: per-user install, English
+  and Arabic, closes the running program, keeps automatic sorting as it was on silent updates,
+  and writes `%APPDATA%\PCButler\updated.txt` so the program can announce the update. Its
+  AppId (`C4BFA050-D93B-4180-B2D4-ACCDBE95D00A`) is new; never change it after a release.
+- On the machine this was built on, the .NET 10 SDK is in `D:\dotnet` (the one on PATH is
+  8.0), with NuGet's cache in `D:\nuget\packages`.
 - Release: tag `v1.0.0`, create a GitHub release, attach `PCButlerSetup.exe` (the updater
   matches any asset ending in `setup.exe`). `AppInfo.Version` must equal the tag.
 - Git identity for this repository is set locally to `hmodymac8-droid` with GitHub's private

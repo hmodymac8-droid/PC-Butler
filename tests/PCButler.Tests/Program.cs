@@ -54,7 +54,7 @@ Check(reloaded.Folders.Count == 2 && reloaded.Categories[1].MinAgeDays == 5 && r
 Check(File.ReadAllText(AppInfo.ConfigFile).Contains("\"min_age_days\": 7") && File.ReadAllText(AppInfo.ConfigFile).Contains("\"scan_interval_minutes\""),
       "file keeps the old key names");
 Check(Glob.IsMatch("movie.torrent", "*.torrent") && !Glob.IsMatch("movie.txt", "*.torrent") && Glob.IsMatch("taxes2024.pdf", "taxes*")
-      && Glob.IsMatch("a1.txt", "a?.txt") && Glob.IsMatch("b.txt", "[abc].txt") && !Glob.IsMatch("d.txt", "[abc].txt"), "name patterns");
+      && Glob.IsMatch("a1.txt", "a?.txt") && Glob.IsMatch("b.txt", "[abc].txt") && !Glob.IsMatch("d.txt", "[abc].txt") && !Glob.IsMatch("a.txt", "[z-a].txt"), "name patterns");
 Check(new Config { PausedUntil = ConfigStore.PauseUntilTomorrow() }.IsPaused && !new Config().IsPaused, "pause");
 Check(new Config { AutoSort = true }.AutoSortOn && !new Config { AutoSort = true, ScanIntervalMinutes = 0 }.AutoSortOn, "interval 0 keeps sorting off");
 Check(new Config { Language = "ar" }.EffectiveLanguage() == "ar" && new Config { Language = "en" }.EffectiveLanguage() == "en", "language choice");

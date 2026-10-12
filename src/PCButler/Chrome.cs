@@ -1,0 +1,415 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 hmodymac8-droid
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Threading;
+using PCButler.Core;
+
+namespace PCButler;
+
+/// <summary>
+/// One page of the workspace: the eyebrow, a big title and a one-line description, with the
+/// page's main buttons on the right (Actions), and the page's content below.
+/// </summary>
+public abstract class Page : DockPanel
+{
+    private readonly TextBlock eyebrow;
+    private readonly TextBlock description;
+    private readonly DockPanel header;
+    private readonly List<FrameworkElement> statRows = [];
+
+    protected MainWindow Main { get; }
+    /// <summary>The right side of the header: the page's main buttons, the first one rightmost.</summary>
+    protected StackPanel Actions { get; } = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom };
+
+    protected Page(MainWindow main, string title, string descriptionText)
+    {
+        Main = main;
+        Margin = new Thickness(30, 24, 30, 12);
+        header = new DockPanel { Margin = new Thickness(0, 0, 0, 20) };
+        header.Children.Add(Actions.Dock(Dock.Right));
+        eyebrow = Ui.Text(Ui.T(Ui.Eyebrow), 10, "Primary", FontWeights.Bold).Margin(0, 0, 0, 4);
+        var titleText = Ui.Text(Ui.T(title), 27, weight: FontWeights.Bold);
+        titleText.FontFamily = Ui.DisplayFont;
+        description = Ui.Muted(Ui.T(descriptionText)).Margin(0, 4);
+        header.Children.Add(new StackPanel { Children = { eyebrow, titleText, description } });
+        Children.Add(header.Dock(Dock.Top));
+    }
+
+    /// <summary>Add a page button to the header, to the left of those added before.</summary>
+    protected Button AddAction(string text, Action onClick, bool accent = false)
+    {
+        var button = Ui.Button(Ui.T(text), onClick, accent);
+        if (Actions.Children.Count > 0)
+            button.Margin = new Thickness(0, 0, 6, 0);
+        Actions.Children.Insert(0, button);
+        return button;
+    }
+
+    /// <summary>The summary cards at the top of the page, hidden with the small print when the window is short.</summary>
+    protected StatCard[] AddStats(params (string Caption, string Glyph)[] cards)
+    {
+        var (row, made) = StatCard.MakeRow(cards);
+        statRows.Add(row);
+        Children.Add(row.Dock(Dock.Top));
+        return made;
+    }
+
+    /// <summary>Called when the window gets too short (true) or tall enough again (false).</summary>
+    public void SetCompact(bool compact)
+    {
+        var visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        eyebrow.Visibility = description.Visibility = visibility;
+        header.Margin = new Thickness(0, 0, 0, compact ? 12 : 20);
+        foreach (var row in statRows)
+            row.Visibility = visibility;
+    }
+
+    /// <summary>Called each time the page comes into view.</summary>
+    public virtual void Shown()
+    {
+    }
+
+    /// <summary>False keeps the window open (a job is still running).</summary>
+    public virtual bool CanClose() => true;
+
+    /// <summary>Called as the window closes.</summary>
+    public virtual void Closing()
+    {
+    }
+}
+
+/// <summary>
+/// Navigation down the left: the brand, the main pages, and at the bottom the disk space,
+/// Settings, Help &amp; about, the version and a Donate link.
+/// </summary>
+public sealed class Sidebar : Border
+{
+    private readonly StackPanel main = new() { Margin = new Thickness(14, 0, 14, 0) };
+    private readonly StackPanel bottomItems = new();
+    private readonly Dictionary<string, NavItem> items = [];
+    private readonly Action<string> onSelect;
+    private readonly StackPanel storage;
+    private readonly Border barFill = new() { Height = 5, HorizontalAlignment = HorizontalAlignment.Left };
+    private readonly Grid bar = new() { Height = 5, Background = Ui.Paint("Secondary"), Margin = new Thickness(0, 10, 0, 10) };
+    private readonly TextBlock used = Ui.Muted("", 11);
+    private readonly TextBlock total = Ui.Muted("", 11);
+    private string? selected;
+    private double share;
+
+    public Sidebar(Action<string> onSelect)
+    {
+        this.onSelect = onSelect;
+        Width = 228;
+        Background = Ui.Paint("SidebarBack");
+        BorderBrush = Ui.Paint("Line");
+        BorderThickness = new Thickness(0, 0, 1, 0);
+        var layout = new DockPanel();
+
+        // The brand: the icon, and the name in two lines ending in an accent full stop. It stays in every language.
+        var mark = new Image { Source = Ui.AppIcon(), Width = 42, Height = 42 };
+        RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
+        var parts = AppInfo.Name.Split(' ', 2);
+        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 15, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+                                   VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0), LineHeight = 20 };
+        name.Inlines.Add(parts[0]);
+        name.Inlines.Add(new System.Windows.Documents.LineBreak());
+        name.Inlines.Add(parts.Length > 1 ? parts[1] : "");
+        name.Inlines.Add(new System.Windows.Documents.Run(".") { Foreground = Ui.Paint("Primary") });
+        var brand = Ui.Row(0, mark, name).Margin(22, 26, 22, 0);
+        layout.Children.Add(brand.Dock(Dock.Top));
+        layout.Children.Add(Ui.Text(Ui.T("WORKSPACE"), 10, "Muted", FontWeights.Bold).Margin(28, 30, 0, 8).Dock(Dock.Top));
+
+        // The disk the downloads are on, like the design's "Local storage" bar.
+        var bottom = new StackPanel { Margin = new Thickness(14, 0, 14, 16) };
+        storage = new StackPanel { Margin = new Thickness(10, 0, 10, 12) };
+        storage.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 0, 0, 16) });
+        storage.Children.Add(Ui.Row(8, Ui.Glyph("\uEDA2", 13), Ui.Text(Ui.T("Local storage"), 12)));
+        bar.Children.Add(barFill);
+        bar.SizeChanged += (_, _) => DrawBar();
+        storage.Children.Add(bar);
+        var numbers = new DockPanel { LastChildFill = false };
+        numbers.Children.Add(used);
+        numbers.Children.Add(total.Dock(Dock.Right));
+        storage.Children.Add(numbers);
+        bottom.Children.Add(storage);
+        bottom.Children.Add(bottomItems);
+
+        var version = new DockPanel { LastChildFill = false, Margin = new Thickness(14, 10, 14, 0) };
+        version.Children.Add(Ui.Muted(Ui.T("Version {0}", AppInfo.Version), 11));
+        var donate = Ui.Text(Ui.T("Donate") + " ↗", 11, "Primary").Dock(Dock.Right);
+        donate.Cursor = Cursors.Hand;
+        donate.MouseLeftButtonUp += (_, _) => Shell.Open(AppInfo.DonateUrl);
+        version.Children.Add(donate);
+        bottom.Children.Add(version);
+        layout.Children.Add(bottom.Dock(Dock.Bottom));
+        layout.Children.Add(main);
+        Child = layout;
+    }
+
+    public void Add(string key, string glyph, string text, bool bottom = false)
+    {
+        var item = new NavItem(glyph, text, () => onSelect(key));
+        (bottom ? bottomItems : main).Children.Add(item);
+        items[key] = item;
+    }
+
+    public void SetBadge(string key, string text) => items[key].SetBadge(text);
+
+    public void Select(string key)
+    {
+        if (selected is not null)
+            items[selected].SetCurrent(false);
+        selected = key;
+        items[key].SetCurrent(true);
+    }
+
+    /// <summary>Fill the storage bar from the drive the folder is on.</summary>
+    public void ShowStorage(string folder)
+    {
+        try
+        {
+            var drive = new DriveInfo(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(folder))!);
+            const double Gb = 1024.0 * 1024 * 1024;
+            var usedBytes = drive.TotalSize - drive.TotalFreeSpace;
+            share = drive.TotalSize > 0 ? (double)usedBytes / drive.TotalSize : 0;
+            used.Text = Ui.T("{0} GB used", (usedBytes / Gb).ToString("0"));
+            total.Text = $"{drive.TotalSize / Gb:0} GB";
+            DrawBar();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            storage.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void DrawBar()
+    {
+        barFill.Background = Ui.Paint(share > 0.9 ? "Red" : share > 0.75 ? "Amber" : "Primary");
+        barFill.Width = Math.Round(bar.ActualWidth * share);
+    }
+}
+
+/// <summary>One sidebar entry: a glyph, the page name and an optional count badge.</summary>
+public sealed class NavItem : Border
+{
+    private static readonly Brush CurrentFill = new SolidColorBrush(Ui.Mix("#48d7a1", "#090a0c", 0.10));
+    private static readonly Brush BadgeFill = new SolidColorBrush(Ui.Mix("#48d7a1", "#090a0c", 0.12));
+    private readonly TextBlock glyph;
+    private readonly TextBlock text;
+    private readonly TextBlock badge = new() { FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Border badgeBox;
+    private readonly Action onClick;
+    private bool current;
+
+    public NavItem(string glyphCode, string label, Action onClick)
+    {
+        this.onClick = onClick;
+        System.Windows.Automation.AutomationProperties.SetName(this, label);
+        Height = 42;
+        CornerRadius = new CornerRadius(6);
+        Margin = new Thickness(0, 2, 0, 2);
+        Cursor = Cursors.Hand;
+        Background = Brushes.Transparent;
+        glyph = Ui.Glyph(glyphCode, 16).Margin(16);
+        text = Ui.Text(label, 14).Margin(14);
+        badgeBox = new Border { Background = BadgeFill, Padding = new Thickness(6, 1, 6, 1), Child = badge, Margin = new Thickness(0, 0, 14, 0),
+                                VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        var layout = new DockPanel { LastChildFill = false };
+        layout.Children.Add(glyph);
+        layout.Children.Add(text);
+        layout.Children.Add(badgeBox.Dock(Dock.Right));
+        Child = layout;
+        MouseEnter += (_, _) => Paint();
+        MouseLeave += (_, _) => Paint();
+        MouseLeftButtonUp += (_, _) => onClick();
+        Paint();
+    }
+
+    /// <summary>Screen readers and UI Automation see each entry as a button they can press.</summary>
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new Peer(this);
+
+    private sealed class Peer(NavItem item) : System.Windows.Automation.Peers.FrameworkElementAutomationPeer(item),
+                                             System.Windows.Automation.Provider.IInvokeProvider
+    {
+        protected override System.Windows.Automation.Peers.AutomationControlType GetAutomationControlTypeCore() =>
+            System.Windows.Automation.Peers.AutomationControlType.Button;
+
+        protected override string GetClassNameCore() => nameof(NavItem);
+
+        public override object? GetPattern(System.Windows.Automation.Peers.PatternInterface pattern) =>
+            pattern == System.Windows.Automation.Peers.PatternInterface.Invoke ? this : base.GetPattern(pattern);
+
+        public void Invoke() => item.onClick();
+    }
+
+    public void SetCurrent(bool value)
+    {
+        current = value;
+        Paint();
+    }
+
+    public void SetBadge(string value)
+    {
+        badge.Text = value;
+        badgeBox.Visibility = value.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Paint()
+    {
+        Background = current ? CurrentFill : IsMouseOver ? Ui.Paint("Secondary") : Brushes.Transparent;
+        var ink = Ui.Paint(current ? "Primary" : IsMouseOver ? "Text" : "Muted");
+        glyph.Foreground = text.Foreground = badge.Foreground = ink;
+    }
+}
+
+/// <summary>A strip across the top of the page area: where you are, and how things stand.</summary>
+public sealed class TopBar : Border
+{
+    private readonly TextBlock page = Ui.Text("", 12);
+    private readonly TextBlock dot = Ui.Text("●", 11, "Primary");
+    private readonly TextBlock status = Ui.Muted("", 11).Margin(6);
+
+    public TopBar()
+    {
+        Height = 61;
+        BorderBrush = Ui.Paint("Line");
+        BorderThickness = new Thickness(0, 0, 0, 1);
+        var row = new DockPanel { LastChildFill = false, Margin = new Thickness(30, 0, 30, 0) };
+        row.Children.Add(Ui.Row(0, Ui.Glyph("\uE838", 14), Ui.Muted(Ui.T("Workspace"), 12).Margin(10, 0, 8),
+                                Ui.Glyph("\uE76C", 10), page.Margin(8)));
+        row.Children.Add(Ui.Row(0, dot, status).Dock(Dock.Right));
+        Child = row;
+    }
+
+    public void SetPage(string title) => page.Text = title;
+
+    public void SetStatus(string text, Brush color)
+    {
+        status.Text = text;
+        dot.Foreground = color;
+    }
+}
+
+/// <summary>
+/// The launch screen: the app icon between two corner marks, the name, the tagline, three bars
+/// that grow in, and a link to go straight to the workspace. Shown while the program starts, and
+/// again from Help &amp; about. It closes itself after a few seconds, or at a click or key press.
+/// </summary>
+public sealed class SplashWindow : Window
+{
+    private readonly Action? onClose;
+    private readonly DispatcherTimer closer;
+    private readonly DispatcherTimer grower = new() { Interval = TimeSpan.FromMilliseconds(30) };
+    private readonly Rectangle[] bars = new Rectangle[3];
+    private int step;
+    private bool closed;
+
+    public SplashWindow(Action? onClose = null, double seconds = 2.4)
+    {
+        this.onClose = onClose;
+        Ui.StyleWindow(this);
+        Title = AppInfo.Name;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        ShowInTaskbar = false;
+        Topmost = true;
+        Width = 620;
+        Height = 520;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        BorderBrush = Ui.Paint("Line");
+        BorderThickness = new Thickness(1);
+
+        var frame = new DockPanel { Margin = new Thickness(32, 24, 32, 24) };
+        var head = new DockPanel { LastChildFill = false };
+        head.Children.Add(Ui.Text(AppInfo.Name.ToUpperInvariant(), 11, weight: FontWeights.Bold));
+        head.Children.Add(Ui.Muted(Ui.T("Desktop edition"), 11).Dock(Dock.Right));
+        frame.Children.Add(head.Dock(Dock.Top));
+        frame.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 16, 0, 0) }.Dock(Dock.Top));
+
+        var foot = new DockPanel { LastChildFill = false };
+        foot.Children.Add(Ui.Text("●", 9, "Primary"));
+        foot.Children.Add(Ui.Muted(Ui.T("A fresh start."), 11).Margin(8));
+        foot.Children.Add(Ui.Muted(Ui.T("Less clutter. More clarity."), 11).Dock(Dock.Right));
+        frame.Children.Add(foot.Dock(Dock.Bottom));
+        frame.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 0, 0, 16) }.Dock(Dock.Bottom));
+
+        // The icon between two corner marks, top-left and bottom-right, like the design.
+        const double Stage = 150, Mark = 16;
+        var stage = new Canvas { Width = Stage, Height = Stage };
+        stage.Children.Add(new Polyline { Points = [new(0.5, Mark), new(0.5, 0.5), new(Mark, 0.5)], Stroke = Ui.Paint("ControlLine"), StrokeThickness = 1 });
+        stage.Children.Add(new Polyline { Points = [new(Stage - Mark, Stage - 1.5), new(Stage - 1.5, Stage - 1.5), new(Stage - 1.5, Stage - Mark)],
+                                           Stroke = Ui.Paint("ControlLine"), StrokeThickness = 1 });
+        var icon = new Image { Source = Ui.AppIcon(), Width = 118, Height = 118 };
+        RenderOptions.SetBitmapScalingMode(icon, BitmapScalingMode.HighQuality);
+        Canvas.SetLeft(icon, (Stage - 118) / 2);
+        Canvas.SetTop(icon, (Stage - 118) / 2);
+        stage.Children.Add(icon);
+
+        // "PC Butler." with "Butler." in the accent; the name stays as it is in every language.
+        var parts = AppInfo.Name.Split(' ', 2);
+        var title = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 35, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+                                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
+        title.Inlines.Add(parts[0] + " ");
+        title.Inlines.Add(new System.Windows.Documents.Run((parts.Length > 1 ? parts[1] : "") + ".") { Foreground = Ui.Paint("Primary") });
+        var tagline = Ui.Muted(Ui.T("Your digital space, sorted."), 15).Margin(0, 8);
+        tagline.HorizontalAlignment = HorizontalAlignment.Center;
+
+        var barRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 22, 0, 0), Height = 3 };
+        var colors = new[] { "Primary", "", "ControlLine" };
+        for (var index = 0; index < 3; index++)
+        {
+            var slot = new Grid { Width = (116 - 10) / 3.0, Margin = new Thickness(index == 0 ? 0 : 5, 0, 0, 0) };
+            bars[index] = new Rectangle { Fill = colors[index].Length > 0 ? Ui.Paint(colors[index]) : Ui.Hex("#69acf3"), Width = 0, HorizontalAlignment = HorizontalAlignment.Left };
+            slot.Children.Add(bars[index]);
+            barRow.Children.Add(slot);
+        }
+
+        var enter = Ui.Muted(Ui.T("Open workspace  →"), 13).Margin(0, 16);
+        enter.HorizontalAlignment = HorizontalAlignment.Center;
+        enter.Cursor = Cursors.Hand;
+        enter.MouseEnter += (_, _) => enter.Foreground = Ui.Paint("Text");
+        enter.MouseLeave += (_, _) => enter.Foreground = Ui.Paint("Muted");
+
+        var center = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { stage, title, tagline, barRow, enter } };
+        frame.Children.Add(center);
+        Content = frame;
+
+        MouseLeftButtonUp += (_, _) => CloseSplash();
+        KeyDown += (_, _) => CloseSplash();
+        grower.Tick += (_, _) => GrowBars();
+        grower.Start();
+        closer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+        closer.Tick += (_, _) => CloseSplash();
+        closer.Start();
+        Loaded += (_, _) => Activate();
+    }
+
+    /// <summary>The three bars scale in one after another, like the design's animation.</summary>
+    private void GrowBars()
+    {
+        step++;
+        for (var index = 0; index < bars.Length; index++)
+        {
+            var progress = Math.Clamp((step - index * 3) / 18.0, 0, 1);
+            bars[index].Width = ((116 - 10) / 3.0) * progress;
+        }
+        if (step >= 24)
+            grower.Stop();
+    }
+
+    private void CloseSplash()
+    {
+        if (closed)
+            return;
+        closed = true;
+        closer.Stop();
+        grower.Stop();
+        Close();
+        onClose?.Invoke();
+    }
+}
