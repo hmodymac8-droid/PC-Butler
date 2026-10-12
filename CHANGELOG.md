@@ -6,6 +6,8 @@ Each version is a `## heading` followed by `- ` lines.
 ## 1.9.1
 
 - Right-click in File Explorer: a "PC Butler" submenu with Sort into its category folder, Lock in the Vault and Shred, for one or many files and folders at once.
+- Storage: an All drives tab shows how full each drive is; click one to measure it.
+- Booster and Help & about: tidier pages, each setting a row with its switch on the side.
 
 ## 1.9.0
 

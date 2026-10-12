@@ -25,6 +25,9 @@ public sealed class StoragePage : Page
         ("Any time", 0), ("1 month", 1), ("3 months", 3), ("6 months", 6), ("1 year", 12),
     ];
 
+    /// <summary>The drive bars: the app's green, then blue, amber and purple.</summary>
+    private static readonly string[] DriveTones = ["#48d7a1", "#69acf3", "#e6b55d", "#a993f0"];
+
     private readonly Button scanButton;
     private readonly Button stopButton;
     private readonly StatCard[] stats;
@@ -39,11 +42,13 @@ public sealed class StoragePage : Page
     private readonly ComboBox unusedFor = new() { Width = 130 };
     private readonly ListView bigList;
     private readonly TextBlock bigSummary = Ui.Muted("");
+    private readonly StackPanel drives = new() { Margin = new Thickness(6, 4, 6, 4) };
+    private TabControl tabs = null!;
     private StorageResult? result;
     private CancellationTokenSource? cancel;
     private bool busy;
 
-    public StoragePage(MainWindow main) : base(main, "Storage", "See what fills your disk. Decide what stays.")
+    public StoragePage(MainWindow main) : base(main, "A little more breathing room.", "See what fills your disk. Decide what stays.")
     {
         scanButton = AddAction("Scan now", Scan, accent: true);
         stopButton = AddAction("Stop scan", () => cancel?.Cancel());
@@ -63,7 +68,7 @@ public sealed class StoragePage : Page
         top.Children.Add(Ui.Row(0, status, progress).Dock(Dock.Right));
         Children.Add(top.Dock(Dock.Top));
 
-        var tabs = new TabControl();
+        tabs = new TabControl();
 
         // The map: every rectangle is a folder or file, sized by the space it takes.
         upButton = Ui.Button(Ui.T("Up"), () => { if (map.Node?.Parent is { } parent) ShowNode(parent); });
@@ -101,9 +106,95 @@ public sealed class StoragePage : Page
         bigBody.Children.Add(new Border { Child = bigList, Margin = new Thickness(0, 0, 0, 8) });
         tabs.Items.Add(new TabItem { Header = Ui.T("Large & old files"), Content = bigBody });
 
+        // Every drive at a glance: how full it is, and a click to measure it.
+        var drivesTab = new TabItem { Header = Ui.T("All drives"),
+                                      Content = new ScrollViewer { Content = drives, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } };
+        tabs.SelectionChanged += (_, e) =>
+        {
+            if (e.Source == tabs && tabs.SelectedItem == drivesTab)
+                ShowDrives(); // free space changes, and drives come and go
+        };
+        tabs.Items.Add(drivesTab);
+        ShowDrives();
+
         Children.Add(tabs);
         status.Text = Ui.T("Choose where to look, then click Scan now.");
         ShowNode(null);
+    }
+
+    /// <summary>One row per ready drive: its name, the free space, and a bar of the space used.</summary>
+    private void ShowDrives()
+    {
+        drives.Children.Clear();
+        var index = 0;
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            long total, free;
+            string label;
+            try
+            {
+                if (!drive.IsReady || drive.DriveType is not (DriveType.Fixed or DriveType.Removable))
+                    continue;
+                total = drive.TotalSize;
+                free = drive.TotalFreeSpace;
+                label = drive.VolumeLabel;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+            if (total <= 0)
+                continue;
+            var root = drive.RootDirectory.FullName;
+            var letter = drive.Name.TrimEnd('\\');
+            var tone = new SolidColorBrush((Color)ColorConverter.ConvertFromString(DriveTones[index++ % DriveTones.Length]));
+
+            var name = new TextBlock { FontSize = 13, Foreground = Ui.Paint("Text"), VerticalAlignment = VerticalAlignment.Center };
+            name.Inlines.Add(new System.Windows.Documents.Run(label.Length > 0 ? label : Ui.T("Local disk")) { FontWeight = FontWeights.Bold });
+            name.Inlines.Add(new System.Windows.Documents.Run($"  ({letter})") { Foreground = Ui.Paint("Muted") });
+            var head = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            head.Children.Add(Ui.Muted(Ui.T("{0} free of {1}", Ui.FormatSize(free), Ui.FormatSize(total)), 12).Dock(Dock.Right));
+            head.Children.Add(Ui.Row(10, Ui.Glyph("\uEDA2", 14), name));
+
+            // The bar: the used part in the drive's colour over a dim track.
+            var used = (double)(total - free) / total;
+            var bar = new Grid { Height = 6 };
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(used, 0.001), GridUnitType.Star) });
+            bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(1 - used, 0.001), GridUnitType.Star) });
+            var track = new Border { Background = Ui.Paint("Raised"), CornerRadius = new CornerRadius(3) };
+            Grid.SetColumnSpan(track, 2);
+            bar.Children.Add(track);
+            bar.Children.Add(new Border { Background = tone, CornerRadius = new CornerRadius(3) });
+
+            var row = new Border
+            {
+                Padding = new Thickness(14, 12, 14, 14), CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                Child = new StackPanel { Children = { head, bar } },
+                ToolTip = Ui.T("Click to measure this drive."),
+            };
+            row.MouseEnter += (_, _) => row.Background = Ui.Paint("Secondary");
+            row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+            row.MouseLeftButtonUp += (_, _) => MeasureDrive(root);
+            drives.Children.Add(row);
+        }
+        if (drives.Children.Count == 0)
+            drives.Children.Add(Ui.Muted(Ui.T("No drives found.")).Margin(14, 12));
+    }
+
+    /// <summary>Picks the drive in "Look in", shows the map and starts measuring it.</summary>
+    private void MeasureDrive(string root)
+    {
+        if (busy)
+            return;
+        var index = locations.FindIndex(known => Sorter.Norm(known) == Sorter.Norm(root));
+        if (index < 0)
+        {
+            AddLocation(root, Ui.T("Drive {0}", root.TrimEnd('\\')));
+            index = locations.Count - 1;
+        }
+        location.SelectedIndex = index;
+        tabs.SelectedIndex = 0;
+        Scan();
     }
 
     private void AddLocation(string path, string label)
@@ -262,7 +353,7 @@ public sealed class TreemapView : Canvas
 {
     /// <summary>Children beyond this many are drawn together as one "everything else" block.</summary>
     private const int MaxBlocks = 60;
-    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#e581bc", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
+    private static readonly string[] Tones = ["#48d7a1", "#69acf3", "#e6b55d", "#a993f0", "#5cc6d6", "#d99a6c", "#9ccf6a"];
 
     public StorageNode? Node { get; private set; }
     public event Action<StorageNode>? Opened;
