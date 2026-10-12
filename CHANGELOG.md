@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.11.0
+
+- Programs: two new tabs, Essential apps and Recommended apps. Each lists well-known free apps, shows which are already installed, and installs the ones you select through winget.
+
 ## 1.10.2
 
 - Settings: the language choice is now at the top of the page.

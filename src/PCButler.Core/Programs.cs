@@ -464,4 +464,58 @@ public static partial class Programs
             return null;
         }
     }
+
+    // --- apps to install, through winget ---
+
+    /// <summary>Apps most PCs need: a browser, archives, video, PDF and the runtimes other programs rely on.</summary>
+    public static readonly CatalogApp[] EssentialApps =
+    [
+        new("Google Chrome", "Google.Chrome", "Google Chrome", "Web browser"),
+        new("Mozilla Firefox", "Mozilla.Firefox", "Mozilla Firefox", "Web browser"),
+        new("7-Zip", "7zip.7zip", "7-Zip", "Opens and makes zip, rar and 7z archives"),
+        new("VLC media player", "VideoLAN.VLC", "VLC media player", "Plays almost any video or audio file"),
+        new("Adobe Acrobat Reader", "Adobe.Acrobat.Reader.64-bit", "Adobe Acrobat", "Opens and fills in PDF files"),
+        new("Notepad++", "Notepad++.Notepad++", "Notepad++", "A better text editor"),
+        new("Visual C++ Redistributable", "Microsoft.VCRedist.2015+.x64", "Microsoft Visual C++ 2015-2022 Redistributable (x64)",
+            "Needed by many programs and games"),
+        new(".NET Desktop Runtime 8", "Microsoft.DotNet.DesktopRuntime.8", "Microsoft Windows Desktop Runtime - 8", "Needed by many Windows programs"),
+    ];
+
+    /// <summary>Apps worth having: well-known, free and useful on most PCs.</summary>
+    public static readonly CatalogApp[] RecommendedApps =
+    [
+        new("Everything", "voidtools.Everything", "Everything", "Finds any file on your PC the moment you type"),
+        new("Microsoft PowerToys", "Microsoft.PowerToys", "PowerToys", "Extra tools for Windows from Microsoft"),
+        new("ShareX", "ShareX.ShareX", "ShareX", "Screenshots and screen recordings"),
+        new("Bitwarden", "Bitwarden.Bitwarden", "Bitwarden", "Keeps your passwords safe"),
+        new("LibreOffice", "TheDocumentFoundation.LibreOffice", "LibreOffice", "Free office suite: documents, sheets and slides"),
+        new("Visual Studio Code", "Microsoft.VisualStudioCode", "Microsoft Visual Studio Code", "Code and text editor"),
+        new("OBS Studio", "OBSProject.OBSStudio", "OBS Studio", "Records and streams your screen"),
+        new("TeraCopy", "CodeSector.TeraCopy", "TeraCopy", "Faster, safer file copying"),
+        new("Discord", "Discord.Discord", "Discord", "Voice, video and text chat"),
+        new("Steam", "Valve.Steam", "Steam", "Games store and launcher"),
+    ];
+
+    /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list.</summary>
+    public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
+        installed.Any(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Install one app in a winget window of its own, so its questions and progress are visible.</summary>
+    public static Process? StartInstall(CatalogApp app)
+    {
+        if (!WingetAvailable || !PackageId().IsMatch(app.Id))
+            return null;
+        try
+        {
+            return Process.Start(new ProcessStartInfo(Winget, $"install --id {app.Id} --exact --source winget") { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            Log.Warning($"winget could not be started: {error.Message}");
+            return null;
+        }
+    }
 }
+
+/// <summary>An app that can be installed from the Programs page: its name, winget package, the start of its installed name, and what it does.</summary>
+public sealed record CatalogApp(string Name, string Id, string Match, string Description);

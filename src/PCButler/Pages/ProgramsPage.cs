@@ -16,6 +16,7 @@ public sealed class ProgramsPage : Page
     private readonly ComboBox driveFilter = new() { Width = 130 };
     private readonly TextBlock installedStatus = Ui.Muted("").Margin(10);
     private readonly TextBlock updateStatus = Ui.Muted("").Margin(10);
+    private readonly List<(ListView List, CatalogApp[] Apps, TextBlock Status)> catalogs = [];
     private List<InstalledProgram> programs = [];
     private bool loaded, busy;
 
@@ -50,6 +51,10 @@ public sealed class ProgramsPage : Page
         updateList = Ui.List(("Program", 300, "PlainCell"), ("Installed", 150), ("New version", 150), ("Package", 260));
         updateStatus.Text = Ui.T("Updates come from winget, Windows' own package manager.");
         tabs.Items.Add(Tab("Updates", updateList, bar));
+
+        // Ready lists of well-known apps, installed through winget like the updates.
+        tabs.Items.Add(CatalogTab("Essential apps", Programs.EssentialApps));
+        tabs.Items.Add(CatalogTab("Recommended apps", Programs.RecommendedApps));
         Children.Add(tabs);
     }
 
@@ -59,6 +64,67 @@ public sealed class ProgramsPage : Page
         body.Children.Add(bar.Dock(Dock.Bottom));
         body.Children.Add(new Border { Child = list, Margin = new Thickness(0, 0, 0, 8) });
         return new TabItem { Header = Ui.T(title), Content = body };
+    }
+
+    private TabItem CatalogTab(string title, CatalogApp[] apps)
+    {
+        var list = Ui.List(("App", 260, "PlainCell"), ("Status", 120), ("What it does", 380), ("Package", 240));
+        var status = Ui.Muted(Ui.T("Select apps, then Install selected. Each installs from winget in a window of its own.")).Margin(10);
+        var bar = new DockPanel { LastChildFill = false };
+        bar.Children.Add(Ui.Button(Ui.T("Refresh"), RefreshInstalled));
+        bar.Children.Add(status);
+        bar.Children.Add(Ui.Button(Ui.T("Install selected"), () => InstallSelected(list, status), accent: true).Dock(Dock.Right));
+        catalogs.Add((list, apps, status));
+        ShowCatalog(list, apps);
+        return Tab(title, list, bar);
+    }
+
+    private void ShowCatalog(ListView list, CatalogApp[] apps) =>
+        list.ItemsSource = apps.Select(app =>
+        {
+            var installed = Programs.IsInstalled(app, programs);
+            return new Row
+            {
+                Name = app.Name, Tag = app, Dim = installed,
+                Cells = [Ui.T(programs.Count > 0 ? installed ? "Is installed" : "Not installed" : ""), Ui.T(app.Description), app.Id],
+            };
+        }).ToList();
+
+    private async void InstallSelected(ListView list, TextBlock status)
+    {
+        if (busy)
+            return;
+        var apps = Ui.Selected(list).Select(row => (CatalogApp)row.Tag!).ToList();
+        if (apps.Count == 0)
+        {
+            Ui.Info("Programs", Ui.T("Select one or more apps first."));
+            return;
+        }
+        if (!Programs.WingetAvailable)
+        {
+            Ui.Warn("Programs", Ui.T("winget is not installed on this PC (it comes with App Installer from the Microsoft Store)."));
+            return;
+        }
+        var already = apps.Where(app => Programs.IsInstalled(app, programs)).Select(app => app.Name).ToList();
+        if (already.Count > 0 && !Ui.Ask("Programs", Ui.T("Already installed: {0}.\n\nInstall them again anyway?", string.Join(", ", already))))
+            apps.RemoveAll(app => already.Contains(app.Name));
+        busy = true;
+        try
+        {
+            foreach (var app in apps)
+            {
+                status.Text = Ui.T("Installing {0}: follow the winget window…", app.Name);
+                using var winget = Programs.StartInstall(app);
+                if (winget is not null)
+                    await winget.WaitForExitAsync();
+            }
+        }
+        finally
+        {
+            busy = false;
+        }
+        status.Text = Ui.T("Done. The list shows what is installed now.");
+        RefreshInstalled();
     }
 
     /// <summary>Reading the list takes a moment, so it waits until the page is first opened.</summary>
@@ -83,6 +149,8 @@ public sealed class ProgramsPage : Page
             driveFilter.Items.Add(new ComboBoxItem { Content = Ui.T("Drive {0}", drive), Tag = drive });
         driveFilter.SelectedIndex = Math.Max(0, driveFilter.Items.OfType<ComboBoxItem>().ToList().FindIndex(item => (string)item.Tag == chosen));
         ShowInstalled();
+        foreach (var (list, apps, _) in catalogs)
+            ShowCatalog(list, apps);
     }
 
     private void ShowInstalled()
