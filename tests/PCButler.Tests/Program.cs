@@ -484,7 +484,7 @@ Section("courier host and clients");
     var stranger = await PortalNode.Start(ClientSettings("CourierStranger"), certificate: Identity(), local: true);
     var hostAsked = 0;
     host.Attention += _ => Interlocked.Increment(ref hostAsked);
-    Check(host.IsHost && !alice.IsHost && host.Number.Length == 12 && host.Number != alice.Number && host.LinkPort > 0, "each PC has its ID and its role");
+    Check(host.IsHost && !alice.IsHost && Portal.IsNumber(host.Number) && host.Number != alice.Number && host.LinkPort > 0, "each PC has its ID and its role");
 
     using (var noCertificate = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }))
     {
@@ -506,8 +506,8 @@ Section("courier host and clients");
     Check(aliceHost is { Online: true, Trusted: false } && aliceHost.Id == host.Id && alice.HostPeer == aliceHost, "a client finds the host by its address and ID");
     Check(await alice.ConnectDirect(hostAt, "000000000000") is null, "a host that answers under another ID than the one expected is not taken");
     Check(await host.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, stranger.LinkPort)) is null, "a client takes no path it did not open itself");
-    Check((await alice.ConnectById("12 34")).Problem == PortalConnectProblem.BadNumber && (await alice.ConnectById(alice.Number)).Problem == PortalConnectProblem.BadNumber
-          && (await alice.ConnectById("123 456 789 012")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
+    Check((await alice.ConnectById("K7M")).Problem == PortalConnectProblem.BadNumber && (await alice.ConnectById(alice.Number)).Problem == PortalConnectProblem.BadNumber
+          && (await alice.ConnectById("k7m-2qx")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
     var early = alice.Send(aliceHost!, [Make(Path.Combine(temp, "CourierOut"), "early.txt", "too early")])!;
     Check(await Until(() => early.State == "failed") && !Directory.EnumerateFiles(hostSettings.Folder).Any(), "nothing can be sent before pairing");
 
@@ -533,6 +533,8 @@ Section("courier host and clients");
     Random.Shared.NextBytes(payload);
     var payloadFile = Path.Combine(temp, "CourierOut", "holiday video.mp4");
     File.WriteAllBytes(payloadFile, payload);
+    Check(host.Peers.Single(peer => peer.Id == alice.Id).AutoAccept && aliceSettings.Devices[0].AutoAccept, "a paired PC's files are taken without a click");
+    host.SetAutoAccept(alice.Id, false);
     var upward = alice.Send(aliceToHost, [payloadFile])!;
     Check(await Until(() => host.Requests.Count == 1) && upward.State == "waiting" && host.Requests[0] is { Files: 1, Size: 20_000_000 }, "the host is asked before anything is taken");
     host.Accept(host.Requests[0].Id);
@@ -550,6 +552,7 @@ Section("courier host and clients");
     Check(await Until(() => alice.OtherClients.Any(client => client.Id == bob.Id && client.Online), 25) && alice.OtherClients.All(client => client.Id != alice.Id),
           "a client learns from the host which other clients there are");
     var forBob = alice.OtherClients.Single(client => client.Id == bob.Id);
+    bob.SetAutoAccept(host.Id, false);
     var note = Make(Path.Combine(temp, "CourierOut", "Letters"), "for bob.txt", "hello Bob, from Alice");
     var across = alice.Send(aliceToHost, [note], forBob)!;
     Check(await Until(() => bob.Requests.Count == 1, 30) && bob.Requests[0].PeerName.Contains(alice.Name) && host.Requests.Count == 0,
@@ -702,9 +705,12 @@ Section("courier IDs");
     Check(Bencode.Decode(Encoding.ASCII.GetBytes("d1:a")) is null && Bencode.Decode(Encoding.ASCII.GetBytes("5:ab")) is null && Bencode.Decode(Encoding.ASCII.GetBytes("i12")) is null
           && Bencode.Decode(Encoding.ASCII.GetBytes(new string('l', 50))) is null && Bencode.Decode([]) is null, "broken messages from strangers are refused, not crashed on");
     var someId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a certificate")));
-    Check(Portal.NumberOf(someId) is { Length: 12 } digits && digits.All(char.IsDigit) && digits == Portal.NumberOf(someId.ToLowerInvariant())
-          && Portal.ShowNumber("482019337615") == "482 019 337 615" && Portal.DirectoryKey(digits, false).Length == 20
-          && !Portal.DirectoryKey(digits, false).SequenceEqual(Portal.DirectoryKey(digits, true)), "a PC's ID is twelve digits made from its certificate");
+    var shortId = Portal.NumberOf(someId);
+    Check(shortId.Length == 6 && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
+          && !shortId.Any(character => character is 'I' or 'L' or 'O' or 'U') && Portal.DirectoryKey(shortId, false).Length == 20
+          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is six characters made from its certificate ({shortId})");
+    Check(Portal.ShowNumber("K7M2QX") == "K7M-2QX" && Portal.NormalizeNumber(" k7m-2qx ") == "K7M2QX" && Portal.NormalizeNumber("O1L-ISU") == "0111SV"
+          && !Portal.IsNumber("K7M2Q") && !Portal.IsNumber("K7M2QXX") && Portal.NormalizeNumber("") == "", "an ID is read however it is typed, and look-alike letters count as the digits");
 
 }
 

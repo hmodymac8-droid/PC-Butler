@@ -144,6 +144,8 @@ public sealed class PortalDht
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Dictionary<string, object>?>> waiting = new();
     private readonly List<Node> known = [];
     private readonly ConcurrentDictionary<string, int> seenAs = new();
+    /// <summary>For each key looked up: the computers nearest to it that answered, so it can be asked again in one quick round.</summary>
+    private readonly ConcurrentDictionary<string, (long At, List<Node> Nearest)> nearestTo = new();
     private int transaction;
 
     public PortalDht(PortalLink link)
@@ -223,7 +225,7 @@ public sealed class PortalDht
         link.Send(packet, packet.Length, whom);
         try
         {
-            return await answer.Task.WaitAsync(TimeSpan.FromSeconds(1.2), cancel);
+            return await answer.Task.WaitAsync(TimeSpan.FromSeconds(1), cancel);
         }
         catch (Exception error) when (error is TimeoutException or OperationCanceledException)
         {
@@ -299,10 +301,11 @@ public sealed class PortalDht
     // --- joining, looking up, announcing ---
 
     /// <summary>Get to know some computers of the directory, through its well-known entrances. Returns whether any answered.</summary>
-    public async Task<bool> Join(CancellationToken cancel = default)
+    public async Task<bool> Join(CancellationToken cancel = default) => Known >= 8 || await Enter(cancel);
+
+    /// <summary>Ask the well-known entrances for computers of the directory.</summary>
+    private async Task<bool> Enter(CancellationToken cancel)
     {
-        if (Known >= 8)
-            return true;
         var entrances = new List<IPEndPoint>();
         foreach (var (host, port) in Entrances)
         {
@@ -333,18 +336,34 @@ public sealed class PortalDht
     {
         if (!await Join(cancel))
             return [];
-        var candidates = Nearest(key, 24);
+        var candidates = Nearest(key, 32);
         var asked = new HashSet<string>();
         var holders = new List<(Node Node, byte[] Token)>();
         var found = new HashSet<IPEndPoint>();
+        var restarted = false;
         for (var round = 0; round < 14 && !cancel.IsCancellationRequested; round++)
         {
-            var batch = candidates.OrderBy(node => Distance(node.Id, key)).Take(16).Where(node => !asked.Contains(node.Endpoint.ToString())).Take(8).ToList();
+            // Looking (not announcing), the first answer that holds addresses is enough: the PC is found.
+            if (!announce && found.Count > 0)
+                break;
+            var batch = candidates.OrderBy(node => Distance(node.Id, key)).Take(20).Where(node => !asked.Contains(node.Endpoint.ToString())).Take(12).ToList();
             if (batch.Count == 0)
                 break;
             foreach (var node in batch)
                 asked.Add(node.Endpoint.ToString());
             var answers = await Task.WhenAll(batch.Select(node => Ask(node.Endpoint, "get_peers", new() { ["info_hash"] = key }, cancel)));
+            if (round == 0 && !restarted && answers.All(answer => answer is null) && !cancel.IsCancellationRequested)
+            {
+                restarted = true;
+                // The computers remembered from last time have all gone: start again from the entrances.
+                lock (known)
+                    known.Clear();
+                if (!await Enter(cancel))
+                    return [];
+                (candidates, round) = (Nearest(key, 32), -1);
+                asked.Clear();
+                continue;
+            }
             for (var index = 0; index < batch.Count; index++)
             {
                 if (answers[index] is not { } answer)
@@ -370,6 +389,8 @@ public sealed class PortalDht
                 }
             }
         }
+        if (holders.Count > 0)
+            nearestTo[Convert.ToHexString(key)] = (Environment.TickCount64, holders.OrderBy(holder => Distance(holder.Node.Id, key)).Take(16).Select(holder => holder.Node).ToList());
         if (announce)
         {
             var nearest = holders.OrderBy(holder => Distance(holder.Node.Id, key)).Take(8).ToList();
@@ -388,5 +409,57 @@ public sealed class PortalDht
         }
         found.RemoveWhere(endpoint => endpoint.Port == 0);
         return found.ToList();
+    }
+
+    /// <summary>
+    /// What is announced under a key now, asked in one round of the computers that were
+    /// nearest to it last time (a full lookup every few minutes keeps that list right). Quick
+    /// enough to ask every few seconds.
+    /// </summary>
+    public async Task<List<IPEndPoint>> Poll(byte[] key, CancellationToken cancel = default)
+    {
+        if (!nearestTo.TryGetValue(Convert.ToHexString(key), out var known) || Environment.TickCount64 - known.At > 4 * 60_000)
+            return await Lookup(key, announce: false, cancel);
+        var answers = await Task.WhenAll(known.Nearest.Select(node => Ask(node.Endpoint, "get_peers", new() { ["info_hash"] = key }, cancel)));
+        if (answers.Count(answer => answer is not null) < 3)
+            return await Lookup(key, announce: false, cancel);
+        var found = new HashSet<IPEndPoint>();
+        foreach (var values in answers.Select(answer => answer?.GetValueOrDefault("values")).OfType<List<object>>())
+        {
+            foreach (var value in values.OfType<byte[]>().Where(value => value.Length == PeerSize))
+            {
+                if (Endpoint(value) is { Port: > 0 } peer && Usable(peer.Address))
+                    found.Add(peer);
+            }
+        }
+        return found.ToList();
+    }
+
+    // --- remembering the directory between runs ---
+
+    /// <summary>The computers of the directory this one knows, to start from next time instead of from the well-known entrances.</summary>
+    public string SaveNodes()
+    {
+        lock (known)
+            return string.Join("\n", known.Take(300).Select(node => $"{Convert.ToHexString(node.Id)} {node.Endpoint}"));
+    }
+
+    public void LoadNodes(string saved)
+    {
+        foreach (var line in saved.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = line.Split(' ', 2);
+            if (parts.Length == 2 && parts[0].Length == 40 && IPEndPoint.TryParse(parts[1], out var endpoint)
+                && endpoint.AddressFamily == link.Family)
+            {
+                try
+                {
+                    Remember(new Node(Convert.FromHexString(parts[0]), endpoint));
+                }
+                catch (FormatException)
+                {
+                }
+            }
+        }
     }
 }

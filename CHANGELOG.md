@@ -3,6 +3,15 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.16.0
+
+- Courier is quicker and simpler. The first time, choose "Share from this PC" or type the other PC's ID and press Connect; after that Courier starts with PC Butler and stays connected, with no clicks.
+- Shorter IDs: six characters, like K7M-2QX, with a Copy button. They can be typed in any case, and look-alike letters (O, I, L) are read as digits.
+- Connecting is much faster: about 10 seconds the first time instead of up to a minute, and a second or two to a PC connected before.
+- The Courier widget: a small window that appears while PCs are connected. Drop files on it to send them (it asks which PC when there are several), answer a pairing right there, and watch each file go with a progress bar and its speed, sending or receiving.
+- Files from a paired PC are taken without asking; this can be switched back to asking, per PC.
+- IDs from earlier versions change to the new short ones: a client that was paired finds its host again by itself.
+
 ## 1.15.1
 
 - One copy only: a double-click on the tray icon, or starting the program again, never opens a second window, and a copy started as administrator never runs beside another.

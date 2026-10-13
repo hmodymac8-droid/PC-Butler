@@ -47,8 +47,12 @@ public sealed class PortalSettings
     [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
     /// <summary>"host" (the PC the others connect to), "client" (connects to a host by its ID), or "" until chosen.</summary>
     [JsonPropertyName("role")] public string Role { get; set; } = "";
-    /// <summary>A client's host, by its twelve-digit ID.</summary>
+    /// <summary>A client's host, by its ID (six characters).</summary>
     [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
+    /// <summary>Start Courier with PC Butler, so a client is connected and a host is reachable without a click.</summary>
+    [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
+    /// <summary>Show the small Courier window, for dropping files and watching transfers, while connected.</summary>
+    [JsonPropertyName("widget")] public bool Widget { get; set; } = true;
 }
 
 /// <summary>Another client of the same host, as the host lists it. Files reach it through the host.</summary>
@@ -210,6 +214,9 @@ public sealed partial class PortalNode
         Id = Portal.Fingerprint(certificate);
         Folder = Portal.ReceiveFolder(settings);
         IsHost = settings.Role == PortalSettings.Host;
+        // IDs were twelve digits before 1.16: a client paired with its host knows the host's new one from its certificate.
+        if (!IsHost && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 1)
+            settings.HostNumber = Portal.NumberOf(settings.Devices[0].Id);
         foreach (var device in settings.Devices)
             peers[device.Id] = new PortalPeer { Id = device.Id, Name = device.Name, Trusted = true, AutoAccept = device.AutoAccept };
     }
@@ -461,12 +468,13 @@ public sealed partial class PortalNode
             pairing.State = "confirmed";
             if (!peers.TryGetValue(pairing.PeerId, out var peer))
                 peer = peers[pairing.PeerId] = new PortalPeer { Id = pairing.PeerId };
-            (peer.Trusted, peer.Name) = (true, pairing.PeerName);
+            // Paired means trusted: what it sends is taken without a click (it can be switched to asking first).
+            (peer.Trusted, peer.Name, peer.AutoAccept) = (true, pairing.PeerName, true);
             if (pairing.Via is not null)
                 (peer.Tunnel, peer.LastSeen) = (pairing.Via, DateTime.UtcNow);
             // A client has one host: pairing with another replaces it.
             settings.Devices.RemoveAll(device => !IsHost || device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
-            settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, Address = peer.Tunnel?.Address.ToString() ?? "", Port = peer.Tunnel?.Port ?? 0 });
+            settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, AutoAccept = true, Address = peer.Tunnel?.Address.ToString() ?? "", Port = peer.Tunnel?.Port ?? 0 });
         }
         save();
         Log.Info($"Courier: paired with {pairing.PeerName}");

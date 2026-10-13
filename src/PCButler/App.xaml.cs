@@ -146,6 +146,7 @@ public partial class App : Application
         if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
             Log.Warning($"Clipboard manager: {clipboardError}");
         StartBackground();
+        StartCourier();
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
 
@@ -399,9 +400,70 @@ public partial class App : Application
         if (exiting)
             return;
         Notify("{0}", [message]);
+        // The widget asks right there; without it, the Courier page does.
+        if (Courier.WidgetOn)
+        {
+            widgetDismissed = false;
+            WatchCourier();
+            return;
+        }
         ShowMainWindow();
         window?.ShowPage("portal");
     });
+
+    // --- Courier: started with the program, and its widget while PCs are connected ---
+
+    private CourierWidget? courierWidget;
+    private bool widgetDismissed, widgetWasBusy;
+    private readonly DispatcherTimer courierWatch = new() { Interval = TimeSpan.FromSeconds(1) };
+
+    private void StartCourier()
+    {
+        courierWatch.Tick += (_, _) => WatchCourier();
+        courierWatch.Start();
+        var settings = ConfigStore.Load().Portal;
+        Courier.WidgetOn = settings.Widget;
+        // A PC that has chosen its role starts Courier by itself: a client gets connected, a host gets reachable.
+        if (settings.AutoStart && settings.Role is PortalSettings.Host or PortalSettings.Client)
+            _ = Courier.Start();
+    }
+
+    /// <summary>Show the widget while something is going on (a PC connected, a transfer, a question), hide it otherwise.</summary>
+    private void WatchCourier()
+    {
+        if (exiting)
+            return;
+        var node = Courier.Node;
+        var busy = node is not null && Courier.Busy(node);
+        // Closing it lasts until things calm down and start again (the next connection or question).
+        if (busy && !widgetWasBusy)
+            widgetDismissed = false;
+        widgetWasBusy = busy;
+        var wanted = busy && !widgetDismissed && Courier.WidgetOn;
+        if (wanted)
+        {
+            if (courierWidget is null)
+            {
+                courierWidget = new CourierWidget();
+                courierWidget.Dismissed += () => widgetDismissed = true;
+                courierWidget.Closed += (_, _) => courierWidget = null;
+            }
+            if (!courierWidget.IsVisible)
+                courierWidget.Show();
+            courierWidget.Refresh();
+        }
+        else
+        {
+            courierWidget?.Hide();
+        }
+    }
+
+    /// <summary>The widget was switched on or off on the Courier page.</summary>
+    public void CourierWidgetChanged()
+    {
+        widgetDismissed = false;
+        WatchCourier();
+    }
 
     private void Notify(string message, object[] arguments)
     {
@@ -504,6 +566,8 @@ public partial class App : Application
         Background.Stop();
         Usage.Stop();
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
+        courierWatch.Stop();
+        courierWidget?.Close();
         Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4)); // and so does Portal: nothing listens once the program is gone
         if (tray is not null)
         {

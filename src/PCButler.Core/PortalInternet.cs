@@ -14,7 +14,7 @@ namespace PCButler.Core;
 public enum PortalConnectProblem
 {
     None,
-    /// <summary>Not twelve digits, or this PC's own ID.</summary>
+    /// <summary>Not an ID (six characters), or this PC's own.</summary>
     BadNumber,
     /// <summary>The public directory could not be reached from this network.</summary>
     NoDirectory,
@@ -46,7 +46,7 @@ public sealed partial class PortalNode
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private List<PortalClient> otherClients = [];
 
-    /// <summary>This PC's ID, twelve digits.</summary>
+    /// <summary>This PC's ID: six characters, like K7M-2QX.</summary>
     public string Number => Portal.NumberOf(Id);
     /// <summary>The port of the IPv4 socket used across the internet.</summary>
     public int LinkPort => link4?.Port ?? 0;
@@ -118,6 +118,18 @@ public sealed partial class PortalNode
             dht4 = new PortalDht(link4);
             if (link6 is not null)
                 dht6 = new PortalDht(link6);
+            // The directory's computers known last time: joining is then instant instead of a few seconds.
+            foreach (var (dht, file) in new[] { (dht4, NodesFile(4)), (dht6, NodesFile(6)) })
+            {
+                try
+                {
+                    if (dht is not null && File.Exists(file))
+                        dht.LoadNodes(File.ReadAllText(file));
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
         }
         if (IsHost)
         {
@@ -135,8 +147,21 @@ public sealed partial class PortalNode
         }
     }
 
+    private static string NodesFile(int version) => Path.Combine(AppInfo.DataDir, $"courier-directory-{version}.txt");
+
     private async Task StopInternet()
     {
+        foreach (var (dht, file) in new[] { (dht4, NodesFile(4)), (dht6, NodesFile(6)) })
+        {
+            try
+            {
+                if (dht is { Known: > 8 })
+                    File.WriteAllText(file, dht.SaveNodes());
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
         if (mapping is { } given)
             await PortalNat.Unmap(given);
         link4?.Dispose();
@@ -157,7 +182,12 @@ public sealed partial class PortalNode
             local = ((IPEndPoint)inside.Client.LocalEndPoint!).Port;
             pumps[local] = from;
             await using var wire = inside.GetStream();
-            await Task.WhenAny(stream.CopyToAsync(wire, 64 * 1024, stopping.Token), wire.CopyToAsync(stream, 64 * 1024, stopping.Token));
+            var inward = stream.CopyToAsync(wire, 64 * 1024, stopping.Token);
+            var outward = wire.CopyToAsync(stream, 64 * 1024, stopping.Token);
+            await Task.WhenAny(inward, outward);
+            // When one direction ends the other fails soon after: that is the connection closing, not a problem to report.
+            foreach (var direction in new[] { inward, outward })
+                _ = direction.ContinueWith(done => _ = done.Exception, TaskContinuationOptions.OnlyOnFaulted);
         }
         catch (Exception error) when (error is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
         {
@@ -225,8 +255,9 @@ public sealed partial class PortalNode
                         Log.Info($"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
                         Raise();
                     }
-                    // A client that wants in leaves its address under the "knock" key: send towards it, so a path opens through both routers.
-                    foreach (var knocker in (await dht.Lookup(Portal.DirectoryKey(Number, knock: true), announce: false, stopping.Token)).Take(16))
+                    // A client that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
+                    // routers. Asked every few seconds, of the few computers that hold that key, so a client waits seconds, not minutes.
+                    foreach (var knocker in (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token)).Take(16))
                     {
                         var (at, times) = knocked.GetValueOrDefault(knocker);
                         if (link.IsOpen(knocker) || dht.IsMe(knocker) || times >= 4 && now - at < 30 * 60_000 || now - at < 45_000)
@@ -237,7 +268,7 @@ public sealed partial class PortalNode
                             Log.Info($"Courier: path to {knocker} {(done.Result ? "opened" : "did not open")}"), TaskContinuationOptions.OnlyOnRanToCompletion);
                     }
                 }
-                await Task.Delay(12_000, stopping.Token);
+                await Task.Delay(3000, stopping.Token);
             }
             catch (OperationCanceledException)
             {
@@ -265,15 +296,18 @@ public sealed partial class PortalNode
             try
             {
                 var number = settings.HostNumber;
-                if (number.Length == 12 && number != Number)
+                if (Portal.IsNumber(number) && number != Number)
                 {
                     var host = HostPeer;
                     if (host is not { Online: true })
                     {
                         Connecting = true;
                         Raise();
+                        var clock = System.Diagnostics.Stopwatch.StartNew();
                         var (found, problem) = await FindHost(number, local);
                         (Connecting, HostProblem) = (false, problem);
+                        Log.Info(found is { Tunnel: { } path } ? $"Courier: connected to {Portal.ShowNumber(number)} over {path} in {clock.Elapsed.TotalSeconds:0.0} s"
+                                                               : $"Courier: {Portal.ShowNumber(number)} not reached in {clock.Elapsed.TotalSeconds:0} s ({problem})");
                         host = found;
                         if (host is { Trusted: false } && !Pairings.Any(pairing => pairing.PeerId == host.Id))
                             await Pair(host);
@@ -285,7 +319,7 @@ public sealed partial class PortalNode
                         await AskForClients(host);
                     }
                 }
-                await Task.Delay(HostPeer is { Online: true } ? 3000 : HostProblem == PortalConnectProblem.None ? 2000 : 20_000, stopping.Token);
+                await Task.Delay(HostPeer is { Online: true } ? 3000 : HostProblem == PortalConnectProblem.None ? 1000 : 15_000, stopping.Token);
             }
             catch (OperationCanceledException)
             {
@@ -301,14 +335,12 @@ public sealed partial class PortalNode
 
     private async Task<(PortalPeer? Host, PortalConnectProblem Problem)> FindHost(string number, bool local)
     {
-        // Where the host was last time: often still there, and much quicker than the directory.
-        foreach (var device in settings.Devices.Where(device => Portal.NumberOf(device.Id) == number && device.Port > 0))
-        {
-            if (IPAddress.TryParse(device.Address, out var address) && (!local || IPAddress.IsLoopback(address))
-                && await ConnectDirect(new IPEndPoint(address, device.Port), number) is { } known)
-                return (known, PortalConnectProblem.None);
-        }
-        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, stopping.Token);
+        // Where the host was last time: often still there, and found in a second instead of through the directory.
+        var paired = settings.Devices.FirstOrDefault(device => Portal.NumberOf(device.Id) == number);
+        if (paired is { Port: > 0 } && IPAddress.TryParse(paired.Address, out var address) && (!local || IPAddress.IsLoopback(address))
+            && await ConnectDirect(new IPEndPoint(address, paired.Port), number, paired.Id) is { } known)
+            return (known, PortalConnectProblem.None);
+        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, stopping.Token, paired?.Id);
     }
 
     private async Task AskForClients(PortalPeer host)
@@ -338,7 +370,7 @@ public sealed partial class PortalNode
     /// <summary>The host to connect to, by its ID. Saved, and looked for at once.</summary>
     public void SetHost(string number)
     {
-        number = new string(number.Where(char.IsDigit).ToArray());
+        number = Portal.NormalizeNumber(number);
         if (number == settings.HostNumber)
             return;
         settings.HostNumber = number;
@@ -352,34 +384,35 @@ public sealed partial class PortalNode
     /// Find a PC by its ID and open a path to it, over IPv4 and IPv6 at once. Takes from a few
     /// seconds to about a minute. The PC is added to the list (not paired) when it works.
     /// </summary>
-    public async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> ConnectById(string number, CancellationToken cancel = default)
+    public async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> ConnectById(string number, CancellationToken cancel = default, string? expectedId = null)
     {
-        number = new string(number.Where(char.IsDigit).ToArray());
-        if (number.Length != 12 || number == Number)
+        number = Portal.NormalizeNumber(number);
+        if (!Portal.IsNumber(number) || number == Number)
             return (null, PortalConnectProblem.BadNumber);
-        var directories = new List<(PortalLink Link, PortalDht Dht)>();
-        foreach (var (link, dht) in Links())
-        {
-            if (dht is not null && await dht.Join(cancel))
-                directories.Add((link, dht));
-        }
+        var joined = await Task.WhenAll(Links().Where(item => item.Dht is not null).Select(async item => (item.Link, Dht: item.Dht!, Ok: await item.Dht!.Join(cancel))));
+        var directories = joined.Where(item => item.Ok).Select(item => (item.Link, item.Dht)).ToList();
         if (directories.Count == 0)
             return (null, PortalConnectProblem.NoDirectory);
         var found = false;
         var until = Environment.TickCount64 + 75_000;
         while (Environment.TickCount64 < until && !cancel.IsCancellationRequested && !stopping.IsCancellationRequested)
         {
-            var places = new List<IPEndPoint>();
-            foreach (var (_, dht) in directories)
+            // Over IPv4 and IPv6 at once: leave this PC's address where the host looks for knocks, and look up where the host is.
+            var rounds = directories.Select(async item =>
             {
-                // Leave this PC's address where the host looks for knocks, then look up where the host is.
-                var knock = dht.Lookup(Portal.DirectoryKey(number, knock: true), announce: true, cancel);
-                places.AddRange((await dht.Lookup(Portal.DirectoryKey(number, knock: false), announce: false, cancel)).Where(place => !dht.IsMe(place)));
-                await knock;
-            }
+                var knock = item.Dht.Lookup(Portal.DirectoryKey(number, knock: true), announce: true, cancel);
+                var at = (await item.Dht.Lookup(Portal.DirectoryKey(number, knock: false), announce: false, cancel)).Where(place => !item.Dht.IsMe(place)).ToList();
+                // Start knocking on the host's door straight away. The knock left in the directory (for a host behind a router
+                // that lets nothing in first) finishes in the background; nothing waits for it.
+                foreach (var place in at)
+                    _ = LinkFor(place)?.PunchTo(place, TimeSpan.FromSeconds(30), cancel);
+                _ = knock.ContinueWith(done => _ = done.Exception, TaskContinuationOptions.OnlyOnFaulted);
+                return at;
+            }).ToList();
+            var places = (await Task.WhenAll(rounds)).SelectMany(at => at).Distinct().ToList();
             if (places.Count == 0)
             {
-                await Task.Delay(3000, cancel);
+                await Task.Delay(2000, cancel);
                 continue;
             }
             found = true;
@@ -391,7 +424,7 @@ public sealed partial class PortalNode
             {
                 var done = await Task.WhenAny(tries);
                 tries.Remove(done);
-                if (await done is { } open && await ConnectDirect(open, number) is { } peer)
+                if (await done is { } open && await ConnectDirect(open, number, expectedId) is { } peer)
                     return (peer, PortalConnectProblem.None);
             }
         }
@@ -402,9 +435,9 @@ public sealed partial class PortalNode
     /// Open a path to a PC at a known internet address and ask it who it is. With an expected
     /// ID, an answer from any other PC is not accepted.
     /// </summary>
-    public async Task<PortalPeer?> ConnectDirect(IPEndPoint place, string? expectedNumber = null)
+    public async Task<PortalPeer?> ConnectDirect(IPEndPoint place, string? expectedNumber = null, string? expectedId = null)
     {
-        if (LinkFor(place) is not { } link || (!link.IsOpen(place) && !await link.PunchTo(place, TimeSpan.FromSeconds(6), stopping.Token)))
+        if (LinkFor(place) is not { } link || (!link.IsOpen(place) && !await link.PunchTo(place, TimeSpan.FromSeconds(4), stopping.Token)))
             return null;
         try
         {
@@ -413,7 +446,9 @@ public sealed partial class PortalNode
             limit.CancelAfter(TimeSpan.FromSeconds(20));
             var who = await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
             var id = seen();
-            if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && Portal.NumberOf(id) != expectedNumber))
+            // A host this PC is paired with must show the very certificate it was paired with, not just any with the same ID.
+            if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && Portal.NumberOf(id) != expectedNumber)
+                || (expectedId is not null && !id.Equals(expectedId, StringComparison.OrdinalIgnoreCase)))
                 return null;
             PortalPeer peer;
             lock (gate)
@@ -427,6 +462,7 @@ public sealed partial class PortalNode
                 foreach (var device in settings.Devices.Where(device => device.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
                     (device.Address, device.Port) = (place.Address.ToString(), place.Port);
             }
+            save();
             Raise();
             return peer;
         }
@@ -458,15 +494,36 @@ public sealed partial class PortalNode
 
 public static partial class Portal
 {
-    /// <summary>A PC's twelve-digit ID, made from its certificate's fingerprint. It finds the PC; it does not prove who it is.</summary>
-    public static string NumberOf(string fingerprint) =>
-        (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000_000).ToString("000000000000");
+    /// <summary>The characters of an ID: digits and letters, without I, L, O and U, which are easily taken for others.</summary>
+    private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-    /// <summary>"482019337615" as "482 019 337 615".</summary>
-    public static string ShowNumber(string number) =>
-        number.Length == 12 ? $"{number[..3]} {number[3..6]} {number[6..9]} {number[9..]}" : number;
+    /// <summary>
+    /// A PC's ID: six characters (30 bits of its certificate's fingerprint), like "K7M2QX". It
+    /// finds the PC; it does not prove who it is: pairing does that.
+    /// </summary>
+    public static string NumberOf(string fingerprint)
+    {
+        var bits = Convert.ToUInt64(fingerprint[..8], 16) >> 2;
+        var text = new char[6];
+        for (var index = 5; index >= 0; index--, bits >>= 5)
+            text[index] = Alphabet[(int)(bits & 31)];
+        return new string(text);
+    }
+
+    /// <summary>An ID as typed: any case, any spaces or dashes, and O, I, L taken for 0, 1, 1. "" when it can't be one.</summary>
+    public static string NormalizeNumber(string typed)
+    {
+        var clean = new string(typed.ToUpperInvariant().Where(char.IsLetterOrDigit)
+            .Select(character => character switch { 'O' => '0', 'I' or 'L' => '1', 'U' => 'V', _ => character }).ToArray());
+        return IsNumber(clean) ? clean : clean.Length == 0 ? "" : clean;
+    }
+
+    public static bool IsNumber(string number) => number.Length == 6 && number.All(Alphabet.Contains);
+
+    /// <summary>"K7M2QX" as "K7M-2QX".</summary>
+    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]}-{number[3..]}" : number;
 
     /// <summary>Where in the public directory a PC with this ID announces itself, or where others leave their address for it ("knock").</summary>
     public static byte[] DirectoryKey(string number, bool knock) =>
-        SHA1.HashData(Encoding.ASCII.GetBytes($"pcbutler-portal-v1|{(knock ? "knock" : "here")}|{number}"));
+        SHA1.HashData(Encoding.ASCII.GetBytes($"pcbutler-courier-v2|{(knock ? "knock" : "here")}|{number}"));
 }
