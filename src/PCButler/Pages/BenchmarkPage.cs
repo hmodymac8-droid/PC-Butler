@@ -10,8 +10,6 @@ namespace PCButler;
 /// <summary>The performance overlay's switches, the live numbers, and the list of game sessions it measured.</summary>
 public sealed class BenchmarkPage : Page
 {
-    private static readonly string[] Corners = ["Top left", "Top right", "Bottom left", "Bottom right"];
-
     private readonly StatCard[] stats;
     private readonly CheckBox enabled;
     private readonly TextBlock fpsState = Ui.Muted("", 12);
@@ -35,31 +33,8 @@ public sealed class BenchmarkPage : Page
                                              + "panel, and hides it again when you leave. Clicks pass through it."), enabled, first: true));
         rows.Children.Add(Ui.SettingRow(Ui.T("Show it all the time"), Ui.T("Not only in games: over whatever program is in front."),
                                         Ui.Switch("", settings.Always, on => Change(overlay => overlay.Always = on))));
-        var corner = new ComboBox { Width = 170 };
-        foreach (var name in Corners)
-            corner.Items.Add(Ui.T(name));
-        corner.SelectedIndex = Math.Clamp(settings.Corner, 0, 3);
-        corner.SelectionChanged += (_, _) => Change(overlay => overlay.Corner = Math.Max(0, corner.SelectedIndex));
-        rows.Children.Add(Ui.SettingRow(Ui.T("Corner"), "", corner));
-        var show = new WrapPanel { MaxWidth = 620 };
-        foreach (var box in new[]
-                 {
-                     Check("Frames per second", settings.Fps, (overlay, on) => overlay.Fps = on),
-                     Check("Frame time", settings.FrameTime, (overlay, on) => overlay.FrameTime = on),
-                     Check("Processor", settings.Cpu, (overlay, on) => overlay.Cpu = on),
-                     Check("Graphics card", settings.Gpu, (overlay, on) => overlay.Gpu = on),
-                     Check("Temperatures", settings.Temperatures, (overlay, on) => overlay.Temperatures = on),
-                     Check("Memory (RAM)", settings.Memory, (overlay, on) => overlay.Memory = on),
-                     Check("Video memory (VRAM)", settings.VideoMemory, (overlay, on) => overlay.VideoMemory = on),
-                     Check("Graphics card fan", settings.Fan, (overlay, on) => overlay.Fan = on),
-                     Check("Network speed", settings.Network, (overlay, on) => overlay.Network = on),
-                     Check("Clock", settings.Clock, (overlay, on) => overlay.Clock = on),
-                 })
-        {
-            box.Margin = new Thickness(0, 4, 20, 4);
-            show.Children.Add(box);
-        }
-        rows.Children.Add(Ui.SettingRow(Ui.T("What it shows"), "", show));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Temperatures"), Ui.T("Beside the processor's and the graphics card's use."),
+                                        Ui.Switch("", settings.Temperatures, on => Change(overlay => overlay.Temperatures = on))));
         fpsButton = Ui.Button(Ui.T("Start the helper"), StartHelper);
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Frames per second need administrator rights"), 13, weight: FontWeights.Bold), fpsState, fpsButton));
         cpuButton = Ui.Button(Ui.T("Get PawnIO"), () => Shell.Open(CpuSensor.DriverPage));
@@ -80,6 +55,13 @@ public sealed class BenchmarkPage : Page
 
         var all = new StackPanel();
         all.Children.Add(card);
+        // Arranging the overlay yourself: what it shows and in what order, and how it looks.
+        var shows = BenchmarkLook.Rows(() => Main.Config.Overlay, Change);
+        shows.Margin = new Thickness(0, 16, 0, 0);
+        all.Children.Add(shows);
+        var look = BenchmarkLook.Look(() => Main.Config.Overlay, Change);
+        look.Margin = new Thickness(0, 16, 0, 0);
+        all.Children.Add(look);
         all.Children.Add(log);
         Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
 

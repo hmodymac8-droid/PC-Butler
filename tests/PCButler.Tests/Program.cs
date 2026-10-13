@@ -859,6 +859,23 @@ Section("courier IDs");
     Check(firstSpeed is null && meter.Read() is null or { Down: >= 0, Up: >= 0 }, "network speed needs two readings");
     Check(UsageMonitor.VideoMemory() is var (videoUsed, videoTotal) && videoUsed is null or >= 0 && (videoTotal is null || videoTotal > 0),
           $"the graphics card's memory can be read ({UsageMonitor.VideoMemory()})");
+    var arranged = new OverlaySettings { Order = ["clock", "nonsense", "fps", "clock"] };
+    Check(arranged.OrderedRows() is { Count: 9 } inOrder && inOrder[0] == "clock" && inOrder[1] == "fps" && inOrder[2] == "frame_time" && inOrder.Distinct().Count() == 9
+          && new OverlaySettings().OrderedRows().SequenceEqual(OverlaySettings.Rows), "the overlay's readings come in the user's order, the rest after them, each once");
+    arranged.SetShown("clock", true);
+    arranged.SetShown("fps", false);
+    Check(arranged.Shows("clock") && !arranged.Shows("fps") && arranged.Shows("cpu") && !arranged.Shows("nonsense") && OverlaySettings.Rows.All(row =>
+          {
+              var probe = new OverlaySettings();
+              probe.SetShown(row, !probe.Shows(row));
+              return probe.Shows(row) != new OverlaySettings().Shows(row);
+          }), "every reading can be switched on and off by its name");
+    Check(OverlaySettings.IsColour("#3DD68C") && OverlaySettings.IsColour("#ffffff") && !OverlaySettings.IsColour("3DD68C") && !OverlaySettings.IsColour("#3DD68")
+          && !OverlaySettings.IsColour("#GGGGGG") && !OverlaySettings.IsColour("red"), "a colour is #RRGGBB and nothing else");
+    (arranged.Accent, arranged.Scale, arranged.Horizontal, arranged.OffsetX, arranged.Games) = ("#FF0000", 200, true, 400, ["game.exe"]);
+    arranged.ResetLook();
+    Check(arranged is { Accent: OverlaySettings.DefaultAccent, Scale: 100, Horizontal: false, OffsetX: 16, Order.Count: 0, Games.Count: 1 } && arranged.Shows("clock"),
+          "Reset the look puts colours, size, place and order back, and leaves what is shown alone");
     var recorder = new BenchmarkRecorder("eldenring.exe");
     for (var tick = 0; tick < 5; tick++)
         recorder.Add(new BenchmarkSample(60, 40, 90, 50, 70, 65));

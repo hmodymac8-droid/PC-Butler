@@ -3,6 +3,11 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.19.0
+
+- Arrange the performance overlay yourself, on the Benchmark page: put its readings in any order, show them in a column or on one line, change its size, slide it away from the corner, and choose the highlight, text and background colours and how solid the background is. Reset the look puts it back as it came.
+- The overlay's own look is gentler: the program's font and colours, soft light text and a mostly see-through background.
+
 ## 1.18.1
 
 - The performance overlay can show more: video memory (VRAM) in use, memory (RAM) in gigabytes as well as percent, frame time, the graphics card's fan, network speed and a clock. Each has its own tick box on the Benchmark page.

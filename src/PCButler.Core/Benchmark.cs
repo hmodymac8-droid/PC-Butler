@@ -32,6 +32,64 @@ public sealed class OverlaySettings
     /// <summary>Download and upload speed of the whole PC.</summary>
     [JsonPropertyName("network")] public bool Network { get; set; }
     [JsonPropertyName("clock")] public bool Clock { get; set; }
+    /// <summary>The readings in the order the user put them; any left out follow in the usual order.</summary>
+    [JsonPropertyName("order")] public List<string> Order { get; set; } = [];
+    /// <summary>All readings on one line instead of in a column.</summary>
+    [JsonPropertyName("horizontal")] public bool Horizontal { get; set; }
+    /// <summary>Size in percent of the usual one.</summary>
+    [JsonPropertyName("scale")] public int Scale { get; set; } = 100;
+    /// <summary>Pixels from the side and from the top or bottom of the screen, counted from the chosen corner.</summary>
+    [JsonPropertyName("offset_x")] public int OffsetX { get; set; } = 16;
+    [JsonPropertyName("offset_y")] public int OffsetY { get; set; } = 16;
+    /// <summary>Colours as #RRGGBB: the frames per second, the other numbers, the panel behind them.</summary>
+    [JsonPropertyName("accent")] public string Accent { get; set; } = DefaultAccent;
+    [JsonPropertyName("text")] public string Text { get; set; } = DefaultText;
+    [JsonPropertyName("background")] public string Background { get; set; } = DefaultBackground;
+    /// <summary>How solid the panel is, 0 (only the numbers) to 100.</summary>
+    [JsonPropertyName("opacity")] public int Opacity { get; set; } = 35;
+
+    // The program's own colours: its green, its soft white, its card. The panel is mostly see-through by default.
+    public const string DefaultAccent = "#42D8A5", DefaultText = "#E8EBF0", DefaultBackground = "#101216";
+
+    /// <summary>Every reading the overlay can show, in the order it comes in.</summary>
+    public static readonly string[] Rows = ["fps", "frame_time", "cpu", "gpu", "vram", "fan", "ram", "net", "clock"];
+
+    /// <summary>The readings in the user's order: what they arranged first, then whatever that list does not mention.</summary>
+    public List<string> OrderedRows() => Order.Where(Rows.Contains).Distinct().Concat(Rows.Where(row => !Order.Contains(row))).ToList();
+
+    public bool Shows(string row) => row switch
+    {
+        "fps" => Fps, "frame_time" => FrameTime, "cpu" => Cpu, "gpu" => Gpu, "vram" => VideoMemory, "fan" => Fan, "ram" => Memory, "net" => Network, "clock" => Clock,
+        _ => false,
+    };
+
+    public void SetShown(string row, bool on)
+    {
+        switch (row)
+        {
+            case "fps": Fps = on; break;
+            case "frame_time": FrameTime = on; break;
+            case "cpu": Cpu = on; break;
+            case "gpu": Gpu = on; break;
+            case "vram": VideoMemory = on; break;
+            case "fan": Fan = on; break;
+            case "ram": Memory = on; break;
+            case "net": Network = on; break;
+            case "clock": Clock = on; break;
+        }
+    }
+
+    /// <summary>True for a colour written as #RRGGBB.</summary>
+    public static bool IsColour(string text) => text.Length == 7 && text[0] == '#' && text[1..].All(Uri.IsHexDigit);
+
+    /// <summary>The look and the order as they came; what is shown, and where games are detected, stays.</summary>
+    public void ResetLook()
+    {
+        var fresh = new OverlaySettings();
+        (Order, Horizontal, Scale, Corner, OffsetX, OffsetY) = ([], fresh.Horizontal, fresh.Scale, fresh.Corner, fresh.OffsetX, fresh.OffsetY);
+        (Accent, Text, Background, Opacity) = (fresh.Accent, fresh.Text, fresh.Background, fresh.Opacity);
+    }
+
     /// <summary>Program file names (game.exe) always taken for a game, full screen or not.</summary>
     [JsonPropertyName("games")] public List<string> Games { get; set; } = [];
 }

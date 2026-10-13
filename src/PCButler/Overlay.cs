@@ -19,6 +19,11 @@ namespace PCButler;
 public sealed class OverlayWindow : Window
 {
     private readonly StackPanel lines = new();
+    private readonly Border panel;
+    private Brush accent = Brushes.White, text = Brushes.White;
+    private double scale = 1;
+    private (int X, int Y) offset = (16, 16);
+    private string look = "";
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr window, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] private static extern int SetWindowLong(IntPtr window, int index, int value);
@@ -37,12 +42,9 @@ public sealed class OverlayWindow : Window
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
         FlowDirection = FlowDirection.LeftToRight;
-        Content = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(0xC8, 0x0B, 0x0D, 0x10)), CornerRadius = new CornerRadius(8),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0x50, 0x3D, 0xD6, 0x8C)), BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 8, 12, 9), Child = lines,
-        };
+        Content = panel = new Border { CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Child = lines };
+        // A soft dark edge around the letters keeps them readable over a bright scene, however faint the panel is.
+        lines.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = Colors.Black, BlurRadius = 5, ShadowDepth = 0, Opacity = 0.85 };
         SourceInitialized += (_, _) =>
         {
             // Transparent to the mouse, never activated, and not in Alt+Tab.
@@ -51,24 +53,60 @@ public sealed class OverlayWindow : Window
         };
     }
 
-    /// <summary>Show these lines: a short label and its value, the value in the accent colour when it is the one to watch.</summary>
+    private static Color Parse(string hex, string fallback) =>
+        (Color)ColorConverter.ConvertFromString(OverlaySettings.IsColour(hex) ? hex : fallback);
+
+    /// <summary>Take the look from the settings: colours, size, a column or one line, and how far from the corner.</summary>
+    public void Style(OverlaySettings settings)
+    {
+        var wanted = $"{settings.Accent}|{settings.Text}|{settings.Background}|{settings.Opacity}|{settings.Scale}|{settings.Horizontal}";
+        offset = (Math.Max(0, settings.OffsetX), Math.Max(0, settings.OffsetY));
+        if (wanted == look)
+            return;
+        look = wanted;
+        var back = Parse(settings.Background, OverlaySettings.DefaultBackground);
+        var highlight = Parse(settings.Accent, OverlaySettings.DefaultAccent);
+        var strength = (byte)(Math.Clamp(settings.Opacity, 0, 100) * 255 / 100);
+        accent = new SolidColorBrush(highlight);
+        text = new SolidColorBrush(Parse(settings.Text, OverlaySettings.DefaultText));
+        scale = Math.Clamp(settings.Scale, 60, 250) / 100.0;
+        panel.Background = new SolidColorBrush(Color.FromArgb(strength, back.R, back.G, back.B));
+        panel.BorderBrush = new SolidColorBrush(Color.FromArgb((byte)(strength / 4), 255, 255, 255));
+        panel.Padding = new Thickness(14 * scale, 9 * scale, 14 * scale, 10 * scale);
+        lines.Orientation = settings.Horizontal ? Orientation.Horizontal : Orientation.Vertical;
+        lines.Children.Clear(); // built again at the new size
+    }
+
+    /// <summary>Show these lines: a short label and its value, the value in the highlight colour when it is the one to watch.</summary>
     public void Set(IReadOnlyList<(string Label, string Value, bool Accent)> rows)
     {
+        var inLine = lines.Orientation == Orientation.Horizontal;
         while (lines.Children.Count > rows.Count)
             lines.Children.RemoveAt(lines.Children.Count - 1);
         while (lines.Children.Count < rows.Count)
         {
-            var label = new TextBlock { Width = 44, FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA4, 0xB2)), VerticalAlignment = VerticalAlignment.Center };
-            var value = new TextBlock { FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 14, FontWeight = FontWeights.SemiBold };
-            lines.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1), Children = { label, value } });
+            var label = new TextBlock
+            {
+                FontFamily = Ui.DisplayFont, FontSize = 11 * scale, FontWeight = FontWeights.Medium, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.6,
+                Margin = new Thickness(0, 0, 8 * scale, 0),
+            };
+            if (!inLine)
+                label.Width = 42 * scale;
+            var value = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 14 * scale, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            lines.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Children = { label, value },
+                Margin = inLine ? new Thickness(lines.Children.Count == 0 ? 0 : 18 * scale, 0, 0, 0) : new Thickness(0, scale, 0, scale),
+            });
         }
         for (var index = 0; index < rows.Count; index++)
         {
             var row = (StackPanel)lines.Children[index];
-            ((TextBlock)row.Children[0]).Text = rows[index].Label;
+            var label = (TextBlock)row.Children[0];
+            (label.Text, label.Foreground) = (rows[index].Label, text);
             var value = (TextBlock)row.Children[1];
-            value.Text = rows[index].Value;
-            value.Foreground = rows[index].Accent ? new SolidColorBrush(Color.FromRgb(0x3D, 0xD6, 0x8C)) : Brushes.White;
+            value.Text = rows[index].Value.TrimStart(); // the padding was for a fixed-width font
+            value.Foreground = rows[index].Accent ? accent : text;
         }
     }
 
@@ -80,9 +118,9 @@ public sealed class OverlayWindow : Window
             return;
         var scale = VisualTreeHelper.GetDpi(this);
         var (width, height) = ((int)(ActualWidth * scale.DpiScaleX), (int)(ActualHeight * scale.DpiScaleY));
-        const int Gap = 16;
-        var x = corner is 1 or 3 ? right - width - Gap : left + Gap;
-        var y = corner is 2 or 3 ? bottom - height - Gap : top + Gap;
+        // Never off the screen it belongs to, however far it was slid.
+        var x = Math.Clamp(corner is 1 or 3 ? right - width - offset.X : left + offset.X, left, Math.Max(left, right - width));
+        var y = Math.Clamp(corner is 2 or 3 ? bottom - height - offset.Y : top + offset.Y, top, Math.Max(top, bottom - height));
         SetWindowPos(handle, new IntPtr(-1), x, y, 0, 0, 0x0001 | 0x0010);
     }
 }
@@ -191,30 +229,34 @@ public sealed class OverlayController
         }
         var rows = new List<(string, string, bool)>();
         static string Gigabytes(long bytes) => (bytes / 1073741824.0).ToString("0.0");
-        if (settings.Fps)
-            rows.Add(("FPS", fps?.ToString() ?? "—", true));
-        if (settings.FrameTime && fps is > 0)
-            rows.Add(("ms", (1000.0 / fps.Value).ToString("0.0"), false));
-        if (settings.Cpu)
-            rows.Add(("CPU", $"{reading.Cpu,3}%" + (settings.Temperatures && reading.CpuTemperature is { } cpu ? $"  {cpu}°C" : ""), false));
-        if (settings.Gpu && (reading.Gpu is not null || reading.GpuTemperature is not null))
-            rows.Add(("GPU", (reading.Gpu is { } use ? $"{use,3}%" : "  —") + (settings.Temperatures && reading.GpuTemperature is { } gpu ? $"  {gpu}°C" : ""), false));
-        if (settings.VideoMemory && sample?.Gpu?.MemoryUsed is { } videoUsed)
-            rows.Add(("VRAM", Gigabytes(videoUsed) + (sample.Gpu.MemoryTotal is { } videoTotal ? $" / {Gigabytes(videoTotal)} GB" : " GB"), false));
-        if (settings.Fan && sample?.Gpu?.Fan is { } fan)
-            rows.Add(("FAN", $"{fan} RPM", false));
-        if (settings.Memory)
-            rows.Add(("RAM", $"{reading.MemoryPercent,3}%" + (sample is null ? "" : $"  {Gigabytes(sample.MemoryUsed)} / {Gigabytes(sample.MemoryTotal)} GB"), false));
-        if (settings.Network && network.Read() is { } speed)
-            rows.Add(("NET", $"↓{NetworkMeter.Megabits(speed.Down)}  ↑{NetworkMeter.Megabits(speed.Up)} Mb/s", false));
-        if (settings.Clock)
-            rows.Add(("TIME", DateTime.Now.ToString("HH:mm"), false));
+        // Each reading the user ticked, in the order they put them; one that the PC cannot give is left out.
+        foreach (var row in settings.OrderedRows().Where(settings.Shows))
+        {
+            (string, string, bool)? line = row switch
+            {
+                "fps" => ("FPS", fps?.ToString() ?? "—", true),
+                "frame_time" when fps is > 0 => ("ms", (1000.0 / fps.Value).ToString("0.0"), false),
+                "cpu" => ("CPU", $"{reading.Cpu,3}%" + (settings.Temperatures && reading.CpuTemperature is { } cpu ? $"  {cpu}°C" : ""), false),
+                "gpu" when reading.Gpu is not null || reading.GpuTemperature is not null =>
+                    ("GPU", (reading.Gpu is { } use ? $"{use,3}%" : "  —") + (settings.Temperatures && reading.GpuTemperature is { } gpu ? $"  {gpu}°C" : ""), false),
+                "vram" when sample?.Gpu?.MemoryUsed is { } videoUsed =>
+                    ("VRAM", Gigabytes(videoUsed) + (sample.Gpu.MemoryTotal is { } videoTotal ? $" / {Gigabytes(videoTotal)} GB" : " GB"), false),
+                "fan" when sample?.Gpu?.Fan is { } fan => ("FAN", $"{fan} RPM", false),
+                "ram" => ("RAM", $"{reading.MemoryPercent,3}%" + (sample is null ? "" : $"  {Gigabytes(sample.MemoryUsed)} / {Gigabytes(sample.MemoryTotal)} GB"), false),
+                "net" when network.Read() is { } speed => ("NET", $"↓{NetworkMeter.Megabits(speed.Down)}  ↑{NetworkMeter.Megabits(speed.Up)} Mb/s", false),
+                "clock" => ("TIME", DateTime.Now.ToString("HH:mm"), false),
+                _ => null,
+            };
+            if (line is { } shown)
+                rows.Add(shown);
+        }
         if (rows.Count == 0)
         {
             window?.Hide();
             return;
         }
         window ??= new OverlayWindow();
+        window.Style(settings);
         window.Set(rows);
         if (!window.IsVisible)
             window.Show();
