@@ -12,8 +12,12 @@ var temp = Directory.CreateTempSubdirectory("pcbutler-test-").FullName;
 Environment.SetEnvironmentVariable("PCBUTLER_DATA", Path.Combine(temp, "data"));
 var failures = 0;
 
+var verbose = Environment.GetEnvironmentVariable("PCBUTLER_TESTS_VERBOSE") == "1";
+
 void Check(bool condition, string what)
 {
+    if (condition && verbose)
+        Console.WriteLine("ok: " + what);
     if (condition)
         return;
     failures++;
@@ -586,12 +590,14 @@ Section("tunnel");
     var gotOutward = ReadAll(far);
     var gotHomeward = ReadAll(near);
     var clock = System.Diagnostics.Stopwatch.StartNew();
-    await Task.WhenAll(
+    var writing = Task.WhenAll(
         Task.Run(async () => { await near.WriteAsync(outward); await near.Complete(); }),
         Task.Run(async () => { await far.WriteAsync(homeward); await far.Complete(); }));
-    var finished = await Task.WhenAny(Task.WhenAll(gotOutward, gotHomeward), Task.Delay(60_000)) != null && gotOutward.IsCompletedSuccessfully && gotHomeward.IsCompletedSuccessfully;
+    await Task.WhenAny(Task.WhenAll(writing, gotOutward, gotHomeward), Task.Delay(60_000));
+    var finished = writing.IsCompletedSuccessfully && gotOutward.IsCompletedSuccessfully && gotHomeward.IsCompletedSuccessfully;
     Check(finished && gotOutward.Result.SequenceEqual(outward) && gotHomeward.Result.SequenceEqual(homeward),
-          $"data crosses a line that loses and shuffles packets, whole and in order, both ways ({clock.ElapsedMilliseconds} ms)");
+          $"data crosses a line that loses and shuffles packets, whole and in order, both ways ({clock.ElapsedMilliseconds} ms; {near.Describe()})");
+    Check(clock.ElapsedMilliseconds < 30_000, $"and at a usable pace despite the losses ({clock.ElapsedMilliseconds} ms for 3.7 MB)");
     for (var waited = 0; waited < 100 && !(near.Over && far.Over); waited++)
         await Task.Delay(50);
     Check(near.Over && far.Over && !near.Failed && !far.Failed, "and both ends see it finish cleanly");
@@ -627,9 +633,8 @@ Section("tunnel");
         return all.ToArray();
     });
     var watch = System.Diagnostics.Stopwatch.StartNew();
-    await line.WriteAsync(message);
-    await line.Complete();
-    Check(await Task.WhenAny(echoed, Task.Delay(30_000)) == echoed && echoed.Result.SequenceEqual(message),
+    var sendingIt = Task.Run(async () => { await line.WriteAsync(message); await line.Complete(); });
+    Check(await Task.WhenAny(Task.WhenAll(sendingIt, echoed), Task.Delay(30_000)) != sendingIt && echoed.IsCompletedSuccessfully && echoed.Result.SequenceEqual(message),
           $"a stream over real sockets carries data outward and homeward ({message.Length * 2 / 1048576.0 / watch.Elapsed.TotalSeconds:0} MB/s on this PC)");
     var refusedStream = false;
     try

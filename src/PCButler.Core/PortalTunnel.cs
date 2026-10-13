@@ -20,7 +20,7 @@ public sealed class ReliableStream : Stream
     /// <summary>Bytes of data per packet: small enough to cross any ordinary internet path in one piece.</summary>
     public const int PacketData = 1180;
     private const int ReceiveLimit = 12 * 1024 * 1024; // unread bytes the receiver holds before telling the sender to wait
-    private const int MaxWindow = 4096, MinWindow = 8;
+    private const int MaxWindow = 4096, MinWindow = 32;
     private const byte Data = 5, Ack = 6, Fin = 7, Reset = 8;
 
     private sealed class Sent
@@ -56,8 +56,15 @@ public sealed class ReliableStream : Stream
     public ReliableStream(Action<byte[], int> send, Action? closed = null) => (this.send, this.closed) = (send, closed);
 
     public bool Failed => failed;
+
+    /// <summary>The stream's state in a line, for the log and for finding out why a link is slow.</summary>
+    public string Describe()
+    {
+        lock (gate)
+            return $"window {window:0} (other side allows {peerWindow}), waiting for acknowledgement {unacked.Count}, round trip {smoothed:0} ms, sent {nextSend}, received {nextReceive}, held early {early.Count}, unread {unread}";
+    }
     public bool Over { get; private set; }
-    private double Timeout => Math.Clamp(smoothed + 4 * variance, 120, 4000);
+    private double Timeout => Math.Clamp(smoothed + 4 * variance, 100, 2500);
 
     // --- packets in ---
 
@@ -129,6 +136,7 @@ public sealed class ReliableStream : Stream
         peerWindow = Math.Max(theirWindow, 1);
         var now = Environment.TickCount64;
         var freed = 0;
+        Sent? newest = null;
         while (unacked.Count > 0)
         {
             var (number, first) = unacked.First();
@@ -136,9 +144,12 @@ public sealed class ReliableStream : Stream
                 break;
             unacked.Remove(number);
             freed++;
-            if (first.Times == 1)
-                Measure(now - first.At);
+            newest = first;
         }
+        // The round trip is timed on the newest packet this acknowledgement covers, and only if it was sent once and not
+        // already reported: older ones were waiting for a gap to be filled, which says nothing about the path's speed.
+        if (newest is { Times: 1, Arrived: false })
+            Measure(now - newest.At);
         // Packets the other side already holds beyond a gap: mark them, and send the gap again at once.
         uint highest = 0;
         var any = false;
@@ -148,7 +159,11 @@ public sealed class ReliableStream : Stream
                 continue;
             var number = upTo + 1 + (uint)bit;
             if (unacked.TryGetValue(number, out var held) && !held.Arrived)
+            {
                 held.Arrived = true;
+                if (held.Times == 1)
+                    Measure(now - held.At);
+            }
             (highest, any) = (number, true);
         }
         if (any)
@@ -158,7 +173,8 @@ public sealed class ReliableStream : Stream
             {
                 if (highest - number is 0 or > MaxWindow * 2)
                     break;
-                if (packet.Arrived || highest - number < 3 || now - packet.At < smoothed)
+                // Three later packets arrived and this one did not: it is lost. Sent again once per round trip, not on every acknowledgement.
+                if (packet.Arrived || highest - number < 3 || now - packet.At < Math.Max(15, smoothed * 1.25))
                     continue;
                 (packet.At, lost) = (now, true);
                 packet.Times++;
@@ -186,7 +202,7 @@ public sealed class ReliableStream : Stream
         if (now - lastLossCut < smoothed)
             return;
         lastLossCut = now;
-        threshold = Math.Max(MinWindow, window / 2);
+        threshold = Math.Max(MinWindow, window * 0.7);
         window = threshold;
     }
 
