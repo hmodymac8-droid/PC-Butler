@@ -396,8 +396,7 @@ public partial class App : Application
 
     private void StartTray()
     {
-        tray = new Forms.NotifyIcon { Text = AppInfo.Name, Visible = true, ContextMenuStrip = new Forms.ContextMenuStrip() };
-        TrayMenu.Style(tray.ContextMenuStrip);
+        tray = new Forms.NotifyIcon { Text = AppInfo.Name, Visible = true };
         try
         {
             // The logo alone on a transparent background, like the program and window icons.
@@ -408,12 +407,11 @@ public partial class App : Application
         {
             tray.Icon = System.Drawing.SystemIcons.Application;
         }
-        // A click opens the window (the menu's default item). From the tray the program is
-        // already running, so the window opens without the launch screen.
-        // A click opens the panel (a second click closes it); a double-click opens the window itself.
+        // A click, left or right, opens the panel (a second click closes it); a double-click opens the
+        // window itself. From the tray the program is already running, so there is no launch screen.
         tray.MouseClick += (_, e) =>
         {
-            if (e.Button == Forms.MouseButtons.Left)
+            if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
                 ToggleFlyout();
         };
         tray.MouseDoubleClick += (_, e) =>
@@ -423,29 +421,6 @@ public partial class App : Application
             flyout?.Close();
             ShowMainWindow();
         };
-        // Built each time it opens, so the texts follow the language and the pause state.
-        BuildTrayMenu(tray.ContextMenuStrip);
-        tray.ContextMenuStrip.Opening += (_, e) =>
-        {
-            BuildTrayMenu(tray.ContextMenuStrip);
-            e.Cancel = false;
-        };
-    }
-
-    /// <summary>The right-click menu: short, since the panel a click opens holds everything else.</summary>
-    private void BuildTrayMenu(Forms.ContextMenuStrip menu)
-    {
-        var config = ConfigStore.Load();
-        var update = Background.Update;
-        TrayMenu.Fill(menu, config,
-        [
-            new("\uE8A7", Ui.T($"Open {AppInfo.Name}"), () => ShowMainWindow(), Main: true),
-            new("\uE8FD", Ui.T("Sort now"), Background.RequestSort),
-            // Only shown once a newer version is found.
-            update is null ? null : new("\uE896", Ui.T("Install version {0}", update.Version), () => Task.Run(() => InstallUpdate(update))),
-            null,
-            new("\uE7E8", Ui.T("Exit"), ExitProgram),
-        ]);
     }
 
     private TrayFlyout? flyout;

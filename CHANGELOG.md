@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.20.1
+
+- The tray icon opens its new panel with a right-click too; the old menu is gone. A double-click still opens the window.
+
 ## 1.20.0
 
 - The tray icon opens a panel, like Windows' quick settings: what the sorter is doing, the processor and memory, tiles for Sort now, Pause, the report, Clipboard, the drop zone and Courier (lit when on), the update when there is one, and Open and Exit. A double-click opens the window; a right-click keeps a short menu.
