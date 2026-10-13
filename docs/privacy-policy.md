@@ -1,6 +1,6 @@
 # PC Butler for Android: Privacy Policy
 
-Last updated: 13 October 2026
+Last updated: 13 October 2026 (no “All files access”)
 
 PC Butler (package `com.hmodymac8droid.pcbutler`) is made by hmodymac8-droid. This page says what the app does with your data. In short: **the app has no account, no server, no ads and no analytics. Your files stay on your devices.**
 
@@ -23,7 +23,8 @@ Courier sends files directly between your phone and the computers you pair with 
 
 ## Permissions
 
-- **All files access:** so the Sorter, Duplicates and Storage can see the whole phone storage, and Courier and the Vault can save and move files.
+- **Folders you pick:** the Sorter, Duplicates and Storage work only in the folders you choose with Android's folder picker, and the Vault only takes the files you pick.
+- **Storage (Android 10 and older only):** so Courier and the Vault can save files to the Download folder.
 - **Notifications and foreground service:** to keep Courier connected and show transfer progress while the app is in the background.
 - **Internet and network state:** for Courier only.
 
