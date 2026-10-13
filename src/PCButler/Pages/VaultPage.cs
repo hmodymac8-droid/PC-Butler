@@ -266,6 +266,9 @@ public sealed class VaultPage : Page
         idleTimer.Stop();
     }
 
+    /// <summary>The window is kept when closed to the tray, but the vault is not left open in it.</summary>
+    public override void Hidden() => Lock();
+
     /// <summary>Run work off the window's thread with a progress bar, then done(result) back on it.</summary>
     private async void RunJob(string label, Func<Action<int, int, string, long, long>, (int Count, List<string> Errors)> work,
                               Action<(int Count, List<string> Errors)> done)

@@ -1,15 +1,7 @@
 {
- "Paste": "لصق",
- "Tag": "وسم",
- "Tags ({0})": "الوسوم ({0})",
- "Search with Google": "البحث في Google",
- "Search Google for this picture": "البحث عن هذه الصورة في Google",
- "Open link": "فتح الرابط",
- "New tag…": "وسم جديد…",
- "Remove all tags": "إزالة كل الوسوم",
- "A word to find this item by, like “work” or “address”. Search for #word to see only what has it.": "كلمة تجد بها هذا العنصر، مثل «عمل» أو «عنوان». ابحث عن ‎#الكلمة لترى فقط ما يحملها.",
- "This picture is not there any more.": "هذه الصورة لم تعد موجودة.",
- "Google could not be asked about this picture right now. Check the internet connection and try again.": "تعذّر سؤال Google عن هذه الصورة الآن. تحقق من الاتصال بالإنترنت وحاول مرة أخرى.",
- "Enter: paste  ·  Delete: remove  ·  Ctrl+P: pin  ·  Right-click: more  ·  Esc: close": "Enter: لصق  ·  Delete: حذف  ·  Ctrl+P: تثبيت  ·  الزر الأيمن: المزيد  ·  Esc: إغلاق",
- "Right-click an item for more: Google, tags, its link.": "اضغط بالزر الأيمن على عنصر للمزيد: Google، والوسوم، ورابطه."
+ "Sorting off": "الفرز متوقف",
+ "Sorting on": "الفرز يعمل",
+ "Pause today": "إيقاف اليوم",
+ "Report": "التقرير",
+ "Courier · {0}": "الساعي · {0}"
 }

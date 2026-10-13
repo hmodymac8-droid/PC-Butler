@@ -362,7 +362,7 @@ public partial class App : Application
     public void ReopenMainWindow()
     {
         var old = window;
-        old?.Close();
+        old?.Quit();
         if (old is not null && IsOpen(old))
             return; // the window is waiting for a job to finish
         window = null;
@@ -410,10 +410,18 @@ public partial class App : Application
         }
         // A click opens the window (the menu's default item). From the tray the program is
         // already running, so the window opens without the launch screen.
+        // A click opens the panel (a second click closes it); a double-click opens the window itself.
         tray.MouseClick += (_, e) =>
         {
             if (e.Button == Forms.MouseButtons.Left)
-                ShowMainWindow();
+                ToggleFlyout();
+        };
+        tray.MouseDoubleClick += (_, e) =>
+        {
+            if (e.Button != Forms.MouseButtons.Left)
+                return;
+            flyout?.Close();
+            ShowMainWindow();
         };
         // Built each time it opens, so the texts follow the language and the pause state.
         BuildTrayMenu(tray.ContextMenuStrip);
@@ -424,6 +432,7 @@ public partial class App : Application
         };
     }
 
+    /// <summary>The right-click menu: short, since the panel a click opens holds everything else.</summary>
     private void BuildTrayMenu(Forms.ContextMenuStrip menu)
     {
         var config = ConfigStore.Load();
@@ -432,18 +441,45 @@ public partial class App : Application
         [
             new("\uE8A7", Ui.T($"Open {AppInfo.Name}"), () => ShowMainWindow(), Main: true),
             new("\uE8FD", Ui.T("Sort now"), Background.RequestSort),
-            // Pausing only means something while automatic sorting is on, as in the window's status bar.
-            config.IsPaused ? new("\uE768", Ui.T("Resume sorting"), Background.TogglePause, config.AutoSortOn)
-                            : new("\uE769", Ui.T("Pause for today"), Background.TogglePause, config.AutoSortOn),
-            new("\uE81C", Ui.T("Show report"), ShowReport),
-            config.Clipboard.Enabled ? new("\uE77F", Ui.T("Clipboard history"), () => Clips.ShowPicker()) : null,
-            config.DropZone ? new("\uE8B7", Ui.T("Hide the drop zone"), () => SetDropZone(false))
-                            : new("\uE8B7", Ui.T("Show the drop zone"), () => SetDropZone(true)),
             // Only shown once a newer version is found.
             update is null ? null : new("\uE896", Ui.T("Install version {0}", update.Version), () => Task.Run(() => InstallUpdate(update))),
             null,
             new("\uE7E8", Ui.T("Exit"), ExitProgram),
         ]);
+    }
+
+    private TrayFlyout? flyout;
+
+    /// <summary>Open the tray panel, or close it if it is open (or was closed by this very click).</summary>
+    private void ToggleFlyout()
+    {
+        if (exiting)
+            return;
+        if (flyout is not null)
+        {
+            flyout.Close();
+            return;
+        }
+        // The click on the icon took the focus away, which already closed the panel: that click meant "close".
+        if (Environment.TickCount64 - TrayFlyout.ClosedAt < 300)
+            return;
+        flyout = new TrayFlyout();
+        flyout.Closed += (_, _) => flyout = null;
+        flyout.Show();
+    }
+
+    /// <summary>Open the window at one of its pages.</summary>
+    public void ShowPage(string key)
+    {
+        ShowMainWindow();
+        window?.ShowPage(key);
+    }
+
+    /// <summary>The tray panel's update button.</summary>
+    public void InstallAvailableUpdate()
+    {
+        if (Background.Update is { } update)
+            Task.Run(() => InstallUpdate(update));
     }
 
     private void ShowTrayText()
@@ -618,7 +654,7 @@ public partial class App : Application
     {
         if (exiting)
             return;
-        window?.Close();
+        window?.Quit();
         if (window is not null && IsOpen(window))
             return; // the window is waiting for a job to finish
         exiting = true;

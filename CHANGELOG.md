@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.20.0
+
+- The tray icon opens a panel, like Windows' quick settings: what the sorter is doing, the processor and memory, tiles for Sort now, Pause, the report, Clipboard, the drop zone and Courier (lit when on), the update when there is one, and Open and Exit. A double-click opens the window; a right-click keeps a short menu.
+- The window opens much faster: each page is built the first time it is opened, slow checks (the firewall, Windows Sandbox) run in the background, and closing the window only hides it, so opening it again from the tray is instant. The Vault still locks when the window is closed.
+- The program itself starts faster: its code is compiled when it is built, not on your PC each time.
+
 ## 1.19.1
 
 - Clipboard: right-click an item, in the list the shortcut opens or on the Clipboard page, for paste, copy, search with Google (a copied picture is searched with Google Lens), open its link or its file's folder, pin and delete.

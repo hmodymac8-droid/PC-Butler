@@ -53,8 +53,9 @@ function Find-Iscc {
 # 1. The program itself, with the .NET runtime included.
 $dist = Join-Path $Work "dist"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
+# ReadyToRun: the code is compiled here, not on the user's PC at every start, so the program and its window open sooner.
 & (Find-Dotnet) publish (Join-Path $PSScriptRoot "src\PCButler") -c Release -r win-x64 --self-contained `
-    -p:DebugType=none -o $dist
+    -p:DebugType=none -p:PublishReadyToRun=true -o $dist
 if ($LASTEXITCODE) { throw "dotnet publish failed" }
 
 # 2. The setup wizard, compiled from installer.iss with Inno Setup.

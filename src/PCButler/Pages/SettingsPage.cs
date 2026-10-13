@@ -267,7 +267,8 @@ public sealed partial class SettingsPage : Page
     /// <summary>Windows Sandbox: a switch (administrator rights and a restart), and a button to open it once it is on.</summary>
     private static void AddSandbox(StackPanel quick)
     {
-        var state = WindowsSandbox.Current();
+        // Windows takes a moment to say whether the feature is on: the row is built at once and filled in when it has.
+        var state = WindowsSandbox.State.Off;
         var showing = false; // set while the switch is put back, so that is not taken as a click
         CheckBox? toggle = null;
         var open = Ui.Button(Ui.T("Open Windows Sandbox"), () =>
@@ -309,12 +310,20 @@ public sealed partial class SettingsPage : Page
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", "/r /t 5") { CreateNoWindow = true })?.Dispose();
         });
         quick.Children.Add(Ui.Row(12, toggle, open).Margin(0, 12, 0, 0));
-        if (state == WindowsSandbox.State.NotAvailable)
-            toggle.IsEnabled = false;
-        quick.Children.Add(Ui.Muted(Ui.T(state == WindowsSandbox.State.NotAvailable
-            ? "Windows Sandbox needs Windows Pro, Enterprise or Education."
-            : "A throwaway copy of Windows for trying files and programs safely. Everything in it is deleted when you close it."),
-            12, wrap: true).Margin(0, 2, 0, 0));
+        toggle.IsEnabled = false;
+        var note = Ui.Muted(Ui.T("A throwaway copy of Windows for trying files and programs safely. Everything in it is deleted when you close it."), 12, wrap: true);
+        quick.Children.Add(note.Margin(0, 2, 0, 0));
+        toggle.Dispatcher.BeginInvoke(async () =>
+        {
+            state = await Task.Run(WindowsSandbox.Current);
+            showing = true;
+            toggle.IsChecked = state == WindowsSandbox.State.On;
+            showing = false;
+            toggle.IsEnabled = state != WindowsSandbox.State.NotAvailable;
+            open.Visibility = state == WindowsSandbox.State.On ? Visibility.Visible : Visibility.Collapsed;
+            if (state == WindowsSandbox.State.NotAvailable)
+                note.Text = Ui.T("Windows Sandbox needs Windows Pro, Enterprise or Education.");
+        });
     }
 
     /// <summary>Stop Windows updates: a switch that holds them back until it is switched off again (administrator rights).</summary>

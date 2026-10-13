@@ -48,6 +48,8 @@ public sealed class PortalPage : Page
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private PortalNode? watched;
     private bool showing;
+    private bool? firewallAllowed;
+    private bool askingFirewall;
 
     private PortalSettings Settings => Main.Config.Portal;
     private bool IsHost => Settings.Role == PortalSettings.Host;
@@ -454,7 +456,17 @@ public sealed class PortalPage : Page
         widgetSwitch.IsChecked = Settings.Widget;
         showing = false;
         // Only the host takes connections it did not start, so only the host needs the firewall to let them in.
-        var allowed = Portal.FirewallAllows();
+        // Asking the firewall runs a Windows tool, which takes a moment: asked once in the background, then remembered.
+        if (firewallAllowed is null && !askingFirewall)
+        {
+            askingFirewall = true;
+            Task.Run(() => Portal.FirewallAllows()).ContinueWith(done => Dispatcher.BeginInvoke(() =>
+            {
+                (firewallAllowed, askingFirewall) = (done.Result, false);
+                ShowSettings();
+            }));
+        }
+        var allowed = firewallAllowed ?? true;
         firewallRow.Visibility = IsHost && !allowed ? Visibility.Visible : Visibility.Collapsed;
         firewallText.Text = Ui.T("Windows may block the other PCs until PC Butler is allowed. Needed once; Windows asks for permission.");
         folderText.Text = Portal.ReceiveFolder(Settings);
@@ -749,6 +761,7 @@ public sealed class PortalPage : Page
         finally
         {
             firewallButton.IsEnabled = true;
+            firewallAllowed = null; // asked again
             ShowSettings();
         }
     }

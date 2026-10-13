@@ -17,7 +17,9 @@ public sealed partial class MainWindow : Window
     private readonly Sidebar sidebar;
     private readonly TopBar topBar = new();
     private readonly Grid pageHost = new();
-    private readonly Dictionary<string, (Page Page, string Name)> pages = [];
+    /// <summary>Every page, built the first time it is opened: building all of them at once made the window slow to appear.</summary>
+    private readonly Dictionary<string, (Func<Page> Make, Page? Page, string Name)> pages = [];
+    private bool quitting;
     private readonly Border banner;
     private readonly TextBlock bannerLabel = Ui.Text("");
     private readonly TextBlock statusGlyph = Ui.Glyph("\uE895", 16);
@@ -30,18 +32,18 @@ public sealed partial class MainWindow : Window
     private bool? compact;
 
     public Config Config { get; private set; }
-    public SorterPage Sorter { get; }
-    public DuplicatesPage Duplicates { get; }
-    public HistoryPage History { get; }
-    public VaultPage Vault { get; }
+    public SorterPage Sorter => Get<SorterPage>("preview");
+    public DuplicatesPage Duplicates => Get<DuplicatesPage>("duplicates");
+    public HistoryPage History => Get<HistoryPage>("history");
+    public VaultPage Vault => Get<VaultPage>("vault");
     private readonly Dictionary<string, string> glyphs = [];
-    public ShredderPage Shredder { get; }
-    public PortalPage PortalPage { get; }
-    public CleanerPage Cleaner { get; }
-    public ProgramsPage Programs { get; }
-    public SettingsPage Settings { get; }
-    public BenchmarkPage Benchmark { get; }
-    public AboutPage About { get; }
+    public ShredderPage Shredder => Get<ShredderPage>("shredder");
+    public PortalPage PortalPage => Get<PortalPage>("portal");
+    public CleanerPage Cleaner => Get<CleanerPage>("cleaner");
+    public ProgramsPage Programs => Get<ProgramsPage>("programs");
+    public SettingsPage Settings => Get<SettingsPage>("settings");
+    public BenchmarkPage Benchmark => Get<BenchmarkPage>("benchmark");
+    public AboutPage About => Get<AboutPage>("about");
 
     public MainWindow()
     {
@@ -85,41 +87,28 @@ public sealed partial class MainWindow : Window
         main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
         main.Children.Add(pageHost);
 
-        Sorter = new SorterPage(this);
-        Duplicates = new DuplicatesPage(this);
-        History = new HistoryPage(this);
-        Vault = new VaultPage(this);
-        Shredder = new ShredderPage(this);
-        PortalPage = new PortalPage(this);
-        Cleaner = new CleanerPage(this);
-        Programs = new ProgramsPage(this);
-        Settings = new SettingsPage(this);
-        Benchmark = new BenchmarkPage(this);
-        About = new AboutPage(this);
-        // (key, icon, sidebar name, page, in the sidebar's bottom group)
-        foreach (var (key, glyph, name, page, bottom) in new (string, string, string, Page, bool)[]
+        // (key, icon, sidebar name, how to build the page, in the sidebar's bottom group)
+        foreach (var (key, glyph, name, make, bottom) in new (string, string, string, Func<Page>, bool)[]
                  {
-                     ("home", "\uE80F", "Home", new HomePage(this), false),
-                     ("preview", "\uE8FD", "Sorter", Sorter, false),
-                     ("duplicates", "\uE8C8", "Duplicates", Duplicates, false),
-                     ("cleaner", "\uE74D", "Cleaner", Cleaner, false),
-                     ("storage", "\uEDA2", "Storage", new StoragePage(this), false),
-                     ("booster", "\uE945", "Booster", new BoosterPage(this), false),
-                     ("benchmark", "", "Benchmark", Benchmark, false),
-                     ("programs", "\uE71D", "Programs", Programs, false),
-                     ("internet", "\uE774", "Internet", new InternetPage(this), false),
-                     ("shredder", "\uE75C", "Shredder", Shredder, false),
-                     ("clipboard", "\uE77F", "Clipboard", new ClipboardPage(this), false),
-                     ("portal", "\uE8AB", "Courier", PortalPage, false),
-                     ("vault", "\uE72E", "Vault", Vault, false),
-                     ("history", "\uE81C", "History", History, false),
-                     ("settings", "\uE713", "Settings", Settings, true),
-                     ("about", "\uE946", "Help & about", About, true),
+                     ("home", "\uE80F", "Home", () => new HomePage(this), false),
+                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this), false),
+                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this), false),
+                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this), false),
+                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this), false),
+                     ("booster", "\uE945", "Booster", () => new BoosterPage(this), false),
+                     ("benchmark", "", "Benchmark", () => new BenchmarkPage(this), false),
+                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this), false),
+                     ("internet", "\uE774", "Internet", () => new InternetPage(this), false),
+                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this), false),
+                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this), false),
+                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this), false),
+                     ("vault", "\uE72E", "Vault", () => new VaultPage(this), false),
+                     ("history", "\uE81C", "History", () => new HistoryPage(this), false),
+                     ("settings", "\uE713", "Settings", () => new SettingsPage(this), true),
+                     ("about", "\uE946", "Help & about", () => new AboutPage(this), true),
                  })
         {
-            page.Visibility = Visibility.Collapsed;
-            pageHost.Children.Add(page);
-            pages[key] = (page, Ui.T(name));
+            pages[key] = (make, null, Ui.T(name));
             glyphs[key] = glyph;
             sidebar.Add(key, glyph, Ui.T(name), bottom);
         }
@@ -136,11 +125,19 @@ public sealed partial class MainWindow : Window
         SourceInitialized += (_, _) => RestoreGeometry();
         Closing += (_, e) =>
         {
-            if (pages.Values.All(entry => entry.Page.CanClose()))
-                OnClosing();
-            else
+            if (!Built.All(page => page.CanClose()))
                 e.Cancel = true;
+            else if (!quitting)
+            {
+                // Closed to the tray, the window is kept (hidden), so opening it again is instant.
+                e.Cancel = true;
+                HideToTray();
+            }
+            else
+                OnClosing();
         };
+        // Nothing to keep up to date while nobody sees it.
+        IsVisibleChanged += (_, _) => statusTimer.IsEnabled = IsVisible;
         RefreshPreview();
         RefreshBackgroundStatus();
         statusTimer.Tick += (_, _) => RefreshBackgroundStatus();
@@ -163,11 +160,32 @@ public sealed partial class MainWindow : Window
         Activate();
     }
 
+    /// <summary>The pages built so far.</summary>
+    private IEnumerable<Page> Built => pages.Values.Select(entry => entry.Page).OfType<Page>();
+
+    /// <summary>A page, built now if it was not yet.</summary>
+    private T Get<T>(string key) where T : Page => (T)Page(key);
+
+    private Page Page(string key)
+    {
+        var (make, page, name) = pages[key];
+        if (page is not null)
+            return page;
+        page = make();
+        page.Visibility = Visibility.Collapsed;
+        if (compact is { } small)
+            page.SetCompact(small);
+        pageHost.Children.Add(page);
+        pages[key] = (make, page, name);
+        return page;
+    }
+
     public void ShowPage(string key)
     {
-        foreach (var (page, _) in pages.Values)
+        foreach (var page in Built)
             page.Visibility = Visibility.Collapsed;
-        var (shown, name) = pages[key];
+        var shown = Page(key);
+        var name = pages[key].Name;
         shown.Visibility = Visibility.Visible;
         sidebar.Select(key);
         topBar.SetPage(glyphs[key], name);
@@ -253,7 +271,7 @@ public sealed partial class MainWindow : Window
         if (now == compact)
             return;
         compact = now;
-        foreach (var (page, _) in pages.Values)
+        foreach (var page in Built)
             page.SetCompact(now);
     }
 
@@ -292,10 +310,27 @@ public sealed partial class MainWindow : Window
     private void OnClosing()
     {
         statusTimer.Stop();
-        foreach (var (page, _) in pages.Values)
+        foreach (var page in Built)
             page.Closing(); // saves edits to opened vault files and the Duplicates settings
         var geometry = Geometry();
         UpdateConfig(config => config.WindowGeometry = geometry);
+    }
+
+    /// <summary>Close for good: on Exit, or to open it again in another language. Closing it otherwise only hides it.</summary>
+    public void Quit()
+    {
+        quitting = true;
+        Close();
+        quitting = false; // still open: a page asked to wait for a job
+    }
+
+    private void HideToTray()
+    {
+        foreach (var page in Built)
+            page.Hidden(); // the Vault locks, Duplicates saves its settings
+        var geometry = Geometry();
+        UpdateConfig(config => config.WindowGeometry = geometry);
+        Hide();
     }
 
     // --- automatic sorting ---

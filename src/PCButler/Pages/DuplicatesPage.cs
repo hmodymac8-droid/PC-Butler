@@ -214,6 +214,8 @@ public sealed class DuplicatesPage : Page
         SaveSettings();
     }
 
+    public override void Hidden() => SaveSettings();
+
     private void BrowseFolder()
     {
         if (Ui.PickFolder("Folder to look for duplicates in", Clean(folder.Text)) is { } chosen)

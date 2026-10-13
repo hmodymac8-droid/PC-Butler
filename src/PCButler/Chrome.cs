@@ -91,6 +91,11 @@ public abstract class Page : DockPanel
     public virtual void Closing()
     {
     }
+
+    /// <summary>Called when the window is closed to the tray: it is kept, hidden, to open again at once.</summary>
+    public virtual void Hidden()
+    {
+    }
 }
 
 /// <summary>
