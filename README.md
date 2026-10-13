@@ -80,6 +80,10 @@ Settings, the history log, the activity log and registry backups are stored in `
 
 The speed test talks to `speed.cloudflare.com` and update checks talk to GitHub and winget's source. Courier talks only to the other PCs, and only while it is switched on. It also uses the public directory of the BitTorrent network (its DHT) to look IDs up: the computers in that directory see this PC's internet address, as they do for anyone using a torrent program, and no file or file name is ever sent to them. A host also asks its own router to forward one port to it. Nothing else leaves the PC.
 
+## Support the project
+
+PC Butler is free. If it is useful to you and you would like to support its development, you can donate through PayPal: [paypal.me/mfsafadi](https://paypal.me/mfsafadi). The same link is behind **Donate** in the program's sidebar.
+
 ## License
 
 Copyright (c) 2026 hmodymac8-droid.
@@ -166,6 +170,10 @@ dotnet run --project tests/PCButler.Tests
 ### أين تُحفظ البيانات
 
 الإعدادات وسجل التغييرات وسجل النشاط تُحفظ في المجلد `%APPDATA%\PCButler`.
+
+### ادعم المشروع
+
+PC Butler مجاني. إذا أفادك وأحببت أن تدعم تطويره، يمكنك التبرّع عبر PayPal: [paypal.me/mfsafadi](https://paypal.me/mfsafadi). الرابط نفسه موجود خلف زر «تبرّع» في الشريط الجانبي للبرنامج.
 
 ### الترخيص
 
