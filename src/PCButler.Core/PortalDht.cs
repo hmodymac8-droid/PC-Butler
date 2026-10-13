@@ -138,6 +138,8 @@ public sealed class PortalDht
     ];
 
     private readonly PortalLink link;
+    /// <summary>The IPv6 directory is a network of its own (BEP 32): addresses there are 16 bytes, and its lists of computers are called "nodes6".</summary>
+    private readonly bool six;
     private readonly byte[] id = RandomNumberGenerator.GetBytes(20);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<Dictionary<string, object>?>> waiting = new();
     private readonly List<Node> known = [];
@@ -147,6 +149,7 @@ public sealed class PortalDht
     public PortalDht(PortalLink link)
     {
         this.link = link;
+        six = link.Family == AddressFamily.InterNetworkV6;
         link.Other = OnPacket;
     }
 
@@ -184,7 +187,7 @@ public sealed class PortalDht
         {
             if (message.GetValueOrDefault("t") is byte[] number && waiting.TryRemove(Convert.ToHexString(number) + from, out var asker))
             {
-                if (message.GetValueOrDefault("ip") is byte[] { Length: 6 } mine)
+                if (message.GetValueOrDefault("ip") is byte[] mine && mine.Length == PeerSize)
                     seenAs.AddOrUpdate(Endpoint(mine).ToString(), 1, (_, count) => count + 1);
                 asker.TrySetResult(kind[0] == 'r' ? message.GetValueOrDefault("r") as Dictionary<string, object> : null);
             }
@@ -199,7 +202,7 @@ public sealed class PortalDht
         var about = (asked.GetValueOrDefault("target") ?? asked.GetValueOrDefault("info_hash")) as byte[];
         if (name is "find_node" or "get_peers" && about is { Length: 20 })
         {
-            answer["nodes"] = Nearest(about, 8).SelectMany(node => Compact(node)).ToArray();
+            answer[NodesKey] = Nearest(about, 8).SelectMany(node => Compact(node)).ToArray();
             if (name == "get_peers")
                 answer["token"] = new byte[] { 1, 2, 3, 4 };
         }
@@ -214,6 +217,8 @@ public sealed class PortalDht
         var answer = new TaskCompletionSource<Dictionary<string, object>?>(TaskCreationOptions.RunContinuationsAsynchronously);
         waiting[key] = answer;
         arguments["id"] = id;
+        if (six && question is "find_node" or "get_peers")
+            arguments["want"] = new List<object> { "n6" };
         var packet = Bencode.Encode(new Dictionary<string, object> { ["t"] = number, ["y"] = "q", ["q"] = question, ["a"] = arguments });
         link.Send(packet, packet.Length, whom);
         try
@@ -230,15 +235,29 @@ public sealed class PortalDht
         }
     }
 
-    private static IPEndPoint Endpoint(ReadOnlySpan<byte> six) => new(new IPAddress(six[..4]), (six[4] << 8) | six[5]);
+    /// <summary>An address and port as the directory packs them: 4 + 2 bytes, or 16 + 2 on IPv6.</summary>
+    private int PeerSize => six ? 18 : 6;
+    private int NodeSize => 20 + PeerSize;
+    private string NodesKey => six ? "nodes6" : "nodes";
 
-    private static byte[] Compact(Node node)
+    private static IPEndPoint Endpoint(ReadOnlySpan<byte> packed) =>
+        new(new IPAddress(packed[..^2]), (packed[^2] << 8) | packed[^1]);
+
+    private byte[] Compact(Node node)
     {
-        var bytes = new byte[26];
+        var bytes = new byte[NodeSize];
         node.Id.CopyTo(bytes, 0);
         node.Endpoint.Address.GetAddressBytes().CopyTo(bytes, 20);
-        (bytes[24], bytes[25]) = ((byte)(node.Endpoint.Port >> 8), (byte)node.Endpoint.Port);
+        (bytes[^2], bytes[^1]) = ((byte)(node.Endpoint.Port >> 8), (byte)node.Endpoint.Port);
         return bytes;
+    }
+
+    /// <summary>An address another computer may be reached at: on IPv6 only global ones (2000::/3), never this network's own.</summary>
+    private bool Usable(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return six ? address.AddressFamily == AddressFamily.InterNetworkV6 && (bytes[0] & 0xE0) == 0x20
+                   : address.AddressFamily == AddressFamily.InterNetwork && bytes[0] is not (0 or 127 or >= 224);
     }
 
     private static BigInteger Distance(byte[] a, byte[] b)
@@ -257,7 +276,7 @@ public sealed class PortalDht
 
     private void Remember(Node node)
     {
-        if (node.Endpoint.Port == 0 || node.Endpoint.Address.GetAddressBytes()[0] is 0 or 127 or >= 224)
+        if (node.Endpoint.Port == 0 || !Usable(node.Endpoint.Address))
             return;
         lock (known)
         {
@@ -269,12 +288,12 @@ public sealed class PortalDht
         }
     }
 
-    private static IEnumerable<Node> NodesIn(Dictionary<string, object> answer)
+    private IEnumerable<Node> NodesIn(Dictionary<string, object> answer)
     {
-        if (answer.GetValueOrDefault("nodes") is not byte[] packed)
+        if (answer.GetValueOrDefault(NodesKey) is not byte[] packed)
             yield break;
-        for (var offset = 0; offset + 26 <= packed.Length; offset += 26)
-            yield return new Node(packed.AsSpan(offset, 20).ToArray(), Endpoint(packed.AsSpan(offset + 20, 6)));
+        for (var offset = 0; offset + NodeSize <= packed.Length; offset += NodeSize)
+            yield return new Node(packed.AsSpan(offset, 20).ToArray(), Endpoint(packed.AsSpan(offset + 20, PeerSize)));
     }
 
     // --- joining, looking up, announcing ---
@@ -289,7 +308,7 @@ public sealed class PortalDht
         {
             try
             {
-                var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, cancel);
+                var addresses = await Dns.GetHostAddressesAsync(host, link.Family, cancel);
                 entrances.AddRange(addresses.Take(2).Select(address => new IPEndPoint(address, port)));
             }
             catch (Exception error) when (error is SocketException or OperationCanceledException or ArgumentException)
@@ -310,7 +329,7 @@ public sealed class PortalDht
     /// for it. With announce: true, this PC is then announced under the key too (the
     /// directory records the address it sees the announcement come from).
     /// </summary>
-    public async Task<List<IPEndPoint>> Lookup(byte[] key, bool announce, CancellationToken cancel = default)
+    public async Task<List<IPEndPoint>> Lookup(byte[] key, bool announce, CancellationToken cancel = default, int? forwardedPort = null)
     {
         if (!await Join(cancel))
             return [];
@@ -338,8 +357,11 @@ public sealed class PortalDht
                     holders.Add((batch[index], token));
                 if (answer.GetValueOrDefault("values") is List<object> values)
                 {
-                    foreach (var value in values.OfType<byte[]>().Where(value => value.Length == 6))
-                        found.Add(Endpoint(value));
+                    foreach (var value in values.OfType<byte[]>().Where(value => value.Length == PeerSize))
+                    {
+                        if (Endpoint(value) is var peer && Usable(peer.Address))
+                            found.Add(peer);
+                    }
                 }
                 foreach (var node in NodesIn(answer))
                 {
@@ -355,6 +377,14 @@ public sealed class PortalDht
             {
                 ["info_hash"] = key, ["port"] = (long)link.Port, ["implied_port"] = 1L, ["token"] = holder.Token,
             }, cancel)));
+            // A port the router was asked to forward is announced as itself too (the router may show the directory another one).
+            if (forwardedPort is { } port)
+            {
+                await Task.WhenAll(nearest.Select(holder => Ask(holder.Node.Endpoint, "announce_peer", new()
+                {
+                    ["info_hash"] = key, ["port"] = (long)port, ["implied_port"] = 0L, ["token"] = holder.Token,
+                }, cancel)));
+            }
         }
         found.RemoveWhere(endpoint => endpoint.Port == 0);
         return found.ToList();

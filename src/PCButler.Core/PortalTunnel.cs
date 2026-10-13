@@ -413,7 +413,7 @@ public sealed class PortalLink : IDisposable
 {
     private const byte Magic = 0xB7;
     private const byte Punch = 1, PunchBack = 2, Open = 3, Opened = 4, Ping = 9;
-    private const int MaxPaths = 12, MaxStreamsPerPath = 24;
+    private const int MaxStreamsPerPath = 24;
 
     private sealed class Path
     {
@@ -429,6 +429,9 @@ public sealed class PortalLink : IDisposable
     private readonly ConcurrentDictionary<(IPEndPoint, ulong), TaskCompletionSource<bool>> opening = new();
 
     public int Port { get; }
+    public AddressFamily Family { get; }
+    /// <summary>How many other PCs can have a path open at once (a Courier host keeps one per client).</summary>
+    public int MaxPaths { get; set; } = 12;
     /// <summary>A packet that is not Portal's own (the directory's traffic) arrived.</summary>
     public Action<byte[], IPEndPoint>? Other { get; set; }
     /// <summary>The other PC opened a stream. Runs on a background thread.</summary>
@@ -438,7 +441,10 @@ public sealed class PortalLink : IDisposable
 
     public PortalLink(IPAddress address, int port = 0)
     {
-        socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        Family = address.AddressFamily;
+        socket = new Socket(Family, SocketType.Dgram, ProtocolType.Udp);
+        if (Family == AddressFamily.InterNetworkV6)
+            socket.DualMode = false; // IPv4 has a link of its own
         socket.ReceiveBufferSize = socket.SendBufferSize = 4 * 1024 * 1024;
         // Windows otherwise reports "connection reset" on the socket when some packet could not be delivered.
         const int SIO_UDP_CONNRESET = -1744830452;
@@ -559,7 +565,7 @@ public sealed class PortalLink : IDisposable
     private async Task Receive()
     {
         var buffer = new byte[65536];
-        EndPoint any = new IPEndPoint(IPAddress.Any, 0);
+        EndPoint any = new IPEndPoint(Family == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
         while (!stopping.IsCancellationRequested)
         {
             SocketReceiveFromResult result;

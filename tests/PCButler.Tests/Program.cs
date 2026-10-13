@@ -424,14 +424,31 @@ VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")
 Check(VaultInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]) && VaultInbox.Take().Count == 0,
       "files waiting for the vault are handed over once");
 
-// ---------------------------------------------------------------- portal (three PCs pretended on this one, over its loopback address)
-Section("portal");
+// ---------------------------------------------------------------- courier: names, codes, routers
+Section("courier");
 Check(Portal.SafeName(@"..\..\Windows\evil.exe") == "evil.exe" && Portal.SafeName("a<b>:c?.txt") == "a_b__c_.txt" && Portal.SafeName("CON.txt") == "_CON.txt"
       && Portal.SafeName("...") == "file" && Portal.SafeName("/etc/passwd") == "passwd" && Portal.SafeName("") == "file", "names from another PC are made safe");
 Check(Portal.SafePath(@"Photos\2024/../..\..\a.jpg") == "Photos/2024/file/file/file/a.jpg" && Portal.SafePath("/abs/x") == "abs/x" && Portal.SafePath("") == "file"
       && Portal.CleanLabel("  My\r\nPC\t ") == "My  PC" && Portal.CleanLabel("") == "PC", "paths can not climb out, and names are fit to show");
 Check(PortalNode.PairingCode("AA", "BB", "1", "2") is { Length: 7 } pairCode && pairCode[3] == ' ' && pairCode == PortalNode.PairingCode("aa", "bb", "1", "2")
       && pairCode != PortalNode.PairingCode("BB", "AA", "1", "2") && pairCode != PortalNode.PairingCode("AA", "BB", "1", "3"), "the pairing code depends on both PCs and both random parts");
+Check(PortalNat.ParseSsdpLocation("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=120\r\nLocation: http://192.168.1.1:49152/rootDesc.xml\r\nST: x\r\n\r\n")?.ToString()
+          == "http://192.168.1.1:49152/rootDesc.xml"
+      && PortalNat.ParseSsdpLocation("HTTP/1.1 200 OK\r\nLOCATION: http://example.com/x.xml\r\n\r\n") is null
+      && PortalNat.ParseSsdpLocation("HTTP/1.1 200 OK\r\n\r\n") is null, "a router's answer to the search is read, and only a local one is taken");
+var gatewayDescription = """
+    <?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0"><device><deviceList><device><serviceList>
+    <service><serviceType>urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1</serviceType><controlURL>/ctl/CmnIfCfg</controlURL></service>
+    <service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType><controlURL>/ctl/IPConn</controlURL></service>
+    </serviceList></device></deviceList></device></root>
+    """;
+Check(PortalNat.ParseControl(gatewayDescription, new Uri("http://192.168.1.1:49152/rootDesc.xml")) is var (control, service)
+      && control.ToString() == "http://192.168.1.1:49152/ctl/IPConn" && service == "urn:schemas-upnp-org:service:WANIPConnection:1"
+      && PortalNat.ParseControl("<root><service><serviceType>urn:x</serviceType><controlURL>/a</controlURL></service></root>", new Uri("http://10.0.0.1/d.xml")) is null,
+      "the router's description gives the place to ask for a port");
+Check(PortalNat.ParseNatPmpMapping([0, 129, 0, 0, 0, 0, 0, 1, 0xC3, 0x50, 0xC3, 0x51, 0, 0, 0x0E, 0x10]) == 50001
+      && PortalNat.ParseNatPmpMapping([0, 129, 0, 3, 0, 0, 0, 1, 0xC3, 0x50, 0xC3, 0x51, 0, 0, 0x0E, 0x10]) is null && PortalNat.ParseNatPmpMapping([0, 129]) is null,
+      "a NAT-PMP answer gives the forwarded port, and a refusal is not taken for one");
 
 System.Security.Cryptography.X509Certificates.X509Certificate2 Identity() =>
     System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(Portal.NewCertificate(), null);
@@ -442,109 +459,133 @@ async Task<bool> Until(Func<bool> condition, int seconds = 15)
     return condition();
 }
 
-var (hereSettings, thereSettings) = (new PortalSettings { Folder = Path.Combine(temp, "PortalHere") }, new PortalSettings { Folder = Path.Combine(temp, "PortalThere") });
-int hereSaved = 0, thereAsked = 0;
-var here = await PortalNode.Start(hereSettings, System.Net.IPAddress.Loopback, () => hereSaved++, discovery: false, certificate: Identity(), internet: false);
-var there = await PortalNode.Start(thereSettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), internet: false);
-var outsider = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "PortalOutsider") }, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), internet: false);
-there.Attention += _ => Interlocked.Increment(ref thereAsked);
-Check(here.Id.Length == 64 && here.Id != there.Id && here.Port != there.Port, "each PC has its own identity");
-
-using (var noCertificate = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }))
+// ---------------------------------------------------------------- courier: a host and its clients (all pretended on this PC, over loopback)
+Section("courier host and clients");
 {
-    var turnedAway = false;
+    var noRole = false;
     try
     {
-        using var answer = await noCertificate.GetAsync($"https://127.0.0.1:{there.Port}/portal/v1/who");
-        turnedAway = !answer.IsSuccessStatusCode;
+        await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "CourierNone") }, local: true);
     }
-    catch (HttpRequestException)
+    catch (IOException)
     {
-        turnedAway = true;
+        noRole = true;
     }
-    Check(turnedAway, "a caller that shows no certificate gets nothing");
+    Check(noRole, "Courier does not start before the PC is a host or a client");
+
+    var hostSettings = new PortalSettings { Folder = Path.Combine(temp, "CourierHost"), Role = PortalSettings.Host };
+    var hostSaved = 0;
+    var host = await PortalNode.Start(hostSettings, () => hostSaved++, Identity(), local: true);
+    var hostAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, host.LinkPort);
+    PortalSettings ClientSettings(string name) => new() { Folder = Path.Combine(temp, name), Role = PortalSettings.Client, HostNumber = host.Number };
+    var (aliceSettings, bobSettings) = (ClientSettings("CourierAlice"), ClientSettings("CourierBob"));
+    var alice = await PortalNode.Start(aliceSettings, certificate: Identity(), local: true);
+    var bob = await PortalNode.Start(bobSettings, certificate: Identity(), local: true);
+    var stranger = await PortalNode.Start(ClientSettings("CourierStranger"), certificate: Identity(), local: true);
+    var hostAsked = 0;
+    host.Attention += _ => Interlocked.Increment(ref hostAsked);
+    Check(host.IsHost && !alice.IsHost && host.Number.Length == 12 && host.Number != alice.Number && host.LinkPort > 0, "each PC has its ID and its role");
+
+    using (var noCertificate = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }))
+    {
+        var turnedAway = false;
+        try
+        {
+            using var answer = await noCertificate.GetAsync($"https://127.0.0.1:{host.Port}/portal/v1/who");
+            turnedAway = !answer.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            turnedAway = true;
+        }
+        Check(turnedAway, "a caller that shows no certificate gets nothing");
+    }
+
+    // The clients reach the host across the path; the host reaches nobody first.
+    var aliceHost = await alice.ConnectDirect(hostAt, host.Number);
+    Check(aliceHost is { Online: true, Trusted: false } && aliceHost.Id == host.Id && alice.HostPeer == aliceHost, "a client finds the host by its address and ID");
+    Check(await alice.ConnectDirect(hostAt, "000000000000") is null, "a host that answers under another ID than the one expected is not taken");
+    Check(await host.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, stranger.LinkPort)) is null, "a client takes no path it did not open itself");
+    Check((await alice.ConnectById("12 34")).Problem == PortalConnectProblem.BadNumber && (await alice.ConnectById(alice.Number)).Problem == PortalConnectProblem.BadNumber
+          && (await alice.ConnectById("123 456 789 012")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
+    var early = alice.Send(aliceHost!, [Make(Path.Combine(temp, "CourierOut"), "early.txt", "too early")])!;
+    Check(await Until(() => early.State == "failed") && !Directory.EnumerateFiles(hostSettings.Folder).Any(), "nothing can be sent before pairing");
+
+    // Pairing: both sides show the same code, each user confirms on their own PC.
+    async Task<PortalPeer> Join(PortalNode client)
+    {
+        var found = client.HostPeer ?? await client.ConnectDirect(hostAt, host.Number);
+        var asked = await client.Pair(found!);
+        Check(asked is { Code.Length: 7 } && await Until(() => host.Pairings.Any(pairing => pairing.PeerId == client.Id && pairing.Code == asked.Code)),
+              "a client's pairing reaches the host with the same code");
+        client.Confirm(asked!);
+        host.Confirm(host.Pairings.Single(pairing => pairing.PeerId == client.Id));
+        return found!;
+    }
+    var aliceToHost = await Join(alice);
+    Check(host.Peers.Single(peer => peer.Id == alice.Id) is { Trusted: true, Online: true } && hostSettings.Devices.Count == 1 && hostSaved >= 1
+          && aliceSettings.Devices is [{ }] && aliceSettings.Devices[0].Id == host.Id && hostAsked == 1, "the host and the client trust each other, and both save it");
+    var bobToHost = await Join(bob);
+    Check(hostSettings.Devices.Count == 2, "a host has as many clients as join it");
+
+    // Client to host, host to client.
+    var payload = new byte[20_000_000];
+    Random.Shared.NextBytes(payload);
+    var payloadFile = Path.Combine(temp, "CourierOut", "holiday video.mp4");
+    File.WriteAllBytes(payloadFile, payload);
+    var upward = alice.Send(aliceToHost, [payloadFile])!;
+    Check(await Until(() => host.Requests.Count == 1) && upward.State == "waiting" && host.Requests[0] is { Files: 1, Size: 20_000_000 }, "the host is asked before anything is taken");
+    host.Accept(host.Requests[0].Id);
+    Check(await Until(() => !upward.Running, 60) && upward.State == "done" && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "holiday video.mp4")).SequenceEqual(payload),
+          $"a file of several pieces reaches the host whole ({upward.State} {upward.Note})");
+    var album = Path.Combine(temp, "CourierOut", "Album");
+    Make(Path.Combine(album, "inner", "deep"), "three.txt", "three");
+    Make(album, "empty.txt", "");
+    alice.SetAutoAccept(host.Id, true);
+    var downward = host.Send(host.Peers.Single(peer => peer.Id == alice.Id), [album])!;
+    Check(await Until(() => !downward.Running, 30) && downward.State == "done" && File.ReadAllText(Path.Combine(aliceSettings.Folder, "Album", "inner", "deep", "three.txt")) == "three"
+          && new FileInfo(Path.Combine(aliceSettings.Folder, "Album", "empty.txt")).Length == 0, $"a folder goes from the host to a client, structure and all ({downward.State} {downward.Note})");
+
+    // Client to client, through the host.
+    Check(await Until(() => alice.OtherClients.Any(client => client.Id == bob.Id && client.Online), 25) && alice.OtherClients.All(client => client.Id != alice.Id),
+          "a client learns from the host which other clients there are");
+    var forBob = alice.OtherClients.Single(client => client.Id == bob.Id);
+    var note = Make(Path.Combine(temp, "CourierOut", "Letters"), "for bob.txt", "hello Bob, from Alice");
+    var across = alice.Send(aliceToHost, [note], forBob)!;
+    Check(await Until(() => bob.Requests.Count == 1, 30) && bob.Requests[0].PeerName.Contains(alice.Name) && host.Requests.Count == 0,
+          "files for another client pass the host without asking its user, and the client they are for is asked");
+    bob.Accept(bob.Requests[0].Id);
+    Check(await Until(() => File.Exists(Path.Combine(bobSettings.Folder, "for bob.txt")), 30) && File.ReadAllText(Path.Combine(bobSettings.Folder, "for bob.txt")) == "hello Bob, from Alice"
+          && across.State == "done", $"and arrive there ({across.State} {across.Note})");
+    Check(await Until(() => !Directory.Exists(Portal.RelayFolder) || !Directory.EnumerateFileSystemEntries(Portal.RelayFolder).Any(), 10)
+          && !File.Exists(Path.Combine(hostSettings.Folder, "for bob.txt")), "the host keeps no copy");
+    var refusedAcross = alice.Send(aliceToHost, [note], forBob)!;
+    Check(await Until(() => bob.Requests.Count == 1, 30), "another one waits on the client it is for");
+    bob.Refuse(bob.Requests[0].Id);
+    Check(await Until(() => !Directory.Exists(Portal.RelayFolder) || !Directory.EnumerateFileSystemEntries(Portal.RelayFolder).Any(), 15)
+          && !File.Exists(Path.Combine(bobSettings.Folder, "for bob (1).txt")), "refused on the way, it never arrives and the host lets it go");
+    var nobody = alice.Send(aliceToHost, [note], new PortalClient(new string('A', 64), "Nobody", true))!;
+    Check(await Until(() => nobody.State == "failed") && nobody.Note.Length > 0, "a client the host does not have is said plainly");
+
+    // A PC that was never paired, and a client asked to pair by someone.
+    var strangerHost = await stranger.ConnectDirect(hostAt, host.Number);
+    var intruding = stranger.Send(strangerHost!, [payloadFile])!;
+    Check(await Until(() => intruding.State == "failed") && host.Requests.Count == 0, "a PC that was never paired can not even ask");
+    host.Forget(bob.Id);
+    var afterForget = bob.Send(bobToHost, [note])!;
+    Check(await Until(() => afterForget.State == "failed") && hostSettings.Devices.Count == 1, "a forgotten client must pair again");
+
+    await host.Stop();
+    await alice.Stop();
+    await bob.Stop();
+    await stranger.Stop();
+    Check(host.Stopped, "Courier stops");
 }
-
-var seenThere = await here.AddByAddress("127.0.0.1", there.Port);
-Check(seenThere is { Trusted: false, Online: true } && seenThere.Id == there.Id && await here.AddByAddress("127.0.0.1", 9) is null, "another PC can be found by its address");
-var unpaired = here.Send(seenThere!, [Make(Path.Combine(temp, "PortalOut"), "early.txt", "too early")])!;
-Check(await Until(() => unpaired.State == "failed") && !Directory.EnumerateFiles(thereSettings.Folder).Any(), "nothing can be sent before pairing");
-
-// Pairing: both sides arrive at the same code, each user confirms on their own PC.
-var myPairing = await here.Pair(seenThere!);
-Check(myPairing is { Code.Length: 7, Incoming: false } && await Until(() => there.Pairings.Count == 1 && there.Pairings[0].Code.Length == 7), "pairing reaches both PCs");
-var theirs = there.Pairings[0];
-Check(theirs.Code == myPairing!.Code && theirs.Incoming && theirs.PeerId == here.Id && thereAsked == 1, $"both screens show the same code ({myPairing.Code} / {theirs.Code})");
-here.Confirm(myPairing);
-Check(here.Peers.Single(peer => peer.Id == there.Id).Trusted && hereSettings.Devices is [{ AutoAccept: false }] && hereSettings.Devices[0].Id == there.Id && hereSaved == 1,
-      "confirming trusts the other PC and saves it");
-var oneSided = here.Send(seenThere!, [Make(Path.Combine(temp, "PortalOut"), "one-sided.txt", "x")])!;
-Check(await Until(() => oneSided.State == "failed"), "a PC that confirmed alone still can not send: the other side must confirm too");
-there.Confirm(theirs);
-Check(there.Peers.Single(peer => peer.Id == here.Id) is { Trusted: true, Port: > 0 } back && back.Port == here.Port && there.Pairings.Count == 0, "the other side confirms and knows where to answer");
-
-// A file, with Accept on the other side.
-var payload = new byte[20_000_000];
-Random.Shared.NextBytes(payload);
-var payloadFile = Path.Combine(temp, "PortalOut", "holiday video.mp4");
-File.WriteAllBytes(payloadFile, payload);
-var sending = here.Send(seenThere!, [payloadFile])!;
-Check(await Until(() => there.Requests.Count == 1) && sending.State == "waiting" && there.Requests[0] is { Files: 1, Size: 20_000_000, Name: "holiday video.mp4" } && thereAsked == 2,
-      "the other PC is asked before anything is taken");
-there.Accept(there.Requests[0].Id);
-var landed = Path.Combine(thereSettings.Folder, "holiday video.mp4");
-Check(await Until(() => sending.State == "done", 40) && sending.Done == payload.Length && File.Exists(landed) && File.ReadAllBytes(landed).SequenceEqual(payload),
-      $"a file of several pieces arrives whole ({sending.State} {sending.Note})");
-Check(there.Transfers.Single(transfer => transfer.Incoming && transfer.Name == "holiday video.mp4") is { State: "done", Done: 20_000_000 }
-      && Portal.History().Count(entry => entry.Name == "holiday video.mp4") == 2 && !Directory.EnumerateFiles(Path.Combine(thereSettings.Folder, ".portal-parts")).Any(),
-      "both sides list and log it, and no pieces are left behind");
-
-// A folder with its structure, an empty file; and the same name twice never overwrites.
-var album = Path.Combine(temp, "PortalOut", "Album");
-Make(Path.Combine(album, "inner", "deep"), "three.txt", "three");
-Make(album, "one.txt", "one");
-Make(album, "empty.txt", "");
-there.SetAutoAccept(here.Id, true);
-var folderJob = here.Send(seenThere!, [album, payloadFile])!;
-Check(await Until(() => folderJob.State == "done", 40) && folderJob.Files == 4 && there.Requests.Count == 0, $"with automatic accept nothing is asked ({folderJob.State} {folderJob.Note})");
-Check(File.ReadAllText(Path.Combine(thereSettings.Folder, "Album", "inner", "deep", "three.txt")) == "three" && File.Exists(Path.Combine(thereSettings.Folder, "Album", "empty.txt"))
-      && new FileInfo(Path.Combine(thereSettings.Folder, "Album", "empty.txt")).Length == 0 && File.Exists(Path.Combine(thereSettings.Folder, "holiday video (1).mp4"))
-      && File.ReadAllBytes(landed).SequenceEqual(payload), "a folder keeps its structure, and a second file of the same name gets a new one");
-var albumAgain = here.Send(seenThere!, [album])!;
-Check(await Until(() => albumAgain.State == "done") && File.Exists(Path.Combine(thereSettings.Folder, "Album (1)", "one.txt")), "a folder sent twice lands beside the first");
-
-// Refusing, cancelling, and an outsider.
-there.SetAutoAccept(here.Id, false);
-var refusedJob = here.Send(seenThere!, [Make(Path.Combine(temp, "PortalOut"), "unwanted.txt", "no thanks")])!;
-Check(await Until(() => there.Requests.Count == 1), "another request waits");
-there.Refuse(there.Requests[0].Id);
-Check(await Until(() => refusedJob.State == "refused") && !File.Exists(Path.Combine(thereSettings.Folder, "unwanted.txt")), "a refused file never arrives");
-var cancelJob = here.Send(seenThere!, [payloadFile])!;
-await Until(() => there.Requests.Count == 1);
-cancelJob.Cancel();
-Check(await Until(() => there.Requests.Count == 0) && cancelJob.State == "cancelled", "the sender can cancel while waiting");
-var fromOutsider = await outsider.AddByAddress("127.0.0.1", there.Port);
-var intruding = outsider.Send(fromOutsider!, [payloadFile])!;
-Check(await Until(() => intruding.State == "failed") && there.Requests.Count == 0, "a PC that was never paired can not even ask");
-there.Forget(here.Id);
-var afterForget = here.Send(seenThere!, [payloadFile])!;
-Check(await Until(() => afterForget.State == "failed") && thereSettings.Devices.Count == 0, "a forgotten PC must pair again");
-
-// Another pair of PCs gets a code of its own.
-var between = await outsider.Pair(fromOutsider!);
-Check(between is not null && await Until(() => there.Pairings.Any(pairing => pairing.PeerId == outsider.Id && pairing.Code.Length == 7))
-      && there.Pairings.Single(pairing => pairing.PeerId == outsider.Id).Code == between!.Code && between.Code != myPairing.Code, "each pair of PCs gets a code of its own");
-
-await here.Stop();
-await there.Stop();
-Check(here.Stopped && await outsider.AddByAddress("127.0.0.1", there.Port) is null, "after Stop nothing listens any more");
-await outsider.Stop();
 var allowed = 0;
 File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"p1","action":"allow_portal","services":["Spooler"]}""");
 AdminHelper.Poll(helperDir, [], (_, _) => { allowed += 100; return true; }, () => { allowed++; return true; });
 Check(allowed == 1 && File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"portal\""), "the helper firewall request does that one thing only");
-Check(Portal.LocalAddresses().All(item => !System.Net.IPAddress.IsLoopback(item.Address)) && !Portal.FirewallAllows(@"C:\nowhere\nothing.exe")
-      && Portal.BroadcastAddresses(System.Net.IPAddress.Loopback).Count > 0, "addresses and the firewall can be read");
+Check(!Portal.FirewallAllows(@"C:\nowhere\nothing.exe"), "the firewall can be read");
 
 // ---------------------------------------------------------------- the link across the internet (pretended on this PC)
 Section("tunnel");
@@ -648,8 +689,8 @@ Section("tunnel");
     Check(refusedStream, "no stream without an open path");
 }
 
-// ---------------------------------------------------------------- portal over the internet (two PCs pretended on this one; the public directory is left out)
-Section("portal by ID");
+// ---------------------------------------------------------------- the public directory's format, and IDs
+Section("courier IDs");
 {
     var packed = Bencode.Encode(new Dictionary<string, object>
     {
@@ -665,48 +706,6 @@ Section("portal by ID");
           && Portal.ShowNumber("482019337615") == "482 019 337 615" && Portal.DirectoryKey(digits, false).Length == 20
           && !Portal.DirectoryKey(digits, false).SequenceEqual(Portal.DirectoryKey(digits, true)), "a PC's ID is twelve digits made from its certificate");
 
-    var (homeSettings, awaySettings) = (new PortalSettings { Folder = Path.Combine(temp, "PortalHome") }, new PortalSettings { Folder = Path.Combine(temp, "PortalAway"), Reachable = true });
-    var home = await PortalNode.Start(homeSettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
-    var away = await PortalNode.Start(awaySettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
-    var shut = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "PortalShut") }, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
-    var awayAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, away.LinkPort);
-    Check(home.Number.Length == 12 && home.Number != away.Number && away.Reachable && !home.Reachable && home.LinkPort > 0, "each PC has its ID; being reachable is a choice");
-    Check(await home.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, shut.LinkPort)) is null, "a PC that is not reachable can not be connected to");
-    Check(await home.ConnectDirect(awayAt, "000000000000") is null, "a PC that answers under another ID than the one typed is not accepted");
-    var far = await home.ConnectDirect(awayAt, away.Number);
-    Check(far is { Internet: true, Online: true, Trusted: false } && far.Id == away.Id, "a reachable PC is found and identified across the path");
-    Check((await home.ConnectById("12 34")).Problem == PortalConnectProblem.BadNumber && (await home.ConnectById(home.Number)).Problem == PortalConnectProblem.BadNumber
-          && (await home.ConnectById("123 456 789 012")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
-
-    // Pairing and files work over the path exactly as on a local network, in both directions.
-    var pairAsk = await home.Pair(far!);
-    Check(pairAsk is not null && await Until(() => away.Pairings.Count == 1 && away.Pairings[0].Code.Length == 7) && away.Pairings[0].Code == pairAsk!.Code, "pairing over the path shows the same code on both");
-    home.Confirm(pairAsk!);
-    away.Confirm(away.Pairings[0]);
-    var homeSeenFromAway = away.Peers.Single(peer => peer.Id == home.Id);
-    Check(homeSeenFromAway is { Trusted: true, Internet: true } && awaySettings.Devices.Count == 1, "both PCs trust each other and know the way back");
-    away.SetAutoAccept(home.Id, true);
-    home.SetAutoAccept(away.Id, true);
-    var cargo = new byte[9_000_000];
-    Random.Shared.NextBytes(cargo);
-    var cargoFolder = Path.Combine(temp, "PortalCargo", "Trip");
-    Directory.CreateDirectory(Path.Combine(cargoFolder, "day 2"));
-    File.WriteAllBytes(Path.Combine(cargoFolder, "film.mp4"), cargo);
-    File.WriteAllText(Path.Combine(cargoFolder, "day 2", "note.txt"), "hello from afar");
-    var timer = System.Diagnostics.Stopwatch.StartNew();
-    var outbound = home.Send(far!, [cargoFolder])!;
-    Check(await Until(() => !outbound.Running, 60) && outbound.State == "done" && File.ReadAllBytes(Path.Combine(awaySettings.Folder, "Trip", "film.mp4")).SequenceEqual(cargo)
-          && File.ReadAllText(Path.Combine(awaySettings.Folder, "Trip", "day 2", "note.txt")) == "hello from afar",
-          $"a folder crosses the path whole ({outbound.State} {outbound.Note}, {cargo.Length / 1048576.0 / timer.Elapsed.TotalSeconds:0.0} MB/s on this PC)");
-    var reply = away.Send(homeSeenFromAway, [Path.Combine(cargoFolder, "day 2", "note.txt")])!;
-    Check(await Until(() => !reply.Running, 30) && reply.State == "done" && File.ReadAllText(Path.Combine(homeSettings.Folder, "note.txt")) == "hello from afar",
-          $"and files come back the other way ({reply.State} {reply.Note})");
-
-    away.Reachable = false;
-    Check(!awaySettings.Reachable && await shut.ConnectDirect(awayAt, away.Number) is null, "switching reachable off closes the door to new PCs");
-    await home.Stop();
-    await away.Stop();
-    await shut.Stop();
 }
 
 // ---------------------------------------------------------------- scrypt and the vault

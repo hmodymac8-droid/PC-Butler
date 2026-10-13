@@ -3,6 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.15.0
+
+- Courier is now a host and its clients. One PC is the host; every other PC, on any network, connects to it by its ID and stays connected (it finds the host again by itself). Files go between the host and each client, and from one client to another through the host, which keeps no copy.
+- Courier works across the internet only: nothing is opened to the local network any more.
+- The host asks its router to forward a port (UPnP or NAT-PMP), so clients get straight through, even from mobile data.
+- IPv6: the host is also reachable over IPv6, which on many connections needs no port at all.
+
 ## 1.14.0
 
 - Portal is now called Courier.

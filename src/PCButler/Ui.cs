@@ -605,6 +605,7 @@ public sealed class StatCard : Border
 public sealed class CardPanel : Border
 {
     private readonly TextBlock count = Ui.Muted("", 12);
+    private readonly TextBlock heading;
     private readonly Border countBadge;
     private readonly DockPanel layout = new();
 
@@ -622,11 +623,19 @@ public sealed class CardPanel : Border
         };
         var head = new DockPanel { Margin = new Thickness(20, 14, 20, 14), LastChildFill = false };
         head.Children.Add(Ui.Glyph(glyph, 15, "Primary"));
-        head.Children.Add(Ui.Text(Ui.T(title), 15, weight: FontWeights.Bold).Margin(10));
+        heading = Ui.Text(Ui.T(title), 15, weight: FontWeights.Bold);
+        head.Children.Add(heading.Margin(10));
         head.Children.Add(countBadge);
         head.Children.Add(Controls.Dock(Dock.Right));
         layout.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 0, 0, 1), Child = head }.Dock(Dock.Top));
         Child = layout;
+    }
+
+    /// <summary>The heading, for a card whose subject changes (already in the user's language).</summary>
+    public string Title
+    {
+        get => heading.Text;
+        set => heading.Text = value;
     }
 
     public void SetCount(string text)
