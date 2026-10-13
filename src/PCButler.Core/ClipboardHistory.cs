@@ -20,6 +20,8 @@ public sealed class ClipEntry
     [JsonPropertyName("time")] public DateTime Time { get; set; } = DateTime.Now;
     /// <summary>Pinned items stay at the top and are never removed by the limit or by Clear.</summary>
     [JsonPropertyName("pinned")] public bool Pinned { get; set; }
+    /// <summary>Words the user gave it ("work", "address"), to find it again: searching for one finds it, and "#work" finds only items tagged so.</summary>
+    [JsonPropertyName("tags")] public List<string> Tags { get; set; } = [];
 
     [JsonIgnore] public string ImageFile => Path.Combine(ClipboardHistory.ImageFolder, Id + ".png");
 
@@ -45,10 +47,24 @@ public sealed class ClipEntry
         _ => Text == other.Text,
     };
 
-    public bool Matches(string search) =>
-        search.Length == 0
-        || Text.Contains(search, StringComparison.CurrentCultureIgnoreCase)
-        || Files.Any(file => file.Contains(search, StringComparison.CurrentCultureIgnoreCase));
+    public bool Matches(string search)
+    {
+        if (search.Length == 0)
+            return true;
+        // "#work": only what is tagged "work".
+        if (search.StartsWith('#'))
+            return Tags.Any(tag => tag.Equals(search[1..].Trim(), StringComparison.CurrentCultureIgnoreCase));
+        return Text.Contains(search, StringComparison.CurrentCultureIgnoreCase)
+               || Files.Any(file => file.Contains(search, StringComparison.CurrentCultureIgnoreCase))
+               || Tags.Any(tag => tag.Contains(search, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    /// <summary>A tag as typed, made tidy: one line, no "#", not too long. "" when nothing is left.</summary>
+    public static string CleanTag(string tag)
+    {
+        tag = string.Join(" ", tag.Replace("#", "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return tag.Length > 30 ? tag[..30] : tag;
+    }
 }
 
 /// <summary>
@@ -87,6 +103,15 @@ public static class ClipboardHistory
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {
             Log.Warning($"The clipboard history could not be read: {error.Message}");
+            // Kept aside, not written over: the next save would otherwise lose everything that was in it.
+            try
+            {
+                if (error is JsonException)
+                    File.Move(File_, Path.Combine(Folder, "history.broken.json"), overwrite: true);
+            }
+            catch (Exception moving) when (moving is IOException or UnauthorizedAccessException)
+            {
+            }
         }
         return [];
     }
@@ -163,6 +188,25 @@ public static class ClipboardHistory
         Save();
         Changed?.Invoke();
     }
+
+    /// <summary>Give an item a tag, or take it away.</summary>
+    public static void SetTag(ClipEntry entry, string tag, bool on)
+    {
+        tag = ClipEntry.CleanTag(tag);
+        if (tag.Length == 0)
+            return;
+        entry.Tags.RemoveAll(old => old.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
+        if (on)
+            entry.Tags.Add(tag);
+        Save();
+        Changed?.Invoke();
+    }
+
+    /// <summary>Every tag in use, most used first: offered when tagging another item.</summary>
+    public static List<string> AllTags() =>
+        Entries.SelectMany(entry => entry.Tags).GroupBy(tag => tag, StringComparer.CurrentCultureIgnoreCase)
+               .OrderByDescending(group => group.Count()).ThenBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+               .Select(group => group.First()).ToList();
 
     /// <summary>Move an item to the top, as when it is pasted again.</summary>
     public static void Touch(ClipEntry entry)

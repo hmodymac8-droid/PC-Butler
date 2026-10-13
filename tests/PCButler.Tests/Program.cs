@@ -1073,6 +1073,21 @@ ClipboardHistory.Clear();
 Check(ClipboardHistory.Entries.Count == 1 && ClipboardHistory.Entries[0].Pinned, "Clear keeps pinned items");
 ClipboardHistory.Apply(new ClipboardSettings { KeepOnDisk = false });
 Check(!File.Exists(Path.Combine(ClipboardHistory.Folder, "history.json")), "turning off Keep after restart removes the file");
+ClipboardHistory.Clear(keepPinned: false);
+ClipboardHistory.Add(new ClipEntry { Text = "Riyadh, King Fahd Road 12" }, 50);
+ClipboardHistory.Add(new ClipEntry { Text = "meeting at nine" }, 50);
+var address = ClipboardHistory.Entries.Single(entry => entry.Text.StartsWith("Riyadh"));
+ClipboardHistory.SetTag(address, "  #home  address ", true);
+ClipboardHistory.SetTag(address, "work", true);
+ClipboardHistory.SetTag(ClipboardHistory.Entries.Single(entry => entry.Text.StartsWith("meeting")), "work", true);
+Check(address.Tags.SequenceEqual(["home address", "work"]) && ClipboardHistory.AllTags().First() == "work"
+      && ClipboardHistory.Ordered("#work").Count == 2 && ClipboardHistory.Ordered("#home address").Single() == address
+      && ClipboardHistory.Ordered("#hom").Count == 0 && ClipboardHistory.Ordered("home").Single() == address, "items are tagged, and found by their tags");
+ClipboardHistory.SetTag(address, "WORK", false);
+Check(address.Tags.SequenceEqual(["home address"]) && ClipboardHistory.Ordered("#work").Count == 1, "a tag is taken away whatever its case");
+ClipboardHistory.Clear(keepPinned: false);
+Check(WebSearch.Google("  what   is" + Environment.NewLine + "PC Butler ") == "https://www.google.com/search?q=what%20is%20PC%20Butler"
+      && WebSearch.IsPicture(Path.Combine(temp, "b.JPG")) && !WebSearch.IsPicture("notes.txt"), "a text is searched on Google as one line; pictures are told apart");
 Check(new ClipEntry { Kind = "files", Files = [Path.Combine(temp, "a.txt"), Path.Combine(temp, "b.txt")] }.Preview == "a.txt (+1)"
       && new ClipEntry { Text = "one" + Environment.NewLine + "two" }.Preview == "one two", "list previews");
 

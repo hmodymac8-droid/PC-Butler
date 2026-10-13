@@ -3,6 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.19.1
+
+- Clipboard: right-click an item, in the list the shortcut opens or on the Clipboard page, for paste, copy, search with Google (a copied picture is searched with Google Lens), open its link or its file's folder, pin and delete.
+- Clipboard tags: give items tags such as "work" or "address". Tags show under each item; searching finds them, and "#work" shows only what is tagged so.
+- The Clipboard page has two tabs, History and Settings, instead of one long page.
+- A clipboard history file that can't be read is set aside as history.broken.json instead of being written over.
+
 ## 1.19.0
 
 - Arrange the performance overlay yourself, on the Benchmark page: put its readings in any order, show them in a column or on one line, change its size, slide it away from the corner, and choose the highlight, text and background colours and how solid the background is. Reset the look puts it back as it came.

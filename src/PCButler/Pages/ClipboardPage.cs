@@ -10,7 +10,7 @@ namespace PCButler;
 /// <summary>The clipboard manager: turn it on or off, its shortcut and limit, and the whole history to search, pin, copy or delete.</summary>
 public sealed class ClipboardPage : Page
 {
-    private readonly ListBox list = new() { MinHeight = 260 };
+    private readonly ListBox list = new() { BorderThickness = new Thickness(0), Background = System.Windows.Media.Brushes.Transparent };
     private readonly TextBox search;
     private readonly TextBlock count = Ui.Muted("", 12);
     private readonly Button pinButton;
@@ -21,7 +21,6 @@ public sealed class ClipboardPage : Page
     {
         AddAction("Open the list", () => App.Current.Clips.ShowPicker(), accent: true);
         var settings = main.Config.Clipboard;
-        var page = new StackPanel();
 
         // --- settings: each applies at once ---
         var rows = new StackPanel();
@@ -57,9 +56,8 @@ public sealed class ClipboardPage : Page
         rows.Children.Add(Ui.SettingRow(Ui.T("Paste right away"),
                                         Ui.T("Picking an item pastes it into the program you were in. Off: it is only copied, for you to paste."),
                                         Ui.Switch("", settings.PasteOnPick, on => Change(config => config.PasteOnPick = on))));
-        var card = new CardPanel("Settings", "\uE713") { Margin = new Thickness(0, 0, 0, 18) };
+        var card = new CardPanel("Settings", "\uE713");
         card.SetBody(rows);
-        page.Children.Add(card);
 
         // --- the history ---
         search = Ui.Field(width: 260, hint: Ui.T("Search the clipboard history…"));
@@ -77,22 +75,50 @@ public sealed class ClipboardPage : Page
                 DeleteSelected();
         };
         list.SelectionChanged += (_, _) => ShowPinState();
+        // Right-click: the item under the mouse is chosen, and its menu offers copy, Google, tags and the rest.
+        list.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (ItemsControl.ContainerFromElement(list, (DependencyObject)e.OriginalSource) is ListBoxItem item && !item.IsSelected)
+            {
+                list.SelectedItems.Clear();
+                item.IsSelected = true;
+            }
+        };
+        list.ContextMenuOpening += (_, e) =>
+        {
+            if (Selected().FirstOrDefault() is not { } entry)
+            {
+                e.Handled = true;
+                return;
+            }
+            list.ContextMenu = ClipboardMenu.For(entry, Window.GetWindow(this));
+        };
         pinButton = Ui.Button(Ui.T("Pin"), PinSelected);
-        var history = new CardPanel("History", "\uE81C");
-        history.Controls.Children.Add(search);
-        var body = new DockPanel();
+        // The history: search on top, the buttons below, and only the list between them scrolls.
+        var top = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 10) };
+        top.Children.Add(search);
+        top.Children.Add(count.Margin(12, 0, 0, 0));
+        count.VerticalAlignment = VerticalAlignment.Center;
         var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 10, 0, 0) };
         bar.Children.Add(Ui.Button(Ui.T("Copy"), CopySelected, accent: true));
         bar.Children.Add(pinButton.Margin(6, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Delete"), DeleteSelected).Margin(6, 0, 0, 0));
-        bar.Children.Add(count.Margin(12, 0, 0, 0));
+        bar.Children.Add(Ui.Muted(Ui.T("Right-click an item for more: Google, tags, its link."), 12).Margin(12, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Dock(Dock.Right));
-        body.Children.Add(bar.Dock(Dock.Bottom));
-        body.Children.Add(list);
-        history.SetBody(body);
-        page.Children.Add(history);
+        var history = new DockPanel { Margin = new Thickness(10) };
+        history.Children.Add(top.Dock(Dock.Top));
+        history.Children.Add(bar.Dock(Dock.Bottom));
+        history.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Child = list });
 
-        Children.Add(new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        // Two tabs instead of one long page: the history first, then the settings, each scrolling on its own.
+        var tabs = new TabControl();
+        tabs.Items.Add(new TabItem { Header = Ui.T("History"), Content = history });
+        tabs.Items.Add(new TabItem
+        {
+            Header = Ui.T("Settings"),
+            Content = new ScrollViewer { Content = card, Padding = new Thickness(10), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false },
+        });
+        Children.Add(tabs);
         ClipboardHistory.Changed += () => Dispatcher.BeginInvoke(Fill);
         Fill();
     }

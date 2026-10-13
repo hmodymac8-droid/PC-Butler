@@ -13,6 +13,7 @@ namespace PCButler;
 /// <summary>
 /// The list the shortcut opens, beside the mouse: type to search, Enter (or a double-click)
 /// to paste into the program that was in front, Delete to remove, Ctrl+P to pin, Esc to close.
+/// A right-click on an item offers the rest: copy, search Google, tag, open its link.
 /// </summary>
 public sealed class ClipboardPicker : Window
 {
@@ -22,6 +23,8 @@ public sealed class ClipboardPicker : Window
     private readonly ListBox list = new() { BorderThickness = new Thickness(0), Background = Brushes.Transparent };
     private readonly TextBlock empty = Ui.Muted("", 13, wrap: true);
     private bool closing;
+    /// <summary>True while its right-click menu or a dialog of its own is open: losing focus to them doesn't close the list.</summary>
+    private bool holding;
 
     public ClipboardPicker(ClipboardManager manager, IntPtr target)
     {
@@ -46,7 +49,7 @@ public sealed class ClipboardPicker : Window
         head.Children.Add(Ui.Glyph("\uE77F", 16, "Primary").Margin(0, 0, 10, 0).Dock(Dock.Left));
         head.Children.Add(search);
         layout.Children.Add(head.Dock(Dock.Top));
-        layout.Children.Add(Ui.Muted(Ui.T("Enter: paste  ·  Delete: remove  ·  Ctrl+P: pin  ·  Esc: close"), 11.5)
+        layout.Children.Add(Ui.Muted(Ui.T("Enter: paste  ·  Delete: remove  ·  Ctrl+P: pin  ·  Right-click: more  ·  Esc: close"), 11.5)
                               .Margin(0, 8, 0, 0).Dock(Dock.Bottom));
         layout.Children.Add(empty.Dock(Dock.Top));
         layout.Children.Add(list);
@@ -62,7 +65,35 @@ public sealed class ClipboardPicker : Window
                 Pick();
         };
         PreviewKeyDown += OnKey;
-        Deactivated += (_, _) => CloseOnce();
+        Deactivated += (_, _) =>
+        {
+            if (!holding)
+                CloseOnce();
+        };
+        // Right-click: the item under the mouse is chosen first, then its menu opens.
+        list.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (ItemsControl.ContainerFromElement(list, (DependencyObject)e.OriginalSource) is ListBoxItem item)
+                item.IsSelected = true;
+        };
+        list.ContextMenuOpening += (_, e) =>
+        {
+            if (Selected is not { } entry)
+            {
+                e.Handled = true;
+                return;
+            }
+            var menu = ClipboardMenu.For(entry, this, Pick, on => holding = on);
+            menu.Opened += (_, _) => holding = true;
+            menu.Closed += (_, _) =>
+            {
+                holding = false;
+                // Back to the list (a menu item that opened the browser has taken the focus away for good).
+                if (IsVisible && !closing)
+                    Activate();
+            };
+            list.ContextMenu = menu;
+        };
         Loaded += (_, _) =>
         {
             PlaceNearMouse();
@@ -119,6 +150,22 @@ public sealed class ClipboardPicker : Window
             text.MaxHeight = 40;
             text.TextWrapping = TextWrapping.Wrap;
             row.Children.Add(text);
+        }
+        if (entry.Tags.Count > 0)
+        {
+            // Its tags, under what it shows.
+            var body = (FrameworkElement)row.Children[^1];
+            row.Children.Remove(body);
+            var tags = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var tag in entry.Tags)
+            {
+                tags.Children.Add(new Border
+                {
+                    Child = Ui.Text("#" + tag, 10.5, "Primary"), Background = Ui.Paint("PrimaryTint"), CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(6, 1, 6, 2), Margin = new Thickness(0, 0, 4, 2),
+                });
+            }
+            row.Children.Add(new StackPanel { Children = { body, tags } });
         }
         row.ToolTip = entry.Kind == "text" && entry.Text.Length > 0 ? entry.Text[..Math.Min(entry.Text.Length, 1500)] : null;
         return row;

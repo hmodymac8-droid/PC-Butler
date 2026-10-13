@@ -129,6 +129,43 @@ public sealed partial class CategoryDialog : Dialog
     }
 }
 
+/// <summary>One line of text from the user: a name, a tag.</summary>
+public sealed class TextDialog : Dialog
+{
+    private readonly TextBox box;
+    private string? answer;
+
+    private TextDialog(Window owner, string title, string intro, string text) : base(owner, title)
+    {
+        Topmost = owner.Topmost; // above a window that stays on top, such as the clipboard list
+        var body = new StackPanel { Margin = new Thickness(18), Width = 360 };
+        body.Children.Add(Ui.Text(intro, wrap: true).Margin(0, 0, 0, 10));
+        box = Ui.Field(text);
+        body.Children.Add(box);
+        body.Children.Add(Buttons("OK"));
+        Content = body;
+        Loaded += (_, _) =>
+        {
+            box.Focus();
+            box.SelectAll();
+        };
+    }
+
+    /// <summary>What was typed, or null when cancelled.</summary>
+    public static string? Ask(Window owner, string title, string intro, string text = "")
+    {
+        var dialog = new TextDialog(owner, title, intro, text);
+        dialog.ShowDialog();
+        return dialog.answer;
+    }
+
+    protected override void Accept()
+    {
+        answer = box.Text.Trim();
+        Close();
+    }
+}
+
 /// <summary>
 /// A short explanation and one or more password fields. accept gets what was typed and returns
 /// an error to show, or null to close the dialog.
