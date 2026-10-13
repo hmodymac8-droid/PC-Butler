@@ -86,8 +86,19 @@ public partial class App : Application
             ConfigStore.Save(config);
         }
 
-        instance = new Mutex(true, InstanceName, out var first);
-        showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSignalName);
+        bool first;
+        try
+        {
+            instance = new Mutex(true, InstanceName, out first);
+            showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSignalName);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A copy is already running with other rights (one started "as administrator"): Windows
+            // won't let this one even look at it, so it can't be asked to show its window. Never a second copy.
+            Shutdown();
+            return;
+        }
         if (!first)
         {
             // Already running: a plain launch brings its window up, a background start has nothing to do.
@@ -143,6 +154,7 @@ public partial class App : Application
     }
 
     private bool splashOpen;
+    private bool buildingWindow;
     private Action? afterSplash; // shows the window once the launch screen closes
 
     private void SplashClosed()
@@ -187,7 +199,19 @@ public partial class App : Application
             window.TakeVaultInbox();
             return;
         }
-        window = new MainWindow();
+        // Building the window takes a moment, and some of it lets other clicks through (a tray icon
+        // double-click is two clicks): while one is being built, a second click must not build another.
+        if (buildingWindow)
+            return;
+        buildingWindow = true;
+        try
+        {
+            window = new MainWindow();
+        }
+        finally
+        {
+            buildingWindow = false;
+        }
         window.Closed += (_, _) => window = null;
         var opened = window;
         if (splash)

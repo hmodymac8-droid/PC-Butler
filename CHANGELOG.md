@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.15.1
+
+- One copy only: a double-click on the tray icon, or starting the program again, never opens a second window, and a copy started as administrator never runs beside another.
+
 ## 1.15.0
 
 - Courier is now a host and its clients. One PC is the host; every other PC, on any network, connects to it by its ID and stays connected (it finds the host again by itself). Files go between the host and each client, and from one client to another through the host, which keeps no copy.
