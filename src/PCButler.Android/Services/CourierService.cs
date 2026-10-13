@@ -86,7 +86,7 @@ public sealed class CourierService : Service
         var open = PendingIntent.GetActivity(this, 0, new Intent(this, typeof(MainActivity)).AddFlags(ActivityFlags.SingleTop),
                                              PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
         var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, Channel) : new Notification.Builder(this);
-        builder.SetContentTitle(Tr.T("Courier")).SetContentText(text).SetSmallIcon(Resource.Mipmap.appicon).SetOngoing(true).SetContentIntent(open)
+        builder.SetContentTitle(Tr.T("Courier")).SetContentText(text).SetSmallIcon(Resource.Drawable.notification_icon).SetOngoing(true).SetContentIntent(open)
                .SetOnlyAlertOnce(true);
         if (moving is not null && moving.Size > 0)
             builder.SetProgress(1000, (int)(moving.Done * 1000 / moving.Size), false);
