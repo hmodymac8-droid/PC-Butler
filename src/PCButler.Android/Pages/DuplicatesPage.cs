@@ -11,27 +11,17 @@ namespace PCButler.Android.Pages;
 /// </summary>
 public sealed class DuplicatesPage : AppPage
 {
-    private static readonly (string Label, Func<string[]> Folders)[] Places =
-    [
-        ("Download", () => [ConfigStore.DetectDownloadsFolder()]),
-        ("Photos and pictures", () => [Path.Combine(PhoneRoot, "DCIM"), Path.Combine(PhoneRoot, "Pictures")]),
-        ("Chats (WhatsApp, Telegram)", () => [Path.Combine(PhoneRoot, "Android", "media"), Path.Combine(PhoneRoot, "WhatsApp"), Path.Combine(PhoneRoot, "Telegram")]),
-        ("The whole phone", () => [PhoneRoot]),
-    ];
-
-    private readonly Picker place = new() { TextColor = Theme.Text, Title = "" };
     private readonly Picker mode = new() { TextColor = Theme.Text, Title = "" };
     private readonly Label status = Theme.Body("");
     private readonly VerticalStackLayout groups = new() { Spacing = 0 };
     private readonly Button remove;
     private readonly List<(DuplicateEntry Entry, CheckBox Box)> boxes = [];
+    private readonly Dictionary<string, Doc> docs = new(StringComparer.Ordinal);
     private CancellationTokenSource? scanning;
 
-    public DuplicatesPage() : base("Duplicates", "The same file kept twice or more: find the copies, keep one.", needsAllFiles: true)
+    public DuplicatesPage() : base("Duplicates", "The same file kept twice or more: find the copies, keep one.")
     {
-        foreach (var (label, _) in Places)
-            place.Items.Add(Tr.T(label));
-        place.SelectedIndex = 0;
+        Body.Children.Add(FoldersCard("duplicates", "Copies are looked for in these folders and all the folders inside them.", () => { }));
         foreach (var (_, label) in Duplicates.Modes)
             mode.Items.Add(Tr.T(label));
         mode.SelectedIndex = 0;
@@ -42,7 +32,7 @@ public sealed class DuplicatesPage : AppPage
             Spacing = 8,
             Children =
             {
-                Theme.Faint(Tr.T("Look in")), place, Theme.Faint(Tr.T("Same file means")), mode,
+                Theme.Faint(Tr.T("Same file means")), mode,
                 new HorizontalStackLayout { Spacing = 10, Children = { Theme.Accent(Tr.T("Find duplicates"), () => _ = Scan()), remove } },
                 status,
             },
@@ -55,7 +45,12 @@ public sealed class DuplicatesPage : AppPage
         scanning?.Cancel();
         scanning = new CancellationTokenSource();
         var cancel = scanning.Token;
-        var folders = Places[place.SelectedIndex].Folders().Where(Directory.Exists).ToList();
+        var trees = Folders.For("duplicates");
+        if (trees.Count == 0)
+        {
+            await Say(Tr.T("Choose a folder to look in first."));
+            return;
+        }
         var key = Duplicates.Modes[mode.SelectedIndex].Key;
         groups.Children.Clear();
         boxes.Clear();
@@ -66,7 +61,13 @@ public sealed class DuplicatesPage : AppPage
         {
             found = await Task.Run(() =>
             {
-                var files = Duplicates.Collect(folders, recursive: true, cancel);
+                // Folders inside each other are walked once; each file is known by its path.
+                docs.Clear();
+                foreach (var root in trees.Select(Folders.Root).OfType<Doc>())
+                    foreach (var doc in Folders.Files(root, cancel))
+                        docs.TryAdd(doc.Path, doc);
+                var files = docs.Values.Select(doc => new DuplicateEntry(doc.Path, doc.Size, doc.Modified)).ToList();
+                Duplicates.OpenFile = Open;
                 MainThread.BeginInvokeOnMainThread(() => status.Text = Tr.T("Comparing {0} file(s)…", files.Count));
                 return Duplicates.Find(files, key, cancel);
             }, cancel);
@@ -86,7 +87,7 @@ public sealed class DuplicatesPage : AppPage
             card.Children.Add(Theme.Title($"{group.Files[0].Name}  ·  {group.Files.Count}×  ·  {Size(group.Files[0].Size)}", 15));
             foreach (var file in group.Files)
             {
-                var (row, box) = Tickable(Short(file.Path), file.Modified.ToString("yyyy-MM-dd HH:mm") + (file == keep ? "  ·  " + Tr.T("kept") : ""), file != keep);
+                var (row, box) = Tickable(file.Path, file.Modified.ToString("yyyy-MM-dd HH:mm") + (file == keep ? "  ·  " + Tr.T("kept") : ""), file != keep);
                 box.CheckedChanged += (_, _) => Count();
                 boxes.Add((file, box));
                 card.Children.Add(row);
@@ -107,11 +108,44 @@ public sealed class DuplicatesPage : AppPage
 
     private async Task DeleteTicked()
     {
-        var paths = boxes.Where(item => item.Box.IsChecked).Select(item => item.Entry.Path).ToList();
-        if (paths.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, on the Storage page.", paths.Count), Tr.T("Delete")))
+        var chosen = boxes.Where(item => item.Box.IsChecked).Select(item => docs[item.Entry.Path]).ToList();
+        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, on the Storage page.", chosen.Count), Tr.T("Delete")))
             return;
-        var (count, errors) = await Task.Run(() => Sorter.DeleteFiles(paths));
+        var (count, errors) = await Task.Run(() => Bin(chosen));
         await Say(errors.Count == 0 ? Tr.T("{0} file(s) deleted.", count) : Tr.T("{0} file(s) deleted. {1} could not be:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
         await Scan();
+    }
+
+    /// <summary>A file of the chosen folders, opened to compare contents.</summary>
+    private Stream Open(string path)
+    {
+        try
+        {
+            return Folders.OpenRead(docs[path]);
+        }
+        catch (Java.Lang.Exception error)
+        {
+            throw new IOException(error.Message);
+        }
+    }
+
+    /// <summary>Files into PC Butler's Recycle Bin, one by one.</summary>
+    public static (int Count, List<string> Errors) Bin(IEnumerable<Doc> files)
+    {
+        var count = 0;
+        var errors = new List<string>();
+        foreach (var file in files)
+        {
+            try
+            {
+                RecycleBin.Send(file);
+                count++;
+            }
+            catch (IOException error)
+            {
+                errors.Add($"{file.Name}: {error.Message}");
+            }
+        }
+        return (count, errors);
     }
 }

@@ -22,7 +22,7 @@ public sealed class VaultPage : AppPage
     private Vault? vault;
     private bool busy;
 
-    public VaultPage() : base("Vault", "Private files, encrypted with your password.", needsAllFiles: false)
+    public VaultPage() : base("Vault", "Private files, encrypted with your password.")
     {
         create.Children.Add(Theme.Title(Tr.T("Create the vault"), 18));
         create.Children.Add(Theme.Faint(Tr.T("Choose a password of at least {0} characters. Without it, nobody (you neither) can open what is inside: write it down somewhere safe.", Vault.MinPassword)));
@@ -117,17 +117,12 @@ public sealed class VaultPage : AppPage
     {
         if (vault is null)
             return;
-        if (!Access.HasAllFiles)
-        {
-            await Say(Tr.T("To move files into the vault, allow “All files access” first (on the Courier page, under Settings)."));
+        var picked = await Folders.PickFiles();
+        if (picked.Count == 0)
             return;
-        }
-        var chosen = await FileBrowser.Pick(Navigation, Tr.T("Files to lock in the vault"));
-        if (chosen.Count == 0)
-            return;
-        count.Text = Tr.T("Encrypting {0} file(s)…", chosen.Count);
+        count.Text = Tr.T("Encrypting {0} file(s)…", picked.Count);
         var opened = vault;
-        var (added, errors) = await Task.Run(() => opened.Add(chosen));
+        var (added, errors) = await Task.Run(() => MoveIn(opened, picked));
         if (errors.Count > 0)
             await Say(Tr.T("{0} file(s) added. {1} could not be:\n{2}", added, errors.Count, string.Join("\n", errors.Take(5))));
         ShowItems();
@@ -160,6 +155,8 @@ public sealed class VaultPage : AppPage
         }
         else if (picked == takeOut)
         {
+            if (!await Access.AskToSaveToDownload())
+                return;
             var folder = Path.Combine(ConfigStore.DetectDownloadsFolder(), "PC Butler Vault");
             Directory.CreateDirectory(folder);
             var (moved, errors) = await Task.Run(() => current.MoveOut([item], folder));
@@ -170,5 +167,47 @@ public sealed class VaultPage : AppPage
             await Task.Run(() => current.Delete([item]));
         }
         ShowItems();
+    }
+
+    /// <summary>
+    /// Picked files into the vault: each is copied in (through a private copy, which the vault
+    /// encrypts and removes), then the original is removed from its folder. When the app that
+    /// holds it doesn't allow that, the user is told to delete it.
+    /// </summary>
+    private static (int Count, List<string> Errors) MoveIn(Vault vault, List<global::Android.Net.Uri> picked)
+    {
+        var folder = Path.Combine(FileSystem.CacheDirectory, "to-vault");
+        Directory.CreateDirectory(folder);
+        var added = 0;
+        var errors = new List<string>();
+        foreach (var address in picked)
+        {
+            string name = "?", copy = "";
+            try
+            {
+                name = Portal.SafeName(Folders.NameOf(address));
+                copy = Sorter.UniqueDestination(folder, name);
+                using (var input = Folders.OpenRead(address))
+                using (var output = File.Create(copy))
+                    input.CopyTo(output);
+                var (count, problems) = vault.Add([copy]);
+                errors.AddRange(problems);
+                if (count == 0)
+                    continue;
+                added++;
+                if (!Folders.TryDelete(address))
+                    errors.Add(Tr.T("{0}: locked in the vault, but the original could not be removed. Delete it yourself.", name));
+            }
+            catch (Exception error) when (error is IOException or Java.Lang.Exception or UnauthorizedAccessException)
+            {
+                errors.Add($"{name}: {error.Message}");
+            }
+            finally
+            {
+                if (copy.Length > 0 && File.Exists(copy))
+                    File.Delete(copy);
+            }
+        }
+        return (added, errors);
     }
 }

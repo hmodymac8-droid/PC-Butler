@@ -79,7 +79,7 @@ public sealed class CourierPage : ContentPage
 
         // --- settings ---
         startStop = Theme.Plain("", () => _ = Toggle());
-        storageButton = Theme.Plain(Tr.T("Allow"), Access.AskForAllFiles);
+        storageButton = Theme.Plain(Tr.T("Allow"), async () => { await Access.AskToSaveToDownload(); Refresh(); });
         var changeRole = Theme.Plain(Tr.T("Change"), () => _ = ChangeRole());
         running.Children.Add(Theme.CardOf(new VerticalStackLayout
         {
@@ -233,10 +233,9 @@ public sealed class CourierPage : ContentPage
         welcome.IsVisible = !hasRole;
         running.IsVisible = hasRole;
         startStop.Text = Tr.T(node is null ? "Start Courier" : "Stop Courier");
-        var allFiles = Access.HasAllFiles;
-        storageText.Text = Tr.T(allFiles ? "PC Butler can save received files and look through the phone's files."
-                                         : "Allow “All files access” so received files can be saved to Download, and the Sorter, Duplicates and Storage can look through the phone.");
-        storageButton.IsVisible = !allFiles;
+        var canSave = Access.CanSaveToDownload;
+        storageText.Text = canSave ? "" : Tr.T("Allow PC Butler to save to Download, so received files can be kept.");
+        storageText.IsVisible = storageButton.IsVisible = !canSave;
         if (!hasRole)
             return;
         ShowStatus(node, settings);
