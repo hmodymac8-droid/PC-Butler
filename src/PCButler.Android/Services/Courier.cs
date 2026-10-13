@@ -91,9 +91,16 @@ public static class Courier
     /// <summary>Files shared from another app: kept until a PC is chosen to send them to.</summary>
     public static IReadOnlyList<string> Waiting => waiting;
 
-    public static void Queue(IEnumerable<string> paths)
+    /// <summary>
+    /// True while files shared from another app are waiting to go by themselves: to the only
+    /// PC connected, as soon as one is (with several, the user is asked once which one).
+    /// </summary>
+    public static bool SendWhenReady { get; set; }
+
+    public static void Queue(IEnumerable<string> paths, bool sendWhenReady = false)
     {
         waiting.AddRange(paths);
+        SendWhenReady |= sendWhenReady;
         Changed?.Invoke();
     }
 
@@ -101,6 +108,7 @@ public static class Courier
     {
         var all = waiting.ToList();
         waiting.Clear();
+        SendWhenReady = false;
         Changed?.Invoke();
         return all;
     }
@@ -139,8 +147,18 @@ public static class SharedFiles
                 Log.Warning($"A shared file could not be read: {error.Message}");
             }
         }
-        if (copied.Count > 0)
-            Courier.Queue(copied);
+        if (copied.Count == 0)
+            return;
+        // Shared means "send this": it goes by itself once a PC is connected (CourierPage does the sending).
+        Courier.Queue(copied, sendWhenReady: true);
+        MainThread.BeginInvokeOnMainThread(ShowCourier);
+    }
+
+    /// <summary>Bring the Courier tab to the front, where the shared files are sent and their progress shows.</summary>
+    private static void ShowCourier()
+    {
+        if (Microsoft.Maui.Controls.Shell.Current?.CurrentItem is { Items.Count: > 0 } tabs)
+            tabs.CurrentItem = tabs.Items[0];
     }
 
     private static string NameOf(Context context, global::Android.Net.Uri address)

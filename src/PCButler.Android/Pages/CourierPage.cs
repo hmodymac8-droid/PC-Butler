@@ -104,6 +104,7 @@ public sealed class CourierPage : ContentPage
         Dispatcher.StartTimer(TimeSpan.FromMilliseconds(700), () =>
         {
             Refresh();
+            SendShared();
             return true;
         });
         Courier.Changed += () => MainThread.BeginInvokeOnMainThread(Refresh);
@@ -114,9 +115,11 @@ public sealed class CourierPage : ContentPage
         base.OnAppearing();
         await Access.AskForNotifications();
         var settings = Courier.Settings;
-        if (settings.AutoStart && settings.Role is PortalSettings.Host or PortalSettings.Client)
+        // Files shared from another app need Courier running to go anywhere, whatever the start setting says.
+        if ((settings.AutoStart || Courier.Waiting.Count > 0) && settings.Role is PortalSettings.Host or PortalSettings.Client)
             await Courier.Start();
         Refresh();
+        SendShared();
     }
 
     // --- choices ---
@@ -173,6 +176,21 @@ public sealed class CourierPage : ContentPage
         if (paths.Count > 0)
             Courier.Queue(paths);
         SendWaiting(null);
+    }
+
+    /// <summary>
+    /// Files shared from another app go by themselves: at once to the only PC connected, or
+    /// as soon as one connects; with several connected, the user picks one, once.
+    /// </summary>
+    private void SendShared()
+    {
+        if (!Courier.SendWhenReady || Courier.Waiting.Count == 0 || Courier.Node is not { } node)
+            return;
+        var ready = Courier.Targets(node).Where(item => item.Ready).ToList();
+        if (ready.Count == 0)
+            return; // keep waiting: the PC may still be connecting
+        Courier.SendWhenReady = false;
+        SendWaiting(ready.Count == 1 ? ready[0].Tag : null);
     }
 
     /// <summary>The files waiting go to the PC chosen, or to the only one connected.</summary>
@@ -300,7 +318,8 @@ public sealed class CourierPage : ContentPage
     {
         var all = Courier.Targets(node);
         var waiting = Courier.Waiting.Count;
-        waitingText.Text = waiting > 0 ? Tr.T("{0} file(s) shared from another app are ready. Tap a PC to send them.", waiting)
+        waitingText.Text = waiting > 0 && Courier.SendWhenReady ? Tr.T("{0} file(s) shared from another app go as soon as a PC is connected.", waiting)
+                         : waiting > 0 ? Tr.T("{0} file(s) shared from another app are ready. Tap a PC to send them.", waiting)
                          : all.Count == 0 ? Tr.T("No PC is paired yet.") : Tr.T("Choose files to send, or share them to PC Butler from any app.");
         waitingText.TextColor = waiting > 0 ? Theme.Primary : Theme.Text;
         var key = string.Join("|", all.Select(target => $"{target.Name}{target.Ready}")) + waiting;
