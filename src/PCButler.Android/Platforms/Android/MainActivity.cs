@@ -25,6 +25,13 @@ public class MainActivity : MauiAppCompatActivity
             _ = Task.Run(SelfTest.Run);
     }
 
+    /// <summary>Android's folder and file pickers answer here.</summary>
+    protected override void OnActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        if (!Results.Done(requestCode, resultCode, data))
+            base.OnActivityResult(requestCode, resultCode, data);
+    }
+
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);

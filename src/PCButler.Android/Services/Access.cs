@@ -1,32 +1,27 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
-using Android.Content;
 using Android.OS;
 
 namespace PCButler.Android;
 
-/// <summary>What the app asks Android for: showing notifications, and "All files access" (to save received files and look through the phone).</summary>
+/// <summary>
+/// What the app asks Android for: showing notifications, and on Android 10 and older, saving
+/// to Download (later Android lets an app add files there freely). The phone's other folders
+/// are reached only through the ones the user picks (see <see cref="Folders"/>).
+/// </summary>
 public static class Access
 {
-    public static bool HasAllFiles =>
-        Build.VERSION.SdkInt >= BuildVersionCodes.R ? global::Android.OS.Environment.IsExternalStorageManager
-            : Permissions.CheckStatusAsync<Permissions.StorageWrite>().GetAwaiter().GetResult() == PermissionStatus.Granted;
+    /// <summary>Received files and files taken out of the vault can be saved to Download.</summary>
+    public static bool CanSaveToDownload =>
+        Build.VERSION.SdkInt > BuildVersionCodes.Q
+        || Permissions.CheckStatusAsync<Permissions.StorageWrite>().GetAwaiter().GetResult() == PermissionStatus.Granted;
 
-    /// <summary>Opens Android's page where "All files access" is switched on for this app.</summary>
-    public static async void AskForAllFiles()
+    /// <summary>Android 10 and older ask before an app writes to Download.</summary>
+    public static async Task<bool> AskToSaveToDownload()
     {
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
-        {
-            var context = Platform.CurrentActivity ?? global::Android.App.Application.Context;
-            var intent = new Intent(global::Android.Provider.Settings.ActionManageAppAllFilesAccessPermission,
-                                    global::Android.Net.Uri.Parse("package:" + context.PackageName));
-            intent.AddFlags(ActivityFlags.NewTask);
-            context.StartActivity(intent);
-        }
-        else
-        {
-            await Permissions.RequestAsync<Permissions.StorageWrite>();
-        }
+        if (CanSaveToDownload)
+            return true;
+        return await Permissions.RequestAsync<Permissions.StorageWrite>() == PermissionStatus.Granted;
     }
 
     /// <summary>Android 13 and later ask before an app shows notifications (Courier's says it is running).</summary>

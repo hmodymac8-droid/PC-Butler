@@ -94,10 +94,13 @@ public static partial class Duplicates
         return string.Concat(tokens);
     }
 
+    /// <summary>How a file is read to compare contents: by its path, or on the phone, through the folder the user chose.</summary>
+    public static Func<string, Stream> OpenFile { get; set; } = File.OpenRead;
+
     private static string FileHash(string path, CancellationToken cancel)
     {
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        using var file = File.OpenRead(path);
+        using var file = OpenFile(path);
         var buffer = new byte[ChunkSize];
         int read;
         while ((read = file.Read(buffer, 0, buffer.Length)) > 0)

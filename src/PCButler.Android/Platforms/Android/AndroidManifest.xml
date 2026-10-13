@@ -12,8 +12,8 @@
 	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 	<uses-permission android:name="android.permission.WAKE_LOCK" />
-	<!-- The Sorter, Duplicates and Storage look at the whole phone: "All files access" on Android 11 and later. -->
-	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+	<!-- Saving to Download on Android 10 and older; later ones let an app add files there freely. The Sorter,
+	     Duplicates and Storage see only the folders the user picks in Android's own folder picker. -->
+	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 </manifest>
