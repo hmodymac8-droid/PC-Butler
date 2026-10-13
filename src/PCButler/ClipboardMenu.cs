@@ -15,33 +15,42 @@ namespace PCButler;
 public static class ClipboardMenu
 {
     /// <summary>
-    /// The menu for one item. paste: given in the list the shortcut opens. hold: told when a
-    /// window of PC Butler's opens on top (a dialog), so that list doesn't close meanwhile.
+    /// The menu for one item. paste: given in the list the shortcut opens. newTag: how a new
+    /// tag is typed there (in the list itself, which would close if a window opened on top);
+    /// without it a small window asks.
     /// </summary>
-    public static ContextMenu For(ClipEntry entry, Window owner, Action? paste = null, Action<bool>? hold = null)
+    public static ContextMenu For(ClipEntry entry, Window owner, Action? paste = null, Action? newTag = null)
     {
         var menu = new ContextMenu();
         if (paste is not null)
-            menu.Items.Add(Bold(Ui.Item("Paste", paste)));
-        menu.Items.Add(Ui.Item("Copy", () =>
+            menu.Items.Add(Bold(Item("Paste", "\uE77F", paste)));
+        menu.Items.Add(Item("Copy", "\uE8C8", () =>
         {
             if (!App.Current.Clips.Copy(entry))
                 Ui.Warn("Clipboard", Ui.T("The clipboard is busy. Try again in a moment."));
         }));
         menu.Items.Add(new Separator());
 
-        menu.Items.Add(Ui.Item(entry.Kind == "image" || entry.Files.Count > 0 && WebSearch.IsPicture(entry.Files[0])
-                                   ? "Search Google for this picture" : "Search with Google", () => SearchGoogle(entry)));
+        var picture = entry.Kind == "image" || entry.Files.Count > 0 && WebSearch.IsPicture(entry.Files[0]);
+        menu.Items.Add(Item(picture ? "Search Google for this picture" : "Search with Google", picture ? "\uE8B3" : "\uE721", () => SearchGoogle(entry)));
         if (entry.Kind == "text" && LinkIn(entry.Text) is { } link)
-            menu.Items.Add(Ui.Item("Open link", () => Shell.Open(link)));
+            menu.Items.Add(Item("Open link", "\uE71B", () => Shell.Open(link)));
         if (entry.Kind == "files" && entry.Files.Count > 0)
-            menu.Items.Add(Ui.Item("Show in File Explorer", () => Shell.Reveal(entry.Files[0])));
+            menu.Items.Add(Item("Show in File Explorer", "\uE838", () => Shell.Reveal(entry.Files[0])));
         menu.Items.Add(new Separator());
 
-        menu.Items.Add(Tags(entry, owner, hold));
-        menu.Items.Add(Ui.Item(entry.Pinned ? "Unpin" : "Pin", () => ClipboardHistory.SetPinned(entry, !entry.Pinned)));
-        menu.Items.Add(Ui.Item("Delete", () => ClipboardHistory.Remove(entry)));
+        menu.Items.Add(Tags(entry, owner, newTag));
+        menu.Items.Add(Item(entry.Pinned ? "Unpin" : "Pin", entry.Pinned ? "\uE77A" : "\uE718", () => ClipboardHistory.SetPinned(entry, !entry.Pinned)));
+        menu.Items.Add(Item("Delete", "\uE74D", () => ClipboardHistory.Remove(entry)));
         return menu;
+    }
+
+    /// <summary>A menu line with its icon.</summary>
+    private static MenuItem Item(string label, string glyph, Action action)
+    {
+        var item = Ui.Item(label, action);
+        item.Icon = Ui.Glyph(glyph, 14, "Muted");
+        return item;
     }
 
     private static MenuItem Bold(MenuItem item)
@@ -51,9 +60,9 @@ public static class ClipboardMenu
     }
 
     /// <summary>The tags submenu: each tag in use, ticked when this item has it, and a new one.</summary>
-    private static MenuItem Tags(ClipEntry entry, Window owner, Action<bool>? hold)
+    private static MenuItem Tags(ClipEntry entry, Window owner, Action? newTag)
     {
-        var tags = new MenuItem { Header = Ui.T(entry.Tags.Count > 0 ? "Tags ({0})" : "Tag", entry.Tags.Count) };
+        var tags = new MenuItem { Header = Ui.T(entry.Tags.Count > 0 ? "Tags ({0})" : "Tag", entry.Tags.Count), Icon = Ui.Glyph("\uE8EC", 14, "Muted") };
         foreach (var tag in ClipboardHistory.AllTags().Take(15))
         {
             var has = entry.Tags.Any(mine => mine.Equals(tag, StringComparison.CurrentCultureIgnoreCase));
@@ -63,32 +72,33 @@ public static class ClipboardMenu
         }
         if (tags.Items.Count > 0)
             tags.Items.Add(new Separator());
-        tags.Items.Add(Ui.Item("New tag…", () =>
+        tags.Items.Add(Item("New tag…", "\uE710", () =>
         {
-            hold?.Invoke(true);
-            try
+            if (newTag is not null)
             {
-                var typed = TextDialog.Ask(owner, "Tag", Ui.T("A word to find this item by, like “work” or “address”. Search for #word to see only what has it."));
-                if (typed is not null)
-                {
-                    foreach (var tag in typed.Split(',', StringSplitOptions.RemoveEmptyEntries))
-                        ClipboardHistory.SetTag(entry, tag, true);
-                }
+                newTag();
+                return;
             }
-            finally
-            {
-                hold?.Invoke(false);
-            }
+            var typed = TextDialog.Ask(owner, "Tag", Ui.T("A word to find this item by, like “work” or “address”. Search for #word to see only what has it."));
+            if (typed is not null)
+                AddTags(entry, typed);
         }));
         if (entry.Tags.Count > 0)
         {
-            tags.Items.Add(Ui.Item("Remove all tags", () =>
+            tags.Items.Add(Item("Remove all tags", "\uE894", () =>
             {
                 foreach (var tag in entry.Tags.ToList())
                     ClipboardHistory.SetTag(entry, tag, false);
             }));
         }
         return tags;
+    }
+
+    /// <summary>Tags as typed: several at once, separated by commas.</summary>
+    public static void AddTags(ClipEntry entry, string typed)
+    {
+        foreach (var tag in typed.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            ClipboardHistory.SetTag(entry, tag, true);
     }
 
     /// <summary>A text that is just a web address.</summary>
