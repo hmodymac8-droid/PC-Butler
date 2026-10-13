@@ -13,7 +13,7 @@ public sealed class CourierPage : ContentPage
 {
     private readonly VerticalStackLayout welcome = new() { Spacing = 0 };
     private readonly VerticalStackLayout running = new() { Spacing = 0 };
-    private readonly Entry welcomeId = new() { Placeholder = "K7M-2QX", FontSize = 20, Keyboard = Keyboard.Text, HorizontalTextAlignment = TextAlignment.Center };
+    private readonly Entry welcomeId = new() { Placeholder = "000 000 000", FontSize = 20, Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
     private readonly Label statusDot = new() { Text = "●", FontSize = 14, VerticalOptions = LayoutOptions.Center };
     private readonly Label statusText = Theme.Body("", 16);
     private readonly Label statusDetail = Theme.Faint("");
@@ -126,7 +126,7 @@ public sealed class CourierPage : ContentPage
         var number = Portal.NormalizeNumber(welcomeId.Text ?? "");
         if (!Portal.IsNumber(number))
         {
-            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: six letters and digits, like K7M-2QX."), Tr.T("OK"));
+            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
             return;
         }
         Courier.Update(settings => { settings.Role = PortalSettings.Client; settings.HostNumber = number; settings.Devices = []; });
