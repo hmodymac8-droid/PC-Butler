@@ -6,86 +6,98 @@ using System.Net;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using PCButler.Core;
 
 namespace PCButler;
 
 /// <summary>
-/// Portal: files between this PC and a phone over the local network. Start it, scan the
-/// QR code with the phone, compare the code and press Allow; then the phone's browser can
-/// send files here and fetch the ones offered to it.
+/// Portal: files between this PC and other PCs running PC Butler, over the local network.
+/// Start it on both, pair them once by comparing a six-digit code, then send files and
+/// folders to a PC from the list.
 /// </summary>
 public sealed class PortalPage : Page
 {
     private readonly Button startButton;
-    private readonly StackPanel connect = new() { Margin = new Thickness(24, 18, 24, 20) };
+    private readonly StackPanel status = new() { Margin = new Thickness(24, 18, 24, 18) };
+    private readonly StackPanel asks = new();
     private readonly TextBlock firewallText = Ui.Muted("", 12);
     private readonly Button firewallButton;
     private readonly TextBlock folderText = Ui.Muted("", 12);
     private readonly ComboBox addresses = new() { Width = 230 };
-    private readonly ListView offerList;
+    private readonly ListView deviceList;
+    private readonly TextBox addressBox;
+    private readonly TextBlock queuedText = Ui.Text("", 13, "Primary");
     private readonly ListView transferList;
     private readonly ObservableCollection<Row> transferRows = [];
     private readonly Dictionary<PortalTransfer, (Row Row, long Done, DateTime At, double Speed)> shown = [];
-    /// <summary>What the PC offers the phone. Kept between sessions, so a restart doesn't empty the list.</summary>
-    private readonly List<string> offered = [];
+    /// <summary>Pairings this PC started; they stay on screen until answered.</summary>
+    private readonly List<PortalPairing> started = [];
+    /// <summary>Files handed over from the drop zone, waiting for a PC to be chosen.</summary>
+    private readonly List<string> queued = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool starting;
 
-    private static PortalSession? Session => Portal.Current is { State: not PortalState.Stopped } session ? session : null;
+    private static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
-    public PortalPage(MainWindow main) : base(main, "Portal", "Files between this PC and your phone, over your own Wi-Fi.")
+    public PortalPage(MainWindow main) : base(main, "Portal", "Files between your PCs, straight over your own network.")
     {
         startButton = AddAction("Start Portal", Toggle, accent: true);
         var page = new StackPanel();
 
-        // --- connect a phone, beside the settings ---
-        var connectCard = new CardPanel("Connect a phone", "") { Margin = new Thickness(0, 0, 6, 18) };
-        connectCard.SetBody(connect);
+        // --- requests from other PCs come first: they wait for an answer ---
+        page.Children.Add(asks);
+
+        // --- this PC, beside the settings ---
+        var statusCard = new CardPanel("This PC", "") { Margin = new Thickness(0, 0, 6, 18) };
+        statusCard.SetBody(status);
 
         var rows = new StackPanel();
         firewallButton = Ui.Button(Ui.T("Allow (asks for administrator rights)"), AllowFirewall);
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Windows firewall"), 13, weight: FontWeights.Bold), firewallText, firewallButton, first: true));
-        rows.Children.Add(Ui.SettingRow(Ui.T("Encrypted connection"),
-                                        Ui.T("Hides the files from other devices on the same Wi-Fi. The phone's browser warns once that it does not know this PC's "
-                                             + "certificate; choose to continue. Off is fine on your own home network. Applies the next time Portal starts."),
-                                        Ui.Switch("", main.Config.Portal.Secure, on => Main.UpdateConfig(config => config.Portal.Secure = on))));
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Received files go to"), 13, weight: FontWeights.Bold), folderText,
                                         Ui.Row(6, Ui.Button(Ui.T("Open"), OpenFolder), Ui.Button(Ui.T("Change…"), ChangeFolder))));
-        rows.Children.Add(Ui.SettingRow(Ui.T("Network address"), Ui.T("Which of this PC's connections the phone uses. It must be the Wi-Fi the phone is on."), addresses));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Network address"), Ui.T("Which of this PC's connections Portal uses. It must be on the same network as the other PC."), addresses));
         var settingsCard = new CardPanel("Settings", "") { Margin = new Thickness(6, 0, 0, 18) };
         settingsCard.SetBody(rows);
 
         var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
-        top.Children.Add(connectCard.At(0, 0));
+        top.Children.Add(statusCard.At(0, 0));
         top.Children.Add(settingsCard.At(0, 1));
         page.Children.Add(top);
 
-        // --- what the phone may fetch ---
-        var offerCard = new CardPanel("Send to the phone", "") { Margin = new Thickness(0, 0, 0, 18) };
-        offerCard.Controls.Children.Add(Ui.Button(Ui.T("Add files…"), AddFiles));
-        offerCard.Controls.Children.Add(Ui.Button(Ui.T("Add folder…"), AddFolder).Margin(6));
-        offerCard.Controls.Children.Add(Ui.Button(Ui.T("Remove from list"), RemoveOffers).Margin(6));
-        offerList = Ui.List(("Name", 340, "PlainCell"), ("Kind", 110), ("Size", 110), ("Where", 460));
-        offerList.MinHeight = 120;
-        offerList.AllowDrop = true;
-        offerList.Drop += (_, e) =>
+        // --- the other PCs ---
+        var deviceCard = new CardPanel("Other PCs", "") { Margin = new Thickness(0, 0, 0, 18) };
+        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Send files…"), SendFiles, accent: true));
+        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Send folder…"), SendFolder).Margin(6));
+        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Pair…"), PairSelected).Margin(6));
+        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Accept automatically: on/off"), ToggleAuto).Margin(6));
+        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Forget"), ForgetSelected).Margin(6));
+        var footer = deviceCard.AddFooter();
+        addressBox = Ui.Field(width: 210, hint: "192.168.1.20:50000");
+        addressBox.FlowDirection = FlowDirection.LeftToRight;
+        footer.Children.Add(Ui.Row(8, Ui.Muted(Ui.T("Not in the list? Type the address the other PC shows:"), 12), addressBox, Ui.Button(Ui.T("Find"), FindByAddress)));
+        footer.Children.Add(queuedText.Dock(Dock.Right));
+        deviceList = Ui.List(("PC", 300, "PlainCell"), ("Status", 170), ("Trust", 250), ("Address", 220));
+        deviceList.MinHeight = 130;
+        deviceList.SelectionMode = SelectionMode.Single;
+        deviceList.AllowDrop = true;
+        deviceList.Drop += (_, e) =>
         {
+            // Dropping files on a PC's row sends them to that PC.
             if (e.Data.GetData(DataFormats.FileDrop) is string[] dropped)
-                Offer(dropped);
+                SendTo(Ui.RowAt(e.OriginalSource)?.Tag as PortalPeer ?? Chosen(), dropped);
         };
-        offerCard.SetBody(offerList);
-        page.Children.Add(offerCard);
+        deviceCard.SetBody(deviceList);
+        page.Children.Add(deviceCard);
 
         // --- what is moving, and what has moved ---
         var transferCard = new CardPanel("Transfers", "");
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Cancel selected"), CancelSelected));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Margin(6));
-        transferList = Ui.List(("Name", 340, "PlainCell"), ("Direction", 130), ("Progress", 190), ("Speed", 110), ("Status", 250));
+        transferList = Ui.List(("Name", 320, "PlainCell"), ("Direction", 190), ("Progress", 200), ("Speed", 110), ("Status", 300));
         transferList.MinHeight = 160;
         transferList.ItemsSource = transferRows;
         transferCard.SetBody(transferList);
@@ -95,21 +107,24 @@ public sealed class PortalPage : Page
 
         timer.Tick += (_, _) => ShowTransfers();
         IsVisibleChanged += (_, _) => timer.IsEnabled = IsVisible;
+        // A node started earlier (the window was closed to the tray meanwhile) is picked up again.
+        if (Node is { } running)
+            running.Changed += OnChanged;
         ShowAll();
     }
 
     public override void Shown() => ShowAll();
 
-    /// <summary>Offer files from elsewhere in the program (the drop zone).</summary>
-    public void Offer(IEnumerable<string> paths)
+    private void OnChanged() => Dispatcher.BeginInvoke(ShowAll);
+
+    /// <summary>Files from elsewhere in the program (the drop zone): sent at once if there is one PC to send to, otherwise kept until one is chosen.</summary>
+    public void Queue(IEnumerable<string> paths)
     {
-        foreach (var path in paths.Select(Path.GetFullPath))
-        {
-            if ((File.Exists(path) || Directory.Exists(path)) && !offered.Contains(path, StringComparer.OrdinalIgnoreCase))
-                offered.Add(path);
-        }
-        SyncOffers();
-        ShowOffers();
+        queued.AddRange(paths.Where(path => File.Exists(path) || Directory.Exists(path)));
+        var ready = Node?.Peers.Where(peer => peer is { Trusted: true, Online: true }).ToList() ?? [];
+        if (ready.Count == 1)
+            SendTo(ready[0], []);
+        ShowAll();
     }
 
     // --- starting and stopping ---
@@ -118,18 +133,19 @@ public sealed class PortalPage : Page
     {
         if (starting)
             return;
-        if (Session is { } running)
+        if (Node is { } running)
         {
+            running.Changed -= OnChanged;
             await running.Stop();
             ShowAll();
             return;
         }
-        // The test hook keeps the server on this PC only, so trying the page never opens a port to the network.
+        // The test hook keeps Portal on this PC only, so trying the page never opens a port to the network.
         var loopback = Environment.GetEnvironmentVariable("PCBUTLER_PORTAL_LOOPBACK") == "1";
         var address = loopback ? IPAddress.Loopback : (addresses.SelectedItem as ComboBoxItem)?.Tag as IPAddress;
         if (address is null)
         {
-            Ui.Info("Portal", Ui.T("This PC is not connected to a network. Connect it to the same Wi-Fi as the phone, then start Portal."));
+            Ui.Info("Portal", Ui.T("This PC is not connected to a network. Connect it to the same network as the other PC, then start Portal."));
             return;
         }
         starting = true;
@@ -137,10 +153,11 @@ public sealed class PortalPage : Page
         {
             var settings = Main.Config.Portal;
             Portal.ClearParts(Portal.ReceiveFolder(settings));
-            var session = await PortalSession.Start(settings, address);
-            session.Changed += () => Dispatcher.BeginInvoke(ShowAll);
-            Portal.Current = session;
-            SyncOffers();
+            var node = await PortalNode.Start(settings, address, () => Dispatcher.BeginInvoke(() =>
+                Main.UpdateConfig(config => config.Portal.Devices = settings.Devices.ToList())), discovery: !loopback);
+            node.Changed += OnChanged;
+            node.Attention += App.Current.PortalNeedsAttention;
+            Portal.Current = node;
         }
         catch (IOException error)
         {
@@ -153,101 +170,105 @@ public sealed class PortalPage : Page
         ShowAll();
     }
 
-    private void SyncOffers()
-    {
-        if (Session is not { } session)
-            return;
-        offered.RemoveAll(path => session.Offer(path) is null);
-        foreach (var stale in session.Offers.Where(offer => !offered.Contains(offer.Path, StringComparer.OrdinalIgnoreCase)).ToList())
-            session.RemoveOffer(stale.Id);
-    }
-
     // --- showing ---
 
     private void ShowAll()
     {
-        var session = Session;
-        startButton.Content = Ui.T(session is null ? "Start Portal" : "Stop Portal");
-        ShowConnect(session);
-        ShowSettings(session);
-        ShowOffers();
+        var node = Node;
+        startButton.Content = Ui.T(node is null ? "Start Portal" : "Stop Portal");
+        ShowStatus(node);
+        ShowAsks(node);
+        ShowSettings(node);
+        ShowDevices(node);
         ShowTransfers();
     }
 
-    private void ShowConnect(PortalSession? session)
+    private void ShowStatus(PortalNode? node)
     {
-        connect.Children.Clear();
-        if (session is null)
+        status.Children.Clear();
+        if (node is null)
         {
-            connect.Children.Add(Ui.Text(Ui.T("Portal is off"), 18, weight: FontWeights.SemiBold));
-            connect.Children.Add(Ui.Muted(Ui.T("Press Start Portal, then scan the code with your phone's camera. The phone needs no app: its browser opens a "
-                                               + "page served by this PC."), 13, wrap: true).Margin(0, 8, 0, 0));
-            connect.Children.Add(Ui.Muted(Ui.T("Files go straight between the two devices over your network. Nothing is uploaded to the internet, and "
-                                               + "nothing listens while Portal is off."), 13, wrap: true).Margin(0, 8, 0, 0));
+            status.Children.Add(Ui.Text(Ui.T("Portal is off"), 18, weight: FontWeights.SemiBold));
+            status.Children.Add(Ui.Muted(Ui.T("Start Portal here and on the other PC. The two find each other on the network; pair them once, then send files "
+                                              + "and folders either way."), 13, wrap: true).Margin(0, 8, 0, 0));
+            status.Children.Add(Ui.Muted(Ui.T("Files go straight between the PCs, encrypted, over your own network. Nothing is uploaded to the internet, and "
+                                              + "nothing listens while Portal is off."), 13, wrap: true).Margin(0, 8, 0, 0));
             return;
         }
-        if (session.State == PortalState.Asking)
+        status.Children.Add(Ui.Row(10, Ui.Text("●", 12, "Primary"), Ui.Text(Ui.T("Portal is on"), 18, weight: FontWeights.SemiBold)));
+        status.Children.Add(Ui.Muted(Ui.T("Other PCs see this one as:"), 12).Margin(0, 12, 0, 2));
+        status.Children.Add(Ui.Text(node.Name, 16, weight: FontWeights.SemiBold));
+        status.Children.Add(Ui.Muted(Ui.T("Its address, to type on the other PC if it does not show up there:"), 12, wrap: true).Margin(0, 12, 0, 2));
+        var address = new TextBox
         {
-            connect.Children.Add(Ui.Text(Ui.T("{0} wants to connect", session.Device), 18, weight: FontWeights.SemiBold, wrap: true));
-            connect.Children.Add(Ui.Muted(Ui.T("Allow it only if the phone shows this same code."), 13, wrap: true).Margin(0, 6, 0, 0));
-            var code = new TextBlock
-            {
-                Text = session.Code, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 46, FontWeight = FontWeights.SemiBold,
-                Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight, HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 18, 0, 18),
-            };
-            connect.Children.Add(code);
-            var allow = Ui.Button(Ui.T("Allow"), session.Approve, accent: true);
-            allow.MinWidth = 130;
-            var buttons = Ui.Row(8, allow, Ui.Button(Ui.T("Refuse"), session.Refuse));
-            buttons.HorizontalAlignment = HorizontalAlignment.Center;
-            connect.Children.Add(buttons);
-            return;
-        }
-        if (session.State == PortalState.Connected)
-        {
-            connect.Children.Add(Ui.Row(10, Ui.Text("●", 12, "Primary"), Ui.Text(Ui.T("Connected: {0}", session.Device), 18, weight: FontWeights.SemiBold)));
-            connect.Children.Add(Ui.Muted(Ui.T("The phone can now send files here and fetch the ones in “Send to the phone” below. Keep its page open while "
-                                               + "files are moving."), 13, wrap: true).Margin(0, 8, 0, 14));
-            var disconnect = Ui.Button(Ui.T("Disconnect the phone"), session.Refuse);
-            disconnect.HorizontalAlignment = HorizontalAlignment.Left;
-            connect.Children.Add(disconnect);
-            return;
-        }
-        // Waiting: the QR code, on white so any camera reads it.
-        var picture = new BitmapImage();
-        picture.BeginInit();
-        picture.CacheOption = BitmapCacheOption.OnLoad;
-        picture.StreamSource = new MemoryStream(PortalQr.Png(session.Url));
-        picture.EndInit();
-        var image = new Image { Source = picture, Width = 210, Height = 210 };
-        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
-        connect.Children.Add(new Border
-        {
-            Background = Brushes.White, CornerRadius = new CornerRadius(10), Padding = new Thickness(6), Child = image,
-            HorizontalAlignment = HorizontalAlignment.Center, FlowDirection = FlowDirection.LeftToRight,
-        });
-        var scan = Ui.Text(Ui.T("Scan with the phone's camera"), 15, weight: FontWeights.SemiBold);
-        scan.HorizontalAlignment = HorizontalAlignment.Center;
-        connect.Children.Add(scan.Margin(0, 14, 0, 0));
-        var hint = Ui.Muted(Ui.T("The phone must be on the same Wi-Fi as this PC. The code is a one-time secret: don't share a picture of it."), 12, wrap: true);
-        hint.TextAlignment = TextAlignment.Center;
-        hint.HorizontalAlignment = HorizontalAlignment.Center;
-        connect.Children.Add(hint.Margin(0, 6, 0, 0));
+            Text = $"{node.Address}:{node.Port}", IsReadOnly = true, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Padding = new Thickness(0),
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 16, Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        status.Children.Add(address);
         if (Portal.OnPublicNetwork())
         {
-            var warning = Ui.Text(Ui.T("Windows treats this network as Public, where the firewall keeps other devices out. Portal works on networks "
-                                       + "set to Private (Windows Settings, Network)."), 12, "Amber", wrap: true);
-            warning.TextAlignment = TextAlignment.Center;
-            connect.Children.Add(warning.Margin(0, 10, 0, 0));
+            status.Children.Add(Ui.Text(Ui.T("Windows treats this network as Public, where the firewall keeps other PCs out. Portal works on networks set to "
+                                             + "Private (Windows Settings, Network)."), 12, "Amber", wrap: true).Margin(0, 12, 0, 0));
         }
     }
 
-    private void ShowSettings(PortalSession? session)
+    /// <summary>What waits for an answer: pairings (the code to compare) and files another PC wants to send.</summary>
+    private void ShowAsks(PortalNode? node)
+    {
+        asks.Children.Clear();
+        started.RemoveAll(pairing => pairing.State != "waiting");
+        if (node is null)
+            return;
+        foreach (var pairing in node.Pairings.Where(pairing => pairing.Code.Length > 0))
+        {
+            var code = new TextBlock
+            {
+                Text = pairing.Code, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 34, FontWeight = FontWeights.SemiBold,
+                Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 24, 0),
+            };
+            var match = Ui.Button(Ui.T("They match"), () => node.Confirm(pairing), accent: true);
+            asks.Children.Add(Ask(Ui.T(pairing.Incoming ? "{0} wants to pair with this PC" : "Pairing with {0}", pairing.PeerName),
+                                  Ui.T("Look at the other PC's screen. Press “They match” on both PCs only if it shows this same code. If the codes differ, "
+                                       + "refuse: someone else on the network may be in between."),
+                                  code, match, Ui.Button(Ui.T("Refuse"), () => node.Refuse(pairing))));
+        }
+        foreach (var request in node.Requests)
+        {
+            var accept = Ui.Button(Ui.T("Accept"), () => node.Accept(request.Id), accent: true);
+            asks.Children.Add(Ask(Ui.T("{0} wants to send {1} file(s)", request.PeerName, request.Files),
+                                  $"{request.Name}  ·  {Ui.FormatSize(request.Size)}", null, accept, Ui.Button(Ui.T("Refuse"), () => node.Refuse(request.Id))));
+        }
+    }
+
+    private static Border Ask(string title, string detail, UIElement? lead, params Button[] buttons)
+    {
+        var row = new DockPanel { Margin = new Thickness(24, 16, 24, 16) };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24, 0, 0, 0) };
+        foreach (var button in buttons)
+        {
+            button.MinWidth = 110;
+            actions.Children.Add(button.Margin(actions.Children.Count == 0 ? 0 : 8));
+        }
+        row.Children.Add(actions.Dock(Dock.Right));
+        if (lead is not null)
+            row.Children.Add(lead.Dock(Dock.Right));
+        row.Children.Add(new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { Ui.Text(title, 16, weight: FontWeights.SemiBold, wrap: true), Ui.Muted(detail, 12.5, wrap: true).Margin(0, 4, 0, 0) },
+        });
+        var card = new Border { Child = row, Margin = new Thickness(0, 0, 0, 12) };
+        Widgets.StyleCard(card);
+        card.BorderBrush = Ui.Paint("Primary");
+        return card;
+    }
+
+    private void ShowSettings(PortalNode? node)
     {
         var allowed = Portal.FirewallAllows();
-        firewallText.Text = Ui.T(allowed ? "Phones on private networks are allowed to reach PC Butler."
-                                         : "Windows blocks other devices from reaching PC Butler until it is allowed. This is needed once.");
+        firewallText.Text = Ui.T(allowed ? "Other PCs on private networks are allowed to reach PC Butler."
+                                         : "Windows blocks other PCs from reaching PC Butler until it is allowed. This is needed once, on each PC.");
         firewallButton.Visibility = allowed ? Visibility.Collapsed : Visibility.Visible;
         folderText.Text = Portal.ReceiveFolder(Main.Config.Portal);
         folderText.FlowDirection = FlowDirection.LeftToRight;
@@ -258,35 +279,40 @@ public sealed class PortalPage : Page
             addresses.Items.Add(new ComboBoxItem { Content = $"{address}  ·  {adapter}", Tag = address });
         addresses.SelectedIndex = addresses.Items.Count == 0 ? -1
             : Math.Max(0, addresses.Items.OfType<ComboBoxItem>().ToList().FindIndex(item => Equals(item.Tag, chosen)));
-        addresses.IsEnabled = session is null;
+        addresses.IsEnabled = node is null;
     }
 
-    private void ShowOffers()
+    private void ShowDevices(PortalNode? node)
     {
-        offered.RemoveAll(path => !File.Exists(path) && !Directory.Exists(path));
-        offerList.ItemsSource = offered.Select(path =>
-        {
-            var folder = Directory.Exists(path);
-            long size = 0;
-            try
+        var chosen = Chosen()?.Id;
+        var peers = node?.Peers ?? [];
+        // While Portal is off, the PCs paired before are still listed, so they can be forgotten.
+        var rows = node is null
+            ? Main.Config.Portal.Devices.Select(device => new Row
             {
-                size = folder ? Shredder.Measure([path]).Size : new FileInfo(path).Length;
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                Name = device.Name, Tag = device, Dim = true, Cells = [Ui.T("Portal is off"), Ui.T("Paired"), $"{device.Address}:{device.Port}"],
+            }).ToList()
+            : peers.Select(peer => new Row
             {
-            }
-            return new Row
-            {
-                Name = Path.GetFileName(path.TrimEnd('\\')), Tag = path,
-                Cells = [Ui.T(folder ? "Folder, as a zip" : "File"), Ui.FormatSize(size), Path.GetDirectoryName(path.TrimEnd('\\')) ?? ""],
-            };
-        }).ToList();
+                Name = peer.Name.Length > 0 ? peer.Name : "PC", Tag = peer, Dim = !peer.Online,
+                Cells =
+                [
+                    Ui.T(peer.Online ? "On this network" : "Not seen"),
+                    Ui.T(!peer.Trusted ? "Not paired yet" : peer.AutoAccept ? "Paired, accepts automatically" : "Paired, asks before taking files"),
+                    peer.Address.Length > 0 ? $"{peer.Address}:{peer.Port}" : "",
+                ],
+            }).ToList();
+        deviceList.ItemsSource = rows;
+        deviceList.SelectedItem = rows.FirstOrDefault(row => (row.Tag as PortalPeer)?.Id == chosen) ?? (rows.Count == 1 ? rows[0] : null);
+        queuedText.Text = queued.Count > 0 ? Ui.T("{0} item(s) ready: choose a PC and press Send files", queued.Count) : "";
     }
 
-    /// <summary>The session's transfers with live progress on top, then the log of earlier ones.</summary>
+    private PortalPeer? Chosen() => (deviceList.SelectedItem as Row)?.Tag as PortalPeer;
+
+    /// <summary>The node's transfers with live progress on top, then the log of earlier ones.</summary>
     private void ShowTransfers()
     {
-        var live = Session?.Transfers ?? [];
+        var live = Node?.Transfers ?? [];
         var now = DateTime.UtcNow;
         var index = 0;
         foreach (var transfer in live.Reverse())
@@ -304,17 +330,22 @@ public sealed class PortalPage : Page
             shown[transfer] = entry;
             var active = transfer.State == "active";
             var percent = transfer.Size > 0 ? done * 100 / transfer.Size : 100;
+            var state = Ui.T(transfer.State switch
+            {
+                "waiting" => transfer.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept",
+                "done" => "Done", "cancelled" => "Cancelled", "refused" => "Refused", "failed" => "Failed", _ => "Moving…",
+            });
             entry.Row.Cells =
             [
-                Ui.T(transfer.Incoming ? "From the phone" : "To the phone"),
+                Ui.T(transfer.Incoming ? "From {0}" : "To {0}", transfer.Peer),
                 active ? $"{percent}%  ·  {Ui.FormatSize(done)} / {Ui.FormatSize(transfer.Size)}" : Ui.FormatSize(transfer.Size),
                 active && entry.Speed > 0 ? Ui.FormatSize((long)entry.Speed) + "/s" : "",
-                Ui.T(transfer.State switch { "done" => "Done", "cancelled" => "Cancelled", "failed" => "Failed", _ => "Moving…" }),
+                transfer.Note.Length > 0 ? $"{state}: {transfer.Note}" : state,
             ];
-            entry.Row.Dim = !active;
+            entry.Row.Dim = !transfer.Running;
             index++;
         }
-        // Rows of a session that has ended give way to the log, which holds the same transfers.
+        // Rows of a node that has stopped give way to the log, which holds the same transfers.
         foreach (var gone in shown.Keys.Where(transfer => !live.Contains(transfer)).ToList())
         {
             transferRows.Remove(shown[gone].Row);
@@ -323,7 +354,7 @@ public sealed class PortalPage : Page
         var finished = live.Where(transfer => transfer.State == "done").Select(transfer => (transfer.Name, transfer.Size)).ToList();
         var log = Portal.History().Where(item => !finished.Remove((item.Name, item.Size))).ToList();
         var logRows = transferRows.Where(row => row.Tag is PortalLogEntry).ToList();
-        if (logRows.Count != log.Count || (log.Count > 0 && !ReferenceEquals(logRows[0].Tag, log[0]) && !Equals(logRows[0].Tag, log[0])))
+        if (logRows.Count != log.Count || (log.Count > 0 && !Equals(logRows[0].Tag, log[0])))
         {
             foreach (var row in logRows)
                 transferRows.Remove(row);
@@ -332,7 +363,7 @@ public sealed class PortalPage : Page
                 transferRows.Add(new Row
                 {
                     Name = item.Name, Tag = item, Dim = true,
-                    Cells = [Ui.T(item.Incoming ? "From the phone" : "To the phone"), Ui.FormatSize(item.Size), "", item.Time + "  ·  " + item.Device],
+                    Cells = [Ui.T(item.Incoming ? "From {0}" : "To {0}", item.Device), Ui.FormatSize(item.Size), "", Ui.T("Done") + "  ·  " + item.Time],
                 });
             }
         }
@@ -340,25 +371,136 @@ public sealed class PortalPage : Page
 
     // --- buttons ---
 
-    private void AddFiles()
+    /// <summary>The PC to send to, or null with a word to the user about what is missing.</summary>
+    private PortalPeer? Target()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to offer the phone") };
+        if (Node is null)
+        {
+            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            return null;
+        }
+        var peer = Chosen();
+        if (peer is null)
+            Ui.Info("Portal", Ui.T("Select a PC in the list first."));
+        else if (!peer.Trusted)
+            Ui.Info("Portal", Ui.T("{0} is not paired with this PC yet. Select it and press Pair.", peer.Name));
+        else if (!peer.Online)
+            Ui.Info("Portal", Ui.T("{0} is not on the network right now. Start Portal on it.", peer.Name));
+        else
+            return peer;
+        return null;
+    }
+
+    private void SendTo(PortalPeer? peer, IEnumerable<string> paths)
+    {
+        if (peer is null || Node is not { } node || peer is not { Trusted: true, Online: true })
+        {
+            // Nowhere to send yet: keep them, and say what is missing when asked.
+            queued.AddRange(paths);
+            if (Target() is not { } target)
+            {
+                ShowAll();
+                return;
+            }
+            peer = target;
+            node = Node!;
+            paths = [];
+        }
+        var all = queued.Concat(paths).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        queued.Clear();
+        if (all.Count > 0 && node.Send(peer, all) is null)
+            Ui.Info("Portal", Ui.T("None of those files could be read."));
+        ShowAll();
+    }
+
+    private void SendFiles()
+    {
+        if (Target() is not { } peer)
+            return;
+        if (queued.Count > 0)
+        {
+            SendTo(peer, []);
+            return;
+        }
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", peer.Name) };
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
-            Offer(dialog.FileNames);
+            SendTo(peer, dialog.FileNames);
     }
 
-    private void AddFolder()
+    private void SendFolder()
     {
-        if (Ui.PickFolder(Ui.T("Folder to offer the phone")) is { } folder)
-            Offer([folder]);
+        if (Target() is { } peer && Ui.PickFolder(Ui.T("Folder to send to {0}", peer.Name)) is { } folder)
+            SendTo(peer, [folder]);
     }
 
-    private void RemoveOffers()
+    private async void PairSelected()
     {
-        foreach (var row in Ui.Selected(offerList))
-            offered.Remove((string)row.Tag!);
-        SyncOffers();
-        ShowOffers();
+        if (Node is not { } node)
+        {
+            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            return;
+        }
+        if (Chosen() is not { } peer)
+        {
+            Ui.Info("Portal", Ui.T("Select a PC in the list first."));
+            return;
+        }
+        if (await node.Pair(peer) is { } pairing)
+            started.Add(pairing);
+        else
+            Ui.Warn("Portal", Ui.T("{0} did not answer. Check that Portal is running on it and that its firewall allows PC Butler.", peer.Name));
+        ShowAll();
+    }
+
+    private void ToggleAuto()
+    {
+        if (Node is { } node && Chosen() is { Trusted: true } peer)
+            node.SetAutoAccept(peer.Id, !peer.AutoAccept);
+        else
+            Ui.Info("Portal", Ui.T("Select a paired PC first (with Portal on)."));
+    }
+
+    private void ForgetSelected()
+    {
+        var row = deviceList.SelectedItem as Row;
+        var (id, name) = row?.Tag switch
+        {
+            PortalPeer { Trusted: true } peer => (peer.Id, peer.Name),
+            PortalDevice device => (device.Id, device.Name),
+            _ => ("", ""),
+        };
+        if (id.Length == 0)
+        {
+            Ui.Info("Portal", Ui.T("Select a paired PC first."));
+            return;
+        }
+        if (!Ui.Ask("Portal", Ui.T("Forget {0}? It will have to be paired again before files can go either way.", name)))
+            return;
+        if (Node is { } node)
+            node.Forget(id);
+        else
+            Main.UpdateConfig(config => config.Portal.Devices.RemoveAll(device => device.Id == id));
+        ShowAll();
+    }
+
+    private async void FindByAddress()
+    {
+        if (Node is not { } node)
+        {
+            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            return;
+        }
+        var parts = addressBox.Text.Trim().Split(':');
+        if (parts.Length != 2 || !IPAddress.TryParse(parts[0], out _) || !int.TryParse(parts[1], out var port) || port is < 1 or > 65535)
+        {
+            Ui.Info("Portal", Ui.T("Type the address exactly as the other PC shows it under “This PC”, like 192.168.1.20:50000."));
+            return;
+        }
+        if (await node.AddByAddress(parts[0], port) is null)
+            Ui.Warn("Portal", Ui.T("No PC Butler Portal answered at {0}. Check that Portal is running there and that its firewall allows PC Butler.", addressBox.Text.Trim()));
+        else
+            addressBox.Text = "";
+        ShowAll();
     }
 
     private void CancelSelected()
@@ -389,8 +531,8 @@ public sealed class PortalPage : Page
         if (Ui.PickFolder(Ui.T("Folder for files received through Portal"), Portal.ReceiveFolder(Main.Config.Portal)) is not { } folder)
             return;
         Main.UpdateConfig(config => config.Portal.Folder = folder);
-        ShowSettings(Session);
-        if (Session is not null)
+        ShowSettings(Node);
+        if (Node is not null)
             Ui.Info("Portal", Ui.T("The new folder is used the next time Portal starts."));
     }
 
@@ -402,7 +544,7 @@ public sealed class PortalPage : Page
         {
             if (!AdminHelper.Running)
             {
-                if (!Ui.Ask("Portal", Ui.T("Windows only lets a program accept connections from other devices once an administrator allows it.\n\n"
+                if (!Ui.Ask("Portal", Ui.T("Windows only lets a program accept connections from other PCs once an administrator allows it.\n\n"
                                            + "PC Butler starts its small helper for this, and Windows will ask for your permission. The rule covers PC Butler "
                                            + "only, on private networks only.\n\nAllow it now?"))
                     || !Sensors.StartHelper())
@@ -417,10 +559,13 @@ public sealed class PortalPage : Page
         finally
         {
             firewallButton.IsEnabled = true;
-            ShowSettings(Session);
+            ShowSettings(Node);
         }
     }
 
-    /// <summary>Closing the window leaves Portal running in the tray; it stops with the program or after a while without use.</summary>
-    public override bool CanClose() => true;
+    public override void Closing()
+    {
+        if (Node is { } node)
+            node.Changed -= OnChanged;
+    }
 }

@@ -369,6 +369,16 @@ public partial class App : Application
         tray.Text = text.Length > 127 ? text[..127] : text;
     }
 
+    /// <summary>Another PC asks to pair or to send files: say so, and bring up the Portal page where the answer is given.</summary>
+    public void PortalNeedsAttention(string message) => Dispatcher.BeginInvoke(() =>
+    {
+        if (exiting)
+            return;
+        Notify("{0}", [message]);
+        ShowMainWindow();
+        window?.ShowPage("portal");
+    });
+
     private void Notify(string message, object[] arguments)
     {
         try

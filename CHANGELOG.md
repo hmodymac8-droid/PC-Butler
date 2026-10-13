@@ -3,6 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.13.0
+
+- Portal: send files and whole folders between two PCs running PC Butler, straight over your own network. Nothing goes through the internet.
+- Pair two PCs once by comparing a six-digit code on both screens. Everything sent is encrypted.
+- Progress, speed and Cancel on both PCs; a transfer that loses its connection carries on where it stopped.
+- The drop zone can send what you drop on it to another PC.
+
 ## 1.12.2
 
 - Licence: PC Butler is now proprietary software (all rights reserved). It stays free to download and use. Versions up to 1.12.1 remain under the GPL v3 they were released with.

@@ -109,7 +109,7 @@ public sealed class DropZoneWindow : Window
         });
         vault.IsEnabled = files.Count > 0;
         menu.Items.Add(vault);
-        menu.Items.Add(Ui.Item(Ui.T("Send to the phone (Portal)"), () =>
+        menu.Items.Add(Ui.Item(Ui.T("Send to another PC (Portal)"), () =>
         {
             App.Current.ShowMainWindow();
             App.Current.Workspace?.SendWithPortal(dropped);

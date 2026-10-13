@@ -199,14 +199,14 @@ public sealed partial class MainWindow : Window
         Vault.AddFromOutside(waiting);
     }
 
-    /// <summary>Put items on the Shredder page's list. Nothing is shredded until the user presses Shred there.</summary>
-    /// <summary>Offer files to the phone through Portal (from the drop zone).</summary>
+    /// <summary>Send files to another PC through Portal (from the drop zone).</summary>
     public void SendWithPortal(IEnumerable<string> paths)
     {
         ShowPage("portal");
-        PortalPage.Offer(paths);
+        PortalPage.Queue(paths);
     }
 
+    /// <summary>Put items on the Shredder page's list. Nothing is shredded until the user presses Shred there.</summary>
     public void ShredLater(IEnumerable<string> paths)
     {
         ShowPage("shredder");

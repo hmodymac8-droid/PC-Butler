@@ -2,9 +2,10 @@
 // Copyright (c) 2026 hmodymac8-droid
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.NetworkInformation;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -17,22 +18,46 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace PCButler.Core;
 
-/// <summary>How Portal behaves, as chosen on its page.</summary>
-public sealed class PortalSettings
+/// <summary>A PC that was paired with this one. Its id is the fingerprint of its certificate, which is what "trusted" means.</summary>
+public sealed class PortalDevice
 {
-    /// <summary>Serve the phone's page over an encrypted connection. The phone's browser warns once, because the certificate is the PC's own.</summary>
-    [JsonPropertyName("secure")] public bool Secure { get; set; }
-    /// <summary>Where received files go; "" = "PC Butler Portal" inside Downloads.</summary>
-    [JsonPropertyName("folder")] public string Folder { get; set; } = "";
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    /// <summary>Take what it sends without asking each time.</summary>
+    [JsonPropertyName("auto_accept")] public bool AutoAccept { get; set; }
+    /// <summary>Where it was last seen, to find it again when the network keeps announcements from getting through.</summary>
+    [JsonPropertyName("address")] public string Address { get; set; } = "";
+    [JsonPropertyName("port")] public int Port { get; set; }
 }
 
-/// <summary>One file (or folder) on its way in or out, for the page to show.</summary>
+/// <summary>How Portal behaves, and the PCs it trusts.</summary>
+public sealed class PortalSettings
+{
+    /// <summary>Where received files go; "" = "PC Butler Portal" inside Downloads.</summary>
+    [JsonPropertyName("folder")] public string Folder { get; set; } = "";
+    [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
+}
+
+/// <summary>Another PC running Portal, as this one sees it right now.</summary>
+public sealed class PortalPeer
+{
+    public required string Id { get; init; }
+    public string Name { get; internal set; } = "";
+    public string Address { get; internal set; } = "";
+    public int Port { get; internal set; }
+    public DateTime LastSeen { get; internal set; }
+    public bool Trusted { get; internal set; }
+    public bool AutoAccept { get; internal set; }
+    public bool Online => (DateTime.UtcNow - LastSeen).TotalSeconds < 12;
+}
+
+/// <summary>One batch of files on its way in or out, for the page to show.</summary>
 public sealed class PortalTransfer
 {
     private long done;
@@ -41,35 +66,60 @@ public sealed class PortalTransfer
     public required string Id { get; init; }
     public required string Name { get; init; }
     public required long Size { get; init; }
-    /// <summary>True: the phone is sending it to this PC. False: the phone is fetching it.</summary>
+    public required int Files { get; init; }
+    /// <summary>True: the other PC is sending it here.</summary>
     public required bool Incoming { get; init; }
+    public required string Peer { get; init; }
     public DateTime Started { get; } = DateTime.Now;
-    /// <summary>"active", "done", "failed" or "cancelled".</summary>
+    /// <summary>"waiting" (for the other PC to accept), "active", "done", "failed", "refused" or "cancelled".</summary>
     public string State { get; internal set; } = "active";
-    /// <summary>Where a received file ended up, once it is done.</summary>
+    /// <summary>Why it failed, in the user's language.</summary>
+    public string Note { get; internal set; } = "";
+    /// <summary>Where the received files ended up.</summary>
     public string Path { get; internal set; } = "";
     public long Done => Interlocked.Read(ref done);
     public bool Cancelled => Volatile.Read(ref cancelled) != 0;
-    internal SemaphoreSlim Gate { get; } = new(1, 1);
-    internal string PartFile { get; init; } = "";
+    public bool Running => State is "waiting" or "active";
 
     internal void Add(long bytes) => Interlocked.Add(ref done, bytes);
-    internal void Set(long bytes) => Interlocked.Exchange(ref done, bytes);
 
-    /// <summary>Stop it from this PC. The phone is told the next time it asks or sends.</summary>
+    /// <summary>Stop it from this PC. The other PC is told with its next request.</summary>
     public void Cancel()
     {
-        if (State != "active")
+        if (!Running)
             return;
         Volatile.Write(ref cancelled, 1);
         State = "cancelled";
     }
 }
 
-/// <summary>A file or folder the PC offers for the phone to fetch.</summary>
-public sealed record PortalOffer(string Id, string Path, bool IsFolder, long Size)
+/// <summary>A pairing in progress: both PCs show the same six digits, and each user confirms on their own PC.</summary>
+public sealed class PortalPairing
 {
-    public string Name => System.IO.Path.GetFileName(Path.TrimEnd('\\', '/'));
+    public required string PeerId { get; init; }
+    public required string PeerName { get; init; }
+    /// <summary>"123 456". Empty until both sides have exchanged what the code is made from.</summary>
+    public string Code { get; internal set; } = "";
+    /// <summary>True when the other PC started it.</summary>
+    public required bool Incoming { get; init; }
+    /// <summary>"waiting", "confirmed" (by this PC's user), "refused" or "failed".</summary>
+    public string State { get; internal set; } = "waiting";
+    internal DateTime Started { get; } = DateTime.UtcNow;
+    internal string Commit { get; init; } = "";
+    internal string NonceMine { get; init; } = "";
+    internal string Address { get; init; } = "";
+    internal int Port { get; init; }
+}
+
+/// <summary>Files another PC wants to send, waiting for Accept.</summary>
+public sealed class PortalRequest
+{
+    public required string Id { get; init; }
+    public required string PeerId { get; init; }
+    public required string PeerName { get; init; }
+    public required string Name { get; init; }
+    public required int Files { get; init; }
+    public required long Size { get; init; }
 }
 
 /// <summary>One line of Portal's own log of finished transfers.</summary>
@@ -78,90 +128,107 @@ public sealed record PortalLogEntry(
     [property: JsonPropertyName("size")] long Size, [property: JsonPropertyName("incoming")] bool Incoming,
     [property: JsonPropertyName("device")] string Device, [property: JsonPropertyName("path")] string Path);
 
-public enum PortalState
-{
-    /// <summary>Running, nobody has scanned the code yet.</summary>
-    Waiting,
-    /// <summary>A phone opened the page and waits for Allow on the PC.</summary>
-    Asking,
-    /// <summary>The phone was allowed and can send and fetch.</summary>
-    Connected,
-    Stopped,
-}
-
 /// <summary>
-/// Portal: files between this PC and a phone over the local network, with nothing going
-/// through the internet. While a session runs, PC Butler serves one small web page on the
-/// PC's network address. The phone reaches it by scanning a QR code, which carries a long
-/// random secret; without that secret every request is answered "not found". The first
-/// phone to open the page becomes the session's only device, and it can do nothing until
-/// the user presses Allow on the PC after comparing a four-digit code shown on both.
+/// Portal: files between two PCs running PC Butler, straight over the local network.
 ///
-/// Nothing listens when no session is running, and a session ends by itself after a
-/// quarter of an hour without use.
+/// While it is on, this PC listens on one port and announces itself on the network so
+/// other PCs can list it. Every connection is encrypted, and each PC proves who it is
+/// with its own certificate; a PC's id is that certificate's fingerprint.
+///
+/// Two PCs must be paired before anything can be sent. Pairing shows the same six-digit
+/// code on both screens, made in a way nobody sitting between them on the network can
+/// steer (each side commits to its random part before seeing the other's), and each user
+/// confirms on their own PC. After that the two recognise each other by certificate.
+///
+/// Nothing listens while Portal is off.
 /// </summary>
-public sealed partial class PortalSession
+public sealed partial class PortalNode
 {
-    /// <summary>The phone sends files in pieces of at most this size, so a dropped connection costs little.</summary>
-    public const int ChunkSize = 4 * 1024 * 1024;
-    private static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(15);
-    private const string Cookie = "pcb";
+    /// <summary>Files travel in pieces of this size, so a dropped connection costs little and the transfer picks up where it was.</summary>
+    public const int ChunkSize = 8 * 1024 * 1024;
+    public const int DiscoveryPort = 53531;
+    private const string Api = "/portal/v1";
+    private static readonly TimeSpan RequestLife = TimeSpan.FromMinutes(3);
+
+    private sealed class IncomingJob
+    {
+        public required string Id { get; init; }
+        public required string PeerId { get; init; }
+        public required List<(string Path, long Size)> Files { get; init; }
+        public required PortalTransfer Transfer { get; init; }
+        public string State = "pending"; // pending, accepted, refused
+        public DateTime Asked = DateTime.UtcNow;
+        public readonly Dictionary<string, string> Tops = new(StringComparer.OrdinalIgnoreCase);
+        public readonly HashSet<int> Finished = [];
+        public readonly SemaphoreSlim Gate = new(1, 1);
+    }
 
     private readonly WebApplication app;
+    private readonly X509Certificate2 certificate;
+    private readonly PortalSettings settings;
+    private readonly Action save;
     private readonly object gate = new();
-    private readonly ConcurrentDictionary<string, PortalTransfer> transfers = new();
-    private readonly List<PortalTransfer> order = [];
-    private readonly List<PortalOffer> offers = [];
-    private readonly Timer idle;
-    private string deviceSecret = "";
-    private DateTime lastUse = DateTime.UtcNow;
+    private readonly Dictionary<string, PortalPeer> peers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<PortalTransfer> transfers = [];
+    private readonly List<PortalPairing> pairings = [];
+    private readonly ConcurrentDictionary<string, IncomingJob> jobs = new();
+    private readonly CancellationTokenSource stopping = new();
+    private readonly UdpClient? radio;
+    private bool stopped;
 
-    /// <summary>What the QR code holds: the page's address with the session's secret.</summary>
-    public string Url { get; }
-    public string Token { get; }
-    public bool Secure { get; }
+    /// <summary>This PC's id: the fingerprint of its certificate.</summary>
+    public string Id { get; }
+    public string Name { get; } = Environment.MachineName;
+    public IPAddress Address { get; }
+    public int Port { get; }
     public string Folder { get; }
-    public PortalState State { get; private set; } = PortalState.Waiting;
-    /// <summary>The four digits shown on both screens while the phone waits for Allow.</summary>
-    public string Code { get; private set; } = "";
-    /// <summary>What the phone says it is ("iPhone · Safari").</summary>
-    public string Device { get; private set; } = "";
-    /// <summary>Something changed: the state, the offers or the list of transfers. Raised on a server thread.</summary>
+    /// <summary>Something changed: devices, pairings, requests or transfers. Raised on a background thread.</summary>
     public event Action? Changed;
+    /// <summary>Another PC is asking for something the user must answer (a pairing, or files to accept).</summary>
+    public event Action<string>? Attention;
 
-    private PortalSession(WebApplication app, string url, string token, bool secure, string folder)
+    private PortalNode(WebApplication app, X509Certificate2 certificate, PortalSettings settings, Action save, IPAddress address, int port, UdpClient? radio)
     {
-        (this.app, Url, Token, Secure, Folder) = (app, url, token, secure, folder);
-        idle = new Timer(_ => CheckIdle(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        (this.app, this.certificate, this.settings, this.save, Address, Port, this.radio) = (app, certificate, settings, save, address, port, radio);
+        Id = Portal.Fingerprint(certificate);
+        Folder = Portal.ReceiveFolder(settings);
+        foreach (var device in settings.Devices)
+        {
+            peers[device.Id] = new PortalPeer
+            {
+                Id = device.Id, Name = device.Name, Address = device.Address, Port = device.Port, Trusted = true, AutoAccept = device.AutoAccept,
+            };
+        }
     }
 
     /// <summary>
-    /// Start serving on the given address (one of Portal.LocalAddresses). Port 0 lets Windows
-    /// pick a free one. Throws IOException if the address can't be listened on.
+    /// Start listening on the given address (one of Portal.LocalAddresses). Port 0 lets
+    /// Windows pick a free one. "save" is called when the trusted devices change, to store
+    /// the settings. discovery: false leaves out the network announcements (the tests do).
     /// </summary>
-    public static async Task<PortalSession> Start(PortalSettings settings, IPAddress address, int port = 0)
+    public static async Task<PortalNode> Start(PortalSettings settings, IPAddress address, Action? save = null, int port = 0,
+                                               bool discovery = true, X509Certificate2? certificate = null)
     {
-        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18)).Replace('+', '-').Replace('/', '_');
-        var folder = Portal.ReceiveFolder(settings);
-        Directory.CreateDirectory(folder);
+        certificate ??= Portal.Certificate();
+        Directory.CreateDirectory(Portal.ReceiveFolder(settings));
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
-        if (settings.Secure)
-            builder.WebHost.UseKestrelHttpsConfiguration();
+        builder.WebHost.UseKestrelHttpsConfiguration();
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.AddServerHeader = false;
-            // A little over one piece; anything bigger is not from the page.
             options.Limits.MaxRequestBodySize = ChunkSize + 64 * 1024;
-            options.Listen(address, port, listen =>
+            options.Listen(address, port, listen => listen.UseHttps(new HttpsConnectionAdapterOptions
             {
-                if (settings.Secure)
-                    listen.UseHttps(Portal.Certificate());
-            });
+                ServerCertificate = certificate,
+                // Every caller shows its own certificate. None is signed by an authority; who it is gets checked by fingerprint.
+                ClientCertificateMode = ClientCertificateMode.RequireCertificate,
+                ClientCertificateValidation = (_, _, _) => true,
+            }));
         });
         var app = builder.Build();
-        PortalSession? session = null;
-        app.Run(context => session!.Handle(context));
+        PortalNode? node = null;
+        app.Run(context => node!.Handle(context));
         try
         {
             await app.StartAsync();
@@ -171,11 +238,44 @@ public sealed partial class PortalSession
             await app.DisposeAsync();
             throw new IOException(error.Message, error);
         }
-        var bound = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
-        var url = $"{(settings.Secure ? "https" : "http")}://{address}:{new Uri(bound).Port}/p/{token}";
-        session = new PortalSession(app, url, token, settings.Secure, folder);
-        Log.Info($"Portal started on {address} ({(settings.Secure ? "encrypted" : "plain")})");
-        return session;
+        var bound = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()).Port;
+        UdpClient? radio = null;
+        if (discovery)
+        {
+            try
+            {
+                radio = new UdpClient(AddressFamily.InterNetwork) { EnableBroadcast = true };
+                radio.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                radio.Client.Bind(new IPEndPoint(IPAddress.Any, DiscoveryPort));
+            }
+            catch (SocketException error)
+            {
+                // Without announcements the other PC can still be added by its address.
+                Log.Warning($"Portal can't announce itself: {error.Message}");
+                radio?.Dispose();
+                radio = null;
+            }
+        }
+        node = new PortalNode(app, certificate, settings, save ?? (() => { }), address, bound, radio);
+        if (radio is not null)
+        {
+            _ = Task.Run(node.Listen);
+            _ = Task.Run(node.Announce);
+        }
+        _ = Task.Run(node.Housekeeping);
+        Log.Info($"Portal started on {address}:{bound}");
+        return node;
+    }
+
+    public bool Stopped => stopped;
+
+    public IReadOnlyList<PortalPeer> Peers
+    {
+        get
+        {
+            lock (gate)
+                return peers.Values.OrderByDescending(peer => peer.Trusted).ThenBy(peer => peer.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
     }
 
     public IReadOnlyList<PortalTransfer> Transfers
@@ -183,91 +283,47 @@ public sealed partial class PortalSession
         get
         {
             lock (gate)
-                return order.ToList();
+                return transfers.ToList();
         }
     }
 
-    public IReadOnlyList<PortalOffer> Offers
+    /// <summary>Pairings that are still being settled.</summary>
+    public IReadOnlyList<PortalPairing> Pairings
     {
         get
         {
             lock (gate)
-                return offers.ToList();
+                return pairings.Where(pairing => pairing.State == "waiting").ToList();
         }
     }
 
-    /// <summary>Let the waiting phone in.</summary>
-    public void Approve()
-    {
-        lock (gate)
+    /// <summary>Files other PCs want to send, waiting for Accept.</summary>
+    public IReadOnlyList<PortalRequest> Requests =>
+        jobs.Values.Where(job => job.State == "pending").OrderBy(job => job.Asked).Select(job => new PortalRequest
         {
-            if (State != PortalState.Asking)
-                return;
-            State = PortalState.Connected;
-            lastUse = DateTime.UtcNow;
-        }
-        Log.Info($"Portal: {Device} allowed");
-        Changed?.Invoke();
-    }
+            Id = job.Id, PeerId = job.PeerId, PeerName = job.Transfer.Peer, Name = job.Transfer.Name, Files = job.Files.Count, Size = job.Transfer.Size,
+        }).ToList();
 
-    /// <summary>Turn the phone away (or disconnect it). The next phone to scan the code can ask again.</summary>
-    public void Refuse()
-    {
-        lock (gate)
-        {
-            if (State is not (PortalState.Asking or PortalState.Connected))
-                return;
-            (deviceSecret, Device, Code, State) = ("", "", "", PortalState.Waiting);
-        }
-        Changed?.Invoke();
-    }
-
-    /// <summary>Offer a file or a folder for the phone to fetch. Returns null if it isn't there.</summary>
-    public PortalOffer? Offer(string path)
-    {
-        path = System.IO.Path.GetFullPath(path);
-        var folder = Directory.Exists(path);
-        if (!folder && !File.Exists(path))
-            return null;
-        long size;
-        try
-        {
-            size = folder ? FilesUnder(path).Sum(file => new FileInfo(file).Length) : new FileInfo(path).Length;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-        PortalOffer offer;
-        lock (gate)
-        {
-            if (offers.FirstOrDefault(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase)) is { } already)
-                return already;
-            offer = new PortalOffer(NewId(), path, folder, size);
-            offers.Add(offer);
-            lastUse = DateTime.UtcNow;
-        }
-        Changed?.Invoke();
-        return offer;
-    }
-
-    public void RemoveOffer(string id)
-    {
-        lock (gate)
-            offers.RemoveAll(offer => offer.Id == id);
-        Changed?.Invoke();
-    }
-
-    /// <summary>Stop serving. Transfers in flight end; unfinished pieces stay for a later session to clear.</summary>
     public async Task Stop()
     {
         lock (gate)
         {
-            if (State == PortalState.Stopped)
+            if (stopped)
                 return;
-            State = PortalState.Stopped;
+            stopped = true;
         }
-        idle.Dispose();
+        stopping.Cancel();
+        radio?.Dispose();
+        // Remember where the trusted PCs were last seen, to find them again next time.
+        lock (gate)
+        {
+            foreach (var device in settings.Devices)
+            {
+                if (peers.TryGetValue(device.Id, out var peer) && peer.Address.Length > 0 && peer.Port > 0)
+                    (device.Address, device.Port) = (peer.Address, peer.Port);
+            }
+        }
+        save();
         foreach (var transfer in Transfers)
             transfer.Cancel();
         try
@@ -283,455 +339,829 @@ public sealed partial class PortalSession
         Changed?.Invoke();
     }
 
-    private void CheckIdle()
+    private static string NewId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(10)).ToLowerInvariant();
+
+    private void Raise() => Changed?.Invoke();
+
+    // --- finding other PCs ---
+
+    private sealed record Beacon(
+        [property: JsonPropertyName("app")] string App, [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("port")] int Port);
+
+    /// <summary>Say "here I am" to the local network every couple of seconds.</summary>
+    private async Task Announce()
     {
-        bool stale;
-        lock (gate)
-            stale = State != PortalState.Stopped && DateTime.UtcNow - lastUse > IdleLimit && order.All(transfer => transfer.State != "active");
-        if (stale)
-            _ = Stop();
+        var packet = JsonSerializer.SerializeToUtf8Bytes(new Beacon("pcbutler-portal", Id, Name, Port));
+        while (!stopping.IsCancellationRequested)
+        {
+            foreach (var target in Portal.BroadcastAddresses(Address))
+            {
+                try
+                {
+                    await radio!.SendAsync(packet, new IPEndPoint(target, DiscoveryPort), stopping.Token);
+                }
+                catch (Exception error) when (error is SocketException or ObjectDisposedException or OperationCanceledException)
+                {
+                }
+            }
+            try
+            {
+                await Task.Delay(2000, stopping.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
     }
 
-    private static string NewId() => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
-
-    private static IEnumerable<string> FilesUnder(string folder) =>
-        Directory.EnumerateFiles(folder, "*", new EnumerationOptions
+    private async Task Listen()
+    {
+        while (!stopping.IsCancellationRequested)
         {
-            RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint,
-        });
+            try
+            {
+                var packet = await radio!.ReceiveAsync(stopping.Token);
+                if (packet.Buffer.Length > 600)
+                    continue;
+                var beacon = JsonSerializer.Deserialize<Beacon>(packet.Buffer);
+                if (beacon is { App: "pcbutler-portal", Port: > 0 and < 65536 } && IdPattern().IsMatch(beacon.Id) && beacon.Id != Id)
+                    Seen(beacon.Id, Portal.CleanLabel(beacon.Name), packet.RemoteEndPoint.Address.ToString(), beacon.Port);
+            }
+            catch (Exception error) when (error is JsonException or SocketException)
+            {
+                // Not one of ours, or the network hiccuped.
+            }
+            catch (Exception error) when (error is ObjectDisposedException or OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
 
-    // --- the phone's requests ---
+    private void Seen(string id, string name, string address, int port)
+    {
+        bool isNew;
+        lock (gate)
+        {
+            isNew = !peers.TryGetValue(id, out var peer) || !peer.Online || peer.Address != address || peer.Port != port;
+            peer ??= peers[id] = new PortalPeer { Id = id };
+            // An announcement is not proof of who sent it, so it never renames a PC that is already trusted.
+            if (!peer.Trusted || peer.Name.Length == 0)
+                peer.Name = name;
+            (peer.Address, peer.Port, peer.LastSeen) = (address, port, DateTime.UtcNow);
+        }
+        if (isNew)
+            Raise();
+    }
 
-    [GeneratedRegex("^[A-Za-z0-9_-]{8,40}$")] private static partial Regex IdPattern();
+    /// <summary>
+    /// Look for a PC at an address typed by the user, for networks that keep announcements
+    /// from getting through. Returns it, or null if no Portal answers there.
+    /// </summary>
+    public async Task<PortalPeer?> AddByAddress(string host, int port)
+    {
+        try
+        {
+            using var client = Client(host, port, expectedId: null, out var seen);
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+            limit.CancelAfter(TimeSpan.FromSeconds(6));
+            var who = await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
+            var id = seen();
+            if (id is null || id == Id || who.GetProperty("id").GetString() != id)
+                return null;
+            Seen(id, Portal.CleanLabel(who.GetProperty("name").GetString() ?? ""), host, port);
+            lock (gate)
+                return peers[id];
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
-    private static bool Same(string a, string b) =>
-        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
+    /// <summary>Trusted PCs whose announcements don't arrive are asked directly now and then; old requests are dropped.</summary>
+    private async Task Housekeeping()
+    {
+        while (!stopping.IsCancellationRequested)
+        {
+            List<PortalPeer> quiet;
+            lock (gate)
+                quiet = peers.Values.Where(peer => peer.Trusted && !peer.Online && peer.Address.Length > 0 && peer.Port > 0).ToList();
+            foreach (var peer in quiet)
+            {
+                try
+                {
+                    using var client = Client(peer.Address, peer.Port, peer.Id, out _);
+                    using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+                    limit.CancelAfter(TimeSpan.FromSeconds(3));
+                    using var answer = await client.GetAsync($"{Api}/who", limit.Token);
+                    if (answer.IsSuccessStatusCode)
+                    {
+                        peer.LastSeen = DateTime.UtcNow;
+                        Raise();
+                    }
+                }
+                catch (Exception error) when (error is HttpRequestException or OperationCanceledException)
+                {
+                }
+            }
+            var changed = false;
+            foreach (var job in jobs.Values.Where(job => job.State == "pending" && DateTime.UtcNow - job.Asked > RequestLife))
+            {
+                (job.State, job.Transfer.State, changed) = ("refused", "refused", true);
+            }
+            lock (gate)
+            {
+                foreach (var pairing in pairings.Where(pairing => pairing.State == "waiting" && DateTime.UtcNow - pairing.Started > RequestLife))
+                    (pairing.State, changed) = ("failed", true);
+            }
+            if (changed)
+                Raise();
+            try
+            {
+                await Task.Delay(8000, stopping.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    // --- talking to another PC ---
+
+    /// <summary>
+    /// A connection to another PC that shows this PC's certificate and only goes through if
+    /// the other end shows the expected one. With no expectation (while pairing) any
+    /// certificate is let through and "seen" tells afterwards whose it was.
+    /// </summary>
+    private HttpClient Client(string host, int port, string? expectedId, out Func<string?> seen)
+    {
+        string? remote = null;
+        seen = () => remote;
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5), ConnectTimeout = TimeSpan.FromSeconds(6), UseProxy = false, AllowAutoRedirect = false,
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                ClientCertificates = [certificate],
+                LocalCertificateSelectionCallback = (_, _, _, _, _) => certificate,
+                RemoteCertificateValidationCallback = (_, shown, _, _) =>
+                {
+                    if (shown is null)
+                        return false;
+                    remote = Portal.Fingerprint(shown);
+                    return expectedId is null || string.Equals(remote, expectedId, StringComparison.OrdinalIgnoreCase);
+                },
+            },
+        };
+        return new HttpClient(handler) { BaseAddress = new Uri($"https://{host}:{port}"), Timeout = Timeout.InfiniteTimeSpan };
+    }
+
+    // --- pairing ---
+
+    /// <summary>
+    /// The six digits both screens show. They depend on both certificates and on a random
+    /// part from each side; the starting side fixes its part (by sending only its hash)
+    /// before it sees the other's, so neither side, nor anyone between them, can steer the result.
+    /// </summary>
+    public static string PairingCode(string starterId, string answererId, string starterNonce, string answererNonce)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"pcbutler-portal-pair|{starterId.ToUpperInvariant()}|{answererId.ToUpperInvariant()}|{starterNonce}|{answererNonce}"));
+        var number = BitConverter.ToUInt32(hash, 0) % 1_000_000;
+        return $"{number / 1000:000} {number % 1000:000}";
+    }
+
+    private static string HashOf(string nonce) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(nonce)));
+
+    /// <summary>
+    /// Start pairing with a PC from the list. Returns once both sides can show the code;
+    /// the user then compares it with the other screen and calls Confirm or Refuse.
+    /// Returns null if the other PC can't be reached or doesn't play along.
+    /// </summary>
+    public async Task<PortalPairing?> Pair(PortalPeer peer)
+    {
+        var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        try
+        {
+            using var client = Client(peer.Address, peer.Port, expectedId: null, out var seen);
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+            limit.CancelAfter(TimeSpan.FromSeconds(15));
+            using var started = await client.PostAsJsonAsync($"{Api}/pair/start", new { name = Name, port = Port, commit = HashOf(nonce) }, limit.Token);
+            var id = seen();
+            if (!started.IsSuccessStatusCode || id is null || id == Id)
+                return null;
+            var answer = await started.Content.ReadFromJsonAsync<JsonElement>(limit.Token);
+            var theirs = answer.GetProperty("nonce").GetString() ?? "";
+            if (!NoncePattern().IsMatch(theirs))
+                return null;
+            var pairing = new PortalPairing
+            {
+                PeerId = id, PeerName = Portal.CleanLabel(answer.GetProperty("name").GetString() ?? peer.Name), Incoming = false,
+                Code = PairingCode(Id, id, nonce, theirs), Address = peer.Address, Port = peer.Port,
+            };
+            // Only now is this side's random part given away: the other side's is already fixed.
+            using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce }, limit.Token);
+            if (!revealed.IsSuccessStatusCode)
+                return null;
+            lock (gate)
+            {
+                pairings.RemoveAll(old => old.PeerId == id);
+                pairings.Add(pairing);
+            }
+            Raise();
+            return pairing;
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The user saw the same code on both screens: trust that PC from now on.</summary>
+    public void Confirm(PortalPairing pairing)
+    {
+        lock (gate)
+        {
+            if (pairing.State != "waiting" || pairing.Code.Length == 0)
+                return;
+            pairing.State = "confirmed";
+            if (!peers.TryGetValue(pairing.PeerId, out var peer))
+                peer = peers[pairing.PeerId] = new PortalPeer { Id = pairing.PeerId, Address = pairing.Address, Port = pairing.Port };
+            (peer.Trusted, peer.Name) = (true, pairing.PeerName);
+            if (pairing.Address.Length > 0 && pairing.Port > 0)
+                (peer.Address, peer.Port) = (pairing.Address, pairing.Port);
+            settings.Devices.RemoveAll(device => device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
+            settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, Address = peer.Address, Port = peer.Port });
+        }
+        save();
+        Log.Info($"Portal: paired with {pairing.PeerName}");
+        Raise();
+    }
+
+    public void Refuse(PortalPairing pairing)
+    {
+        if (pairing.State == "waiting")
+            pairing.State = "refused";
+        Raise();
+    }
+
+    /// <summary>Stop trusting a PC. It has to be paired again before it can send anything.</summary>
+    public void Forget(string id)
+    {
+        lock (gate)
+        {
+            if (peers.TryGetValue(id, out var peer))
+                (peer.Trusted, peer.AutoAccept) = (false, false);
+            settings.Devices.RemoveAll(device => device.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        }
+        save();
+        Raise();
+    }
+
+    public void SetAutoAccept(string id, bool on)
+    {
+        lock (gate)
+        {
+            if (!peers.TryGetValue(id, out var peer) || !peer.Trusted)
+                return;
+            peer.AutoAccept = on;
+            foreach (var device in settings.Devices.Where(device => device.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                device.AutoAccept = on;
+        }
+        save();
+        Raise();
+    }
+
+    // --- sending ---
+
+    /// <summary>
+    /// Send files and whole folders to a paired PC. Returns at once with the transfer to
+    /// watch; the work happens in the background. Null if nothing in "paths" exists.
+    /// </summary>
+    public PortalTransfer? Send(PortalPeer peer, IEnumerable<string> paths)
+    {
+        var files = new List<(string Source, string Path, long Size)>();
+        var tops = new List<string>();
+        foreach (var path in paths.Select(System.IO.Path.GetFullPath))
+        {
+            try
+            {
+                var name = System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
+                if (File.Exists(path))
+                {
+                    files.Add((path, name, new FileInfo(path).Length));
+                    tops.Add(name);
+                }
+                else if (Directory.Exists(path))
+                {
+                    var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
+                    foreach (var file in Directory.EnumerateFiles(path, "*", options))
+                        files.Add((file, name + "/" + System.IO.Path.GetRelativePath(path, file).Replace('\\', '/'), new FileInfo(file).Length));
+                    tops.Add(name);
+                }
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        if (files.Count == 0)
+            return null;
+        var transfer = new PortalTransfer
+        {
+            Id = NewId(), Name = tops.Count == 1 ? tops[0] : $"{tops[0]} +{tops.Count - 1}", Size = files.Sum(file => file.Size), Files = files.Count,
+            Incoming = false, Peer = peer.Name, State = "waiting",
+        };
+        lock (gate)
+            transfers.Add(transfer);
+        Raise();
+        _ = Task.Run(() => RunSend(peer, transfer, files));
+        return transfer;
+    }
+
+    private async Task RunSend(PortalPeer peer, PortalTransfer transfer, List<(string Source, string Path, long Size)> files)
+    {
+        void Fail(string note)
+        {
+            if (transfer.Running)
+                (transfer.State, transfer.Note) = ("failed", note);
+        }
+
+        using var client = Client(peer.Address, peer.Port, peer.Id, out _);
+        var stop = stopping.Token;
+        try
+        {
+            var offer = new { id = transfer.Id, name = transfer.Name, files = files.Select(file => new { path = file.Path, size = file.Size }) };
+            using (var asked = await client.PostAsJsonAsync($"{Api}/send/offer", offer, stop))
+            {
+                if (asked.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    Fail(Tr.T("the other PC no longer trusts this one; pair them again"));
+                    return;
+                }
+                if ((int)asked.StatusCode == 507)
+                {
+                    Fail(Tr.T("the other PC's disk is too full"));
+                    return;
+                }
+                asked.EnsureSuccessStatusCode();
+            }
+            // Wait for Accept on the other PC.
+            for (var waited = 0; ; waited++)
+            {
+                if (transfer.Cancelled)
+                {
+                    await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                    return;
+                }
+                var state = (await client.GetFromJsonAsync<JsonElement>($"{Api}/send/{transfer.Id}", stop)).GetProperty("state").GetString();
+                if (state == "accepted")
+                    break;
+                if (state != "pending" || waited > RequestLife.TotalSeconds)
+                {
+                    transfer.State = "refused";
+                    return;
+                }
+                await Task.Delay(1000, stop);
+            }
+            transfer.State = "active";
+            Raise();
+
+            var buffer = new byte[ChunkSize];
+            for (var index = 0; index < files.Count; index++)
+            {
+                var (source, _, size) = files[index];
+                await using var file = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
+                long offset = 0;
+                var failures = 0;
+                do
+                {
+                    if (transfer.Cancelled)
+                    {
+                        await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                        return;
+                    }
+                    var count = await ReadFully(file, buffer, offset, (int)Math.Min(ChunkSize, size - offset), stop);
+                    if (count == 0 && offset < size)
+                    {
+                        Fail(Tr.T("a file changed while it was being sent"));
+                        await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                        return;
+                    }
+                    try
+                    {
+                        using var piece = new ByteArrayContent(buffer, 0, count);
+                        using var answer = await client.PutAsync($"{Api}/send/{transfer.Id}/{index}?offset={offset}", piece, stop);
+                        if (answer.StatusCode == HttpStatusCode.Gone)
+                        {
+                            if (transfer.Running)
+                                (transfer.State, transfer.Note) = ("cancelled", Tr.T("stopped on the other PC"));
+                            return;
+                        }
+                        if (answer.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Conflict))
+                            throw new HttpRequestException($"status {(int)answer.StatusCode}");
+                        // Conflict: the other PC has a different amount (a piece half-arrived before); carry on from there.
+                        var received = (await answer.Content.ReadFromJsonAsync<JsonElement>(stop)).GetProperty("received").GetInt64();
+                        transfer.Add(received - offset);
+                        offset = received;
+                        failures = 0;
+                    }
+                    catch (Exception error) when (error is HttpRequestException or IOException)
+                    {
+                        if (++failures > 8)
+                        {
+                            Fail(Tr.T("the connection was lost"));
+                            return;
+                        }
+                        await Task.Delay(Math.Min(8000, 500 << failures), stop);
+                    }
+                }
+                while (offset < size);
+            }
+            transfer.State = "done";
+            Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), transfer.Name, transfer.Size, false, peer.Name, ""));
+        }
+        catch (OperationCanceledException)
+        {
+            transfer.Cancel();
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException)
+        {
+            Fail(error is HttpRequestException ? Tr.T("the other PC could not be reached") : error.Message);
+        }
+        finally
+        {
+            Raise();
+        }
+    }
+
+    /// <summary>Fill the buffer from the file at the given place; returns how much was read.</summary>
+    private static async Task<int> ReadFully(FileStream file, byte[] buffer, long offset, int count, CancellationToken stop)
+    {
+        file.Seek(offset, SeekOrigin.Begin);
+        var total = 0;
+        while (total < count)
+        {
+            var read = await file.ReadAsync(buffer.AsMemory(total, count - total), stop);
+            if (read == 0)
+                break;
+            total += read;
+        }
+        return total;
+    }
+
+    // --- answering other PCs ---
+
+    [GeneratedRegex("^[A-Fa-f0-9]{64}$")] private static partial Regex IdPattern();
+    [GeneratedRegex("^[A-Fa-f0-9]{32}$")] private static partial Regex NoncePattern();
+    [GeneratedRegex("^[a-f0-9]{16,40}$")] private static partial Regex JobPattern();
 
     private static Task Json(HttpContext context, int status, object body)
     {
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers.CacheControl = "no-store";
         return context.Response.WriteAsync(JsonSerializer.Serialize(body));
     }
 
     private async Task Handle(HttpContext context)
     {
-        var parts = (context.Request.Path.Value ?? "").Split('/', StringSplitOptions.RemoveEmptyEntries);
-        // Without the secret from the QR code there is nothing here at all.
-        if (parts.Length < 2 || parts[0] != "p" || !Same(parts[1], Token) || State == PortalState.Stopped)
+        var path = context.Request.Path.Value ?? "";
+        var shown = context.Connection.ClientCertificate;
+        if (!path.StartsWith(Api + "/", StringComparison.Ordinal) || shown is null || stopped)
         {
             context.Response.StatusCode = 404;
             return;
         }
+        var caller = Portal.Fingerprint(shown);
+        var parts = path[(Api.Length + 1)..].Split('/', StringSplitOptions.RemoveEmptyEntries);
         var method = context.Request.Method;
-        var what = parts.Length > 2 ? parts[2] : "";
         try
         {
-            if (what == "" && method == "GET")
+            switch (parts)
             {
-                await Page(context);
+                case ["who"] when method == "GET":
+                    await Json(context, 200, new { id = Id, name = Name });
+                    return;
+                case ["pair", "start"] when method == "POST":
+                    await PairStart(context, caller);
+                    return;
+                case ["pair", "reveal"] when method == "POST":
+                    await PairReveal(context, caller);
+                    return;
+            }
+            // Everything else is only for PCs this one was paired with.
+            PortalPeer? peer;
+            lock (gate)
+                peers.TryGetValue(caller, out peer);
+            if (peer is not { Trusted: true })
+            {
+                await Json(context, 403, new { paired = false });
                 return;
             }
-            if (what == "hello" && method == "POST")
+            lock (gate)
             {
-                await Hello(context);
-                return;
+                peer.LastSeen = DateTime.UtcNow;
+                if (context.Connection.RemoteIpAddress is { } from)
+                    peer.Address = from.MapToIPv4().ToString();
             }
-            // Everything else is only for the one phone that was allowed.
-            var mine = context.Request.Cookies.TryGetValue(Cookie, out var secret) && deviceSecret.Length > 0 && Same(secret ?? "", deviceSecret);
-            if (!mine || State != PortalState.Connected)
+            switch (parts)
             {
-                await Json(context, 403, new { approved = false, waiting = mine && State == PortalState.Asking });
-                return;
-            }
-            var id = parts.Length > 3 ? parts[3] : "";
-            switch (what, method)
-            {
-                case ("state", "GET"):
-                    await Json(context, 200, new
+                case ["send", "offer"] when method == "POST":
+                    await Offer(context, peer);
+                    break;
+                case ["send", var id] when JobPattern().IsMatch(id) && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
+                    if (method == "DELETE")
                     {
-                        approved = true, pc = Environment.MachineName, chunk = ChunkSize,
-                        offers = Offers.Select(offer => new { id = offer.Id, name = offer.Name + (offer.IsFolder ? ".zip" : ""), size = offer.Size, folder = offer.IsFolder }),
-                    });
-                    break;
-                case ("upload", "GET") when IdPattern().IsMatch(id):
-                    if (transfers.TryGetValue(id, out var known) && known.Incoming)
-                        await Json(context, known.Cancelled ? 410 : 200, new { received = known.Done, done = known.State == "done" });
-                    else
-                        await Json(context, 404, new { received = 0 });
-                    break;
-                case ("upload", "PUT") when IdPattern().IsMatch(id):
-                    await Upload(context, id);
-                    break;
-                case ("upload", "DELETE") when IdPattern().IsMatch(id):
-                    if (transfers.TryGetValue(id, out var dropped) && dropped.Incoming && dropped.State == "active")
-                    {
-                        dropped.Cancel();
-                        await dropped.Gate.WaitAsync();
+                        job.Transfer.Cancel();
+                        if (job.State == "pending")
+                            job.State = "refused";
+                        await job.Gate.WaitAsync();
                         try
                         {
-                            TryDelete(dropped.PartFile);
+                            DeleteParts(job);
                         }
                         finally
                         {
-                            dropped.Gate.Release();
+                            job.Gate.Release();
                         }
-                        Changed?.Invoke();
+                        Raise();
                     }
-                    await Json(context, 200, new { });
+                    await Json(context, 200, new { state = job.Transfer.Cancelled ? "cancelled" : job.State });
                     break;
-                case ("file", "GET"):
-                    await Download(context, id);
+                case ["send", var id, var number] when method == "PUT" && JobPattern().IsMatch(id) && int.TryParse(number, out var index)
+                                                       && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
+                    await Piece(context, job, index);
                     break;
                 default:
                     context.Response.StatusCode = 404;
                     break;
             }
         }
-        catch (Exception error) when (error is IOException or OperationCanceledException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or OperationCanceledException or UnauthorizedAccessException or JsonException)
         {
-            // The phone went away mid-request, or the disk refused: the piece is asked for again.
+            // The other PC went away mid-request, or the disk refused: it asks again.
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 500;
         }
     }
 
-    private static Task Page(HttpContext context)
+    /// <summary>Another PC starts pairing: remember the hash of its random part and answer with this side's.</summary>
+    private async Task PairStart(HttpContext context, string caller)
     {
-        context.Response.ContentType = "text/html; charset=utf-8";
-        var headers = context.Response.Headers;
-        headers.CacheControl = "no-store";
-        // The page is self-contained: no scripts, styles, fonts or pictures from anywhere else.
-        headers.ContentSecurityPolicy = "default-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
-        headers.XContentTypeOptions = "nosniff";
-        headers["Referrer-Policy"] = "no-referrer";
-        return context.Response.Body.WriteAsync(Portal.PageHtml).AsTask();
-    }
-
-    /// <summary>The page says who it is. The first phone to do so becomes the session's device and waits for Allow.</summary>
-    private async Task Hello(HttpContext context)
-    {
-        var raise = false;
-        bool approved, known;
-        string code;
+        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var commit = body.TryGetProperty("commit", out var value) ? value.GetString() ?? "" : "";
+        if (!IdPattern().IsMatch(commit) || caller == Id)
+        {
+            await Json(context, 400, new { });
+            return;
+        }
+        var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
         lock (gate)
         {
-            known = context.Request.Cookies.TryGetValue(Cookie, out var secret) && deviceSecret.Length > 0 && Same(secret ?? "", deviceSecret);
-            if (!known && deviceSecret.Length == 0)
+            // One pairing at a time per PC, and only a few waiting in all: nobody can fill the screen with requests.
+            pairings.RemoveAll(old => old.PeerId == caller || old.State != "waiting");
+            if (pairings.Count >= 5)
             {
-                deviceSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-                Code = RandomNumberGenerator.GetInt32(0, 10000).ToString("0000");
-                Device = Portal.DeviceName(context.Request.Headers.UserAgent.ToString());
-                State = PortalState.Asking;
-                lastUse = DateTime.UtcNow;
-                context.Response.Cookies.Append(Cookie, deviceSecret, new CookieOptions
-                {
-                    HttpOnly = true, SameSite = SameSiteMode.Strict, Secure = Secure, Path = "/p/" + Token, IsEssential = true,
-                });
-                (known, raise) = (true, true);
+                context.Response.StatusCode = 429;
+                return;
             }
-            (approved, code) = (known && State == PortalState.Connected, known ? Code : "");
+            pairings.Add(new PortalPairing
+            {
+                PeerId = caller, PeerName = Portal.CleanLabel(body.TryGetProperty("name", out var name) ? name.GetString() ?? "" : ""), Incoming = true,
+                Commit = commit, NonceMine = nonce, Address = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "",
+                // Where it says it listens, so this PC can find it again even if its announcements never arrive.
+                Port = body.TryGetProperty("port", out var port) && port.TryGetInt32(out var listens) && listens is > 0 and < 65536 ? listens : PortOf(caller),
+            });
         }
-        if (raise)
-            Changed?.Invoke();
-        if (!known)
-            await Json(context, 403, new { busy = true });
+        await Json(context, 200, new { name = Name, nonce });
+    }
+
+    private int PortOf(string id)
+    {
+        lock (gate)
+            return peers.TryGetValue(id, out var peer) ? peer.Port : 0;
+    }
+
+    /// <summary>The other PC gives its random part away. If it matches the hash sent first, the code is known and the user is asked.</summary>
+    private async Task PairReveal(HttpContext context, string caller)
+    {
+        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var nonce = body.TryGetProperty("nonce", out var value) ? value.GetString() ?? "" : "";
+        PortalPairing? pairing;
+        lock (gate)
+            pairing = pairings.FirstOrDefault(item => item.PeerId == caller && item is { Incoming: true, State: "waiting", Code.Length: 0 });
+        if (pairing is null || !NoncePattern().IsMatch(nonce) || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(HashOf(nonce)), Encoding.ASCII.GetBytes(pairing.Commit.ToUpperInvariant())))
+        {
+            if (pairing is not null)
+                pairing.State = "failed";
+            await Json(context, 400, new { });
+            return;
+        }
+        pairing.Code = PairingCode(caller, Id, nonce, pairing.NonceMine);
+        await Json(context, 200, new { });
+        Raise();
+        Attention?.Invoke(Tr.T("{0} wants to pair with this PC.", pairing.PeerName));
+    }
+
+    /// <summary>A paired PC says what it wants to send. It waits until the user accepts, unless that PC is accepted automatically.</summary>
+    private async Task Offer(HttpContext context, PortalPeer peer)
+    {
+        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var id = body.GetProperty("id").GetString() ?? "";
+        var files = new List<(string, long)>();
+        foreach (var item in body.GetProperty("files").EnumerateArray())
+        {
+            var (path, size) = (Portal.SafePath(item.GetProperty("path").GetString() ?? ""), item.GetProperty("size").GetInt64());
+            if (size < 0 || files.Count >= 200_000)
+            {
+                await Json(context, 400, new { });
+                return;
+            }
+            files.Add((path, size));
+        }
+        if (!JobPattern().IsMatch(id) || files.Count == 0 || jobs.Values.Count(job => job.PeerId == peer.Id && job.State == "pending") >= 10)
+        {
+            await Json(context, 400, new { });
+            return;
+        }
+        var total = files.Sum(file => file.Item2);
+        if (new DriveInfo(System.IO.Path.GetPathRoot(Folder)!).AvailableFreeSpace < total + (64L << 20))
+        {
+            await Json(context, 507, new { full = true });
+            return;
+        }
+        var transfer = new PortalTransfer
+        {
+            Id = id, Name = Portal.CleanLabel(body.TryGetProperty("name", out var name) ? name.GetString() ?? "" : files[0].Item1), Size = total,
+            Files = files.Count, Incoming = true, Peer = peer.Name, State = "waiting",
+        };
+        var job = new IncomingJob { Id = id, PeerId = peer.Id, Files = files, Transfer = transfer };
+        if (!jobs.TryAdd(id, job))
+        {
+            await Json(context, 409, new { });
+            return;
+        }
+        lock (gate)
+            transfers.Add(transfer);
+        if (peer.AutoAccept)
+            Accept(id);
         else
-            await Json(context, 200, new { approved, code, pc = Environment.MachineName });
+            Attention?.Invoke(Tr.T("{0} wants to send {1} file(s).", peer.Name, files.Count));
+        await Json(context, 200, new { state = job.State });
+        Raise();
+    }
+
+    /// <summary>Take the files a paired PC offered.</summary>
+    public void Accept(string requestId)
+    {
+        if (!jobs.TryGetValue(requestId, out var job) || job.State != "pending")
+            return;
+        (job.State, job.Transfer.State) = ("accepted", "active");
+        Raise();
+    }
+
+    public void Refuse(string requestId)
+    {
+        if (!jobs.TryGetValue(requestId, out var job) || job.State != "pending")
+            return;
+        (job.State, job.Transfer.State) = ("refused", "refused");
+        Raise();
+    }
+
+    private string PartFile(IncomingJob job, int index) => System.IO.Path.Combine(Folder, ".portal-parts", $"{job.Id}-{index}.part");
+
+    private void DeleteParts(IncomingJob job)
+    {
+        for (var index = 0; index < job.Files.Count; index++)
+        {
+            if (!job.Finished.Contains(index))
+                Portal.TryDelete(PartFile(job, index));
+        }
     }
 
     /// <summary>
-    /// One piece of a file from the phone. The piece must start exactly where the last one
-    /// ended; if it doesn't, the answer says where to continue, which is how a broken
-    /// transfer picks up again.
+    /// One piece of one file. It must start exactly where the last one ended; if it doesn't,
+    /// the answer says where to continue, which is how a broken transfer picks up again.
     /// </summary>
-    private async Task Upload(HttpContext context, string id)
+    private async Task Piece(HttpContext context, IncomingJob job, int index)
     {
-        var query = context.Request.Query;
-        if (!long.TryParse(query["size"], out var size) || size < 0 || !long.TryParse(query["offset"], out var offset) || offset < 0)
-        {
-            await Json(context, 400, new { });
-            return;
-        }
-        var transfer = transfers.GetOrAdd(id, _ => new PortalTransfer
-        {
-            Id = id, Name = Portal.SafeName(query["name"].ToString()), Size = size, Incoming = true,
-            PartFile = System.IO.Path.Combine(Folder, ".portal-parts", id + ".part"),
-        });
-        var isNew = false;
-        lock (gate)
-        {
-            if (!order.Contains(transfer))
-            {
-                order.Add(transfer);
-                isNew = true;
-            }
-            lastUse = DateTime.UtcNow;
-        }
-        if (!transfer.Incoming || transfer.Size != size)
-        {
-            await Json(context, 400, new { });
-            return;
-        }
-        if (isNew)
-        {
-            Changed?.Invoke();
-            var drive = new DriveInfo(System.IO.Path.GetPathRoot(Folder)!);
-            if (drive.AvailableFreeSpace < size + (64L << 20))
-            {
-                transfer.State = "failed";
-                Changed?.Invoke();
-                await Json(context, 507, new { full = true });
-                return;
-            }
-        }
-        if (transfer.Cancelled || transfer.State == "failed")
+        if (job.Transfer.Cancelled || job.State == "refused")
         {
             await Json(context, 410, new { });
             return;
         }
-        if (transfer.State == "done")
+        if (job.State != "accepted" || index < 0 || index >= job.Files.Count || !long.TryParse(context.Request.Query["offset"], out var offset) || offset < 0)
         {
-            await Json(context, 200, new { received = size, done = true });
+            await Json(context, 400, new { });
             return;
         }
-        // One piece at a time per file.
-        if (!await transfer.Gate.WaitAsync(0))
-        {
-            await Json(context, 409, new { received = transfer.Done, busy = true });
-            return;
-        }
+        var (path, size) = job.Files[index];
+        await job.Gate.WaitAsync(context.RequestAborted);
         try
         {
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(transfer.PartFile)!);
-            await using (var part = new FileStream(transfer.PartFile, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+            if (job.Finished.Contains(index))
+            {
+                await Json(context, 200, new { received = size, done = true });
+                return;
+            }
+            var partFile = PartFile(job, index);
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(partFile)!);
+            long length;
+            var tooMuch = false;
+            await using (var part = new FileStream(partFile, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
             {
                 if (offset != part.Length)
                 {
-                    transfer.Set(part.Length);
                     await Json(context, 409, new { received = part.Length });
                     return;
                 }
                 part.Seek(0, SeekOrigin.End);
-                var buffer = new byte[1 << 16];
+                var buffer = new byte[1 << 17];
                 var room = size - part.Length;
                 int read;
                 while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
                 {
-                    if (transfer.Cancelled)
+                    if (job.Transfer.Cancelled)
                         break;
                     if (read > room)
                     {
-                        // More than it said it would send: not from the page.
-                        transfer.State = "failed";
+                        // More than it said it would send.
+                        tooMuch = true;
                         break;
                     }
                     await part.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
                     room -= read;
-                    transfer.Add(read);
+                    job.Transfer.Add(read);
                 }
                 await part.FlushAsync();
-                transfer.Set(part.Length);
+                length = part.Length;
             }
-            if (transfer.Cancelled || transfer.State == "failed")
+            if (tooMuch)
             {
-                TryDelete(transfer.PartFile);
-                Changed?.Invoke();
-                await Json(context, transfer.Cancelled ? 410 : 400, new { });
+                (job.Transfer.State, job.Transfer.Note) = ("failed", Tr.T("the other PC sent more than it announced"));
+                DeleteParts(job);
+                Raise();
+                await Json(context, 410, new { });
                 return;
             }
-            if (transfer.Done == size)
+            if (job.Transfer.Cancelled)
             {
-                var destination = Sorter.UniqueDestination(Folder, transfer.Name);
-                File.Move(transfer.PartFile, destination);
-                (transfer.Path, transfer.State) = (destination, "done");
-                Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), transfer.Name, size, true, Device, destination));
-                Log.Info($"Portal received {destination}");
-                Changed?.Invoke();
-            }
-            lock (gate)
-                lastUse = DateTime.UtcNow;
-            await Json(context, 200, new { received = transfer.Done, done = transfer.State == "done" });
-        }
-        finally
-        {
-            transfer.Gate.Release();
-        }
-    }
-
-    /// <summary>The phone fetches an offered file (the browser may ask for a part of it to resume) or a folder as one zip.</summary>
-    private async Task Download(HttpContext context, string id)
-    {
-        PortalOffer? offer;
-        lock (gate)
-        {
-            offer = offers.FirstOrDefault(item => item.Id == id);
-            lastUse = DateTime.UtcNow;
-        }
-        if (offer is null || (!offer.IsFolder && !File.Exists(offer.Path)) || (offer.IsFolder && !Directory.Exists(offer.Path)))
-        {
-            context.Response.StatusCode = 404;
-            return;
-        }
-        var name = offer.Name + (offer.IsFolder ? ".zip" : "");
-        var transfer = transfers.AddOrUpdate("out-" + offer.Id,
-            _ => new PortalTransfer { Id = "out-" + offer.Id, Name = name, Size = offer.Size, Incoming = false },
-            // Fetching it again starts a fresh line; resuming a part keeps the same one.
-            (_, old) => old.State == "active" && !old.Cancelled ? old : new PortalTransfer { Id = "out-" + offer.Id, Name = name, Size = offer.Size, Incoming = false });
-        lock (gate)
-        {
-            if (!order.Contains(transfer))
-                order.Add(transfer);
-        }
-        Changed?.Invoke();
-        var response = context.Response;
-        response.ContentType = offer.IsFolder ? "application/zip" : "application/octet-stream";
-        response.Headers.ContentDisposition = $"attachment; filename*=UTF-8''{Uri.EscapeDataString(name)}";
-        response.Headers.XContentTypeOptions = "nosniff";
-        response.Headers.CacheControl = "no-store";
-        var finished = false;
-        try
-        {
-            if (offer.IsFolder)
-            {
-                await SendZip(context, offer, transfer);
-                finished = !transfer.Cancelled;
-            }
-            else
-            {
-                finished = await SendFile(context, offer, transfer);
-            }
-        }
-        finally
-        {
-            if (transfer.Cancelled)
-                context.Abort();
-            else if (finished)
-            {
-                transfer.State = "done";
-                Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), name, offer.Size, false, Device, offer.Path));
-            }
-            Changed?.Invoke();
-        }
-    }
-
-    [GeneratedRegex(@"^bytes=(\d*)-(\d*)$")] private static partial Regex RangePattern();
-
-    /// <summary>Returns true when the file's last byte has gone out.</summary>
-    private static async Task<bool> SendFile(HttpContext context, PortalOffer offer, PortalTransfer transfer)
-    {
-        await using var file = new FileStream(offer.Path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
-        long start = 0, end = file.Length - 1;
-        var response = context.Response;
-        response.Headers.AcceptRanges = "bytes";
-        var range = RangePattern().Match(context.Request.Headers.Range.ToString());
-        if (range.Success && file.Length > 0)
-        {
-            var (first, last) = (range.Groups[1].Value, range.Groups[2].Value);
-            if (first.Length == 0 && long.TryParse(last, out var tail))
-                start = Math.Max(0, file.Length - tail);
-            else if (long.TryParse(first, out start) && last.Length > 0 && long.TryParse(last, out var until))
-                end = Math.Min(until, end);
-            if (start > end)
-            {
-                response.StatusCode = 416;
-                response.Headers.ContentRange = $"bytes */{file.Length}";
-                return false;
-            }
-            response.StatusCode = 206;
-            response.Headers.ContentRange = $"bytes {start}-{end}/{file.Length}";
-        }
-        response.ContentLength = end - start + 1;
-        file.Seek(start, SeekOrigin.Begin);
-        transfer.Set(start);
-        var buffer = new byte[1 << 17];
-        var left = end - start + 1;
-        while (left > 0 && !transfer.Cancelled)
-        {
-            var read = await file.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, left)), context.RequestAborted);
-            if (read == 0)
-                break;
-            await response.Body.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
-            left -= read;
-            transfer.Add(read);
-        }
-        return left == 0 && end == file.Length - 1;
-    }
-
-    /// <summary>A folder goes as one zip, made as it is sent (stored, not squeezed: on a local network that is the faster way).</summary>
-    private static async Task SendZip(HttpContext context, PortalOffer offer, PortalTransfer transfer)
-    {
-        // The zip writer writes as it goes, which this server only allows when told so.
-        if (context.Features.Get<IHttpBodyControlFeature>() is { } control)
-            control.AllowSynchronousIO = true;
-        var root = System.IO.Path.GetDirectoryName(offer.Path.TrimEnd('\\', '/')) ?? offer.Path;
-        await context.Response.StartAsync();
-        using var zip = new ZipArchive(context.Response.Body, ZipArchiveMode.Create, leaveOpen: true);
-        var buffer = new byte[1 << 17];
-        foreach (var path in FilesUnder(offer.Path))
-        {
-            if (transfer.Cancelled)
+                DeleteParts(job);
+                await Json(context, 410, new { });
                 return;
-            var entry = zip.CreateEntry(System.IO.Path.GetRelativePath(root, path).Replace('\\', '/'), CompressionLevel.NoCompression);
-            try
+            }
+            if (length == size)
             {
-                await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
-                await using var target = entry.Open();
-                int read;
-                while ((read = await file.ReadAsync(buffer, context.RequestAborted)) > 0)
+                var destination = Destination(job, path);
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(destination)!);
+                File.Move(partFile, destination);
+                job.Finished.Add(index);
+                if (job.Finished.Count == job.Files.Count)
                 {
-                    if (transfer.Cancelled)
-                        return;
-                    await target.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
-                    transfer.Add(read);
+                    job.Transfer.State = "done";
+                    job.Transfer.Path = job.Tops.Count == 1 ? job.Tops.Values.First() : Folder;
+                    Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), job.Transfer.Name, job.Transfer.Size, true, job.Transfer.Peer, job.Transfer.Path));
+                    Log.Info($"Portal received {job.Transfer.Name} from {job.Transfer.Peer}");
+                    Raise();
                 }
             }
-            catch (UnauthorizedAccessException)
-            {
-                // A file that can't be read is left out of the zip.
-            }
+            await Json(context, 200, new { received = length, done = length == size });
+        }
+        finally
+        {
+            job.Gate.Release();
         }
     }
 
-    private static void TryDelete(string path)
+    /// <summary>
+    /// Where a received file goes. Each top-level name (a file, or a folder being sent) gets
+    /// a place of its own in the Portal folder that never replaces anything already there;
+    /// everything under a sent folder keeps its place inside it.
+    /// </summary>
+    private string Destination(IncomingJob job, string path)
     {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-        }
+        var segments = path.Split('/');
+        if (!job.Tops.TryGetValue(segments[0], out var top))
+            job.Tops[segments[0]] = top = Sorter.UniqueDestination(Folder, segments[0]);
+        return segments.Length == 1 ? top : System.IO.Path.Combine([top, .. segments[1..]]);
     }
 }
 
-/// <summary>What Portal needs around a session: addresses, the receive folder, the firewall, the log, the QR code's content.</summary>
+/// <summary>What Portal needs around a running node: addresses, the receive folder, the firewall, the log, the certificate.</summary>
 public static partial class Portal
 {
     public const string FirewallRule = "PC Butler Portal";
 
-    /// <summary>The session that is running, if any. There is one at a time.</summary>
-    public static PortalSession? Current { get; set; }
+    /// <summary>The node that is running, if any. There is one at a time.</summary>
+    public static PortalNode? Current { get; set; }
 
     public static string ReceiveFolder(PortalSettings settings) =>
         settings.Folder.Length > 0 ? settings.Folder : System.IO.Path.Combine(ConfigStore.DetectDownloadsFolder(), "PC Butler Portal");
 
-    private static byte[]? pageHtml;
-
-    /// <summary>The phone's page: one file with its styles and script inside, built into the program.</summary>
-    public static byte[] PageHtml
-    {
-        get
-        {
-            if (pageHtml is not null)
-                return pageHtml;
-            using var stream = typeof(Portal).Assembly.GetManifestResourceStream("PCButler.Core.portal.html")!;
-            using var memory = new MemoryStream();
-            stream.CopyTo(memory);
-            return pageHtml = memory.ToArray();
-        }
-    }
+    public static string Fingerprint(System.Security.Cryptography.X509Certificates.X509Certificate certificate) =>
+        Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()));
 
     /// <summary>
     /// The PC's addresses on local networks, the likeliest first: a wired or Wi-Fi adapter
@@ -759,9 +1189,30 @@ public static partial class Portal
         return found.OrderBy(item => item.Item3).Select(item => (item.Item1, item.Item2)).ToList();
     }
 
+    /// <summary>Where to send "here I am" so every PC on the same network hears it: the network's own broadcast address, and the general one.</summary>
+    public static List<IPAddress> BroadcastAddresses(IPAddress local)
+    {
+        var targets = new List<IPAddress>();
+        foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            foreach (var address in adapter.GetIPProperties().UnicastAddresses)
+            {
+                if (!address.Address.Equals(local) || address.IPv4Mask is null)
+                    continue;
+                var (ip, mask) = (address.Address.GetAddressBytes(), address.IPv4Mask.GetAddressBytes());
+                targets.Add(new IPAddress(ip.Select((part, index) => (byte)(part | ~mask[index])).ToArray()));
+            }
+        }
+        if (IPAddress.IsLoopback(local))
+            targets.Add(IPAddress.Loopback);
+        else
+            targets.Add(IPAddress.Broadcast);
+        return targets.Distinct().ToList();
+    }
+
     /// <summary>
     /// True if Windows marks a connected network as Public (a café, an airport). The firewall
-    /// rule Portal asks for covers Private networks only, so on a Public one the phone can't reach it.
+    /// rule Portal asks for covers Private networks only, so on a Public one other PCs can't reach it.
     /// </summary>
     public static bool OnPublicNetwork()
     {
@@ -805,13 +1256,13 @@ public static partial class Portal
         }
     }
 
-    /// <summary>True if the Windows firewall already lets other devices reach this copy of the program. Needs no special rights.</summary>
+    /// <summary>True if the Windows firewall already lets other PCs reach this copy of the program. Needs no special rights.</summary>
     public static bool FirewallAllows(string? program = null) =>
         Netsh("advfirewall", "firewall", "show", "rule", $"name={FirewallRule}", "verbose")
             .Contains(program ?? Environment.ProcessPath ?? "?", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Let devices on Private networks reach this program (administrator only; the helper calls
+    /// Let PCs on Private networks reach this program (administrator only; the helper calls
     /// it). The rule names this program's own file, so it opens nothing for anything else.
     /// </summary>
     public static bool AllowThroughFirewall()
@@ -819,15 +1270,16 @@ public static partial class Portal
         var program = Environment.ProcessPath!;
         Netsh("advfirewall", "firewall", "delete", "rule", $"name={FirewallRule}");
         Netsh("advfirewall", "firewall", "add", "rule", $"name={FirewallRule}", "dir=in", "action=allow", $"program={program}",
-              "protocol=TCP", "profile=private", "enable=yes");
+              "profile=private", "enable=yes");
         return FirewallAllows(program);
     }
 
     [GeneratedRegex(@"[\x00-\x1f<>:""/\\|?*]")] private static partial Regex Unsafe();
     [GeneratedRegex(@"^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$", RegexOptions.IgnoreCase)] private static partial Regex Reserved();
+    [GeneratedRegex(@"[\x00-\x1f\x7f]")] private static partial Regex Control();
 
     /// <summary>
-    /// A file name the phone gave, made safe to create here: no folders, no characters or
+    /// A file name from another PC, made safe to create here: no folders, no characters or
     /// names Windows refuses, never empty. "..\..\evil.exe" becomes "evil.exe".
     /// </summary>
     public static string SafeName(string name)
@@ -842,16 +1294,29 @@ public static partial class Portal
         return Reserved().IsMatch(name) ? "_" + name : name;
     }
 
-    /// <summary>"iPhone · Safari" from what the browser says about itself.</summary>
-    public static string DeviceName(string userAgent)
+    /// <summary>
+    /// A path inside a sent folder ("Photos/2024/a.jpg"), each part made safe on its own. A
+    /// part like ".." cannot survive, so nothing is ever written outside the Portal folder.
+    /// </summary>
+    public static string SafePath(string path) =>
+        string.Join('/', path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).Select(SafeName).DefaultIfEmpty("file"));
+
+    /// <summary>A PC's or a transfer's name as sent by another PC, fit to show: one line, not too long.</summary>
+    public static string CleanLabel(string text)
     {
-        string Pick(params (string Mark, string Name)[] choices) =>
-            choices.FirstOrDefault(choice => userAgent.Contains(choice.Mark, StringComparison.OrdinalIgnoreCase)).Name ?? "";
-        var device = Pick(("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows PC"), ("Macintosh", "Mac"), ("Linux", "Linux"));
-        var browser = Pick(("Edg", "Edge"), ("SamsungBrowser", "Samsung Internet"), ("Firefox", "Firefox"), ("FxiOS", "Firefox"),
-                           ("CriOS", "Chrome"), ("Chrome", "Chrome"), ("Safari", "Safari"));
-        var name = string.Join(" · ", new[] { device, browser }.Where(part => part.Length > 0));
-        return name.Length > 0 ? name : "Unknown device";
+        text = Control().Replace(text, " ").Trim();
+        return text.Length == 0 ? "PC" : text.Length > 60 ? text[..60] : text;
+    }
+
+    internal static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     // --- the log of finished transfers ---
@@ -905,7 +1370,7 @@ public static partial class Portal
         }
     }
 
-    /// <summary>Pieces of files that never finished, from sessions that ended: cleared when a new one starts.</summary>
+    /// <summary>Pieces of files that never finished, from an earlier run: cleared when Portal starts.</summary>
     public static void ClearParts(string folder)
     {
         try
@@ -919,14 +1384,14 @@ public static partial class Portal
         }
     }
 
-    // --- the encrypted connection's certificate ---
+    // --- this PC's certificate ---
 
     private static string CertificateFile => System.IO.Path.Combine(AppInfo.DataDir, "portal-certificate.bin");
 
     /// <summary>
-    /// This PC's own certificate for the encrypted mode, made once and kept (its key protected
-    /// by Windows for this user). No authority vouches for it, which is why a phone's browser
-    /// warns the first time; it stays the same afterwards, so the phone only asks once.
+    /// This PC's own certificate, made once and kept (its key protected by Windows for this
+    /// user). Its fingerprint is the PC's id: paired PCs recognise each other by it, so
+    /// losing the file means pairing again.
     /// </summary>
     public static X509Certificate2 Certificate()
     {
@@ -943,17 +1408,7 @@ public static partial class Portal
         catch (Exception error) when (error is CryptographicException or IOException or UnauthorizedAccessException)
         {
         }
-        using var key = RSA.Create(2048);
-        var request = new CertificateRequest($"CN=PC Butler Portal ({Environment.MachineName})", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
-        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], false));
-        var names = new SubjectAlternativeNameBuilder();
-        names.AddDnsName(Environment.MachineName);
-        foreach (var (address, _) in LocalAddresses())
-            names.AddIpAddress(address);
-        request.CertificateExtensions.Add(names.Build());
-        using var made = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(2));
-        var exported = made.Export(X509ContentType.Pkcs12);
+        var exported = NewCertificate();
         try
         {
             Directory.CreateDirectory(AppInfo.DataDir);
@@ -965,16 +1420,16 @@ public static partial class Portal
         }
         return X509CertificateLoader.LoadPkcs12(exported, null);
     }
-}
 
-/// <summary>The QR code a phone scans to open Portal's page.</summary>
-public static class PortalQr
-{
-    /// <summary>A PNG of the code, dark on white (the way cameras read it best), with a quiet border.</summary>
-    public static byte[] Png(string text, int pixelsPerModule = 10)
+    /// <summary>A fresh certificate with its key, as PKCS#12 bytes. Valid for a long time: it is an identity, not a promise from an authority.</summary>
+    public static byte[] NewCertificate()
     {
-        using var generator = new QRCoder.QRCodeGenerator();
-        using var data = generator.CreateQrCode(text, QRCoder.QRCodeGenerator.ECCLevel.M);
-        return new QRCoder.PngByteQRCode(data).GetGraphic(pixelsPerModule, [8, 10, 14], [255, 255, 255]);
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest($"CN=PC Butler Portal ({Environment.MachineName})", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, false));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1"), new Oid("1.3.6.1.5.5.7.3.2")], false));
+        using var made = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(20));
+        return made.Export(X509ContentType.Pkcs12);
     }
 }
