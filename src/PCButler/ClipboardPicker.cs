@@ -28,7 +28,8 @@ public sealed class ClipboardPicker : Window
     private ClipEntry? tagging;
     private bool closing;
     /// <summary>True while its right-click menu or a dialog of its own is open: losing focus to them doesn't close the list.</summary>
-    private bool holding;
+    private int holds;
+    private bool holding => holds > 0;
 
     public ClipboardPicker(ClipboardManager manager, IntPtr target)
     {
@@ -99,13 +100,14 @@ public sealed class ClipboardPicker : Window
                 e.Handled = true;
                 return;
             }
-            var menu = ClipboardMenu.For(entry, this, Pick, () => StartTag(entry));
-            menu.Opened += (_, _) => holding = true;
+            var menu = ClipboardMenu.For(entry, this, Pick, () => StartTag(entry), Hold);
+            menu.Opened += (_, _) => holds++;
             menu.Closed += (_, _) =>
             {
-                holding = false;
-                // Back to the list (a menu item that opened the browser has taken the focus away for good).
-                if (IsVisible && !closing)
+                holds = Math.Max(0, holds - 1);
+                // Back to the list (a menu item that opened the browser has taken the focus away for good),
+                // unless a question it asked is still up.
+                if (!holding && IsVisible && !closing)
                     Activate();
             };
             list.ContextMenu = menu;
@@ -200,6 +202,14 @@ public sealed class ClipboardPicker : Window
 
     private ClipEntry? Selected => (list.SelectedItem as ListBoxItem)?.Tag as ClipEntry;
 
+    /// <summary>A question of PC Butler's is up: the list stays open meanwhile, and comes back to the front after.</summary>
+    private void Hold(bool on)
+    {
+        holds = Math.Max(0, holds + (on ? 1 : -1));
+        if (!holding && IsVisible && !closing)
+            Activate();
+    }
+
     private void StartTag(ClipEntry entry)
     {
         tagging = entry;
@@ -251,7 +261,7 @@ public sealed class ClipboardPicker : Window
                 list.ScrollIntoView(list.SelectedItem);
                 break;
             case Key.Delete when Selected is { } entry && (search.Text.Length == 0 || !search.IsKeyboardFocused):
-                ClipboardHistory.Remove(entry);
+                ClipboardMenu.Delete([entry], Hold);
                 break;
             case Key.P when control && Selected is { } entry:
                 ClipboardHistory.SetPinned(entry, !entry.Pinned);

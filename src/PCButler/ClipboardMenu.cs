@@ -19,7 +19,7 @@ public static class ClipboardMenu
     /// tag is typed there (in the list itself, which would close if a window opened on top);
     /// without it a small window asks.
     /// </summary>
-    public static ContextMenu For(ClipEntry entry, Window owner, Action? paste = null, Action? newTag = null)
+    public static ContextMenu For(ClipEntry entry, Window owner, Action? paste = null, Action? newTag = null, Action<bool>? hold = null)
     {
         var menu = new ContextMenu();
         if (paste is not null)
@@ -41,7 +41,7 @@ public static class ClipboardMenu
 
         menu.Items.Add(Tags(entry, owner, newTag));
         menu.Items.Add(Item(entry.Pinned ? "Unpin" : "Pin", entry.Pinned ? "\uE77A" : "\uE718", () => ClipboardHistory.SetPinned(entry, !entry.Pinned)));
-        menu.Items.Add(Item("Delete", "\uE74D", () => ClipboardHistory.Remove(entry)));
+        menu.Items.Add(Item("Delete", "\uE74D", () => Delete([entry], hold)));
         return menu;
     }
 
@@ -92,6 +92,36 @@ public static class ClipboardMenu
             }));
         }
         return tags;
+    }
+
+    /// <summary>
+    /// Delete items. Pinned or tagged ones were kept on purpose, so deleting them is
+    /// confirmed first. hold: told while the question is up (the list the shortcut opens
+    /// would otherwise close when the question takes the focus).
+    /// </summary>
+    public static void Delete(IReadOnlyList<ClipEntry> entries, Action<bool>? hold = null)
+    {
+        var kept = entries.Count(entry => entry.Pinned || entry.Tags.Count > 0);
+        if (kept > 0)
+        {
+            hold?.Invoke(true);
+            bool sure;
+            try
+            {
+                sure = Ui.Ask("Clipboard", entries.Count == 1
+                    ? Ui.T(entries[0].Pinned ? "This item is pinned. Delete it anyway?" : "This item has tags ({0}). Delete it anyway?",
+                           string.Join(", ", entries[0].Tags.Select(tag => "#" + tag)))
+                    : Ui.T("{0} of the {1} items are pinned or tagged. Delete them all anyway?", kept, entries.Count), warning: true);
+            }
+            finally
+            {
+                hold?.Invoke(false);
+            }
+            if (!sure)
+                return;
+        }
+        foreach (var entry in entries.ToList())
+            ClipboardHistory.Remove(entry);
     }
 
     /// <summary>Tags as typed: several at once, separated by commas.</summary>

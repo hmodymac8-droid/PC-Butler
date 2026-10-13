@@ -209,11 +209,7 @@ public sealed class ClipboardPage : Page
             ClipboardHistory.SetPinned(entry, pin);
     }
 
-    private void DeleteSelected()
-    {
-        foreach (var entry in Selected())
-            ClipboardHistory.Remove(entry);
-    }
+    private void DeleteSelected() => ClipboardMenu.Delete(Selected());
 
     private void ClearHistory()
     {

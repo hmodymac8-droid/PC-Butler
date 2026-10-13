@@ -1,5 +1,5 @@
 {
- "work, address…": "عمل، عنوان…",
- "Add": "إضافة",
- "New tag for: {0}": "وسم جديد لـ: {0}"
+ "This item is pinned. Delete it anyway?": "هذا العنصر مثبّت. هل تحذفه مع ذلك؟",
+ "This item has tags ({0}). Delete it anyway?": "هذا العنصر عليه وسوم ({0}). هل تحذفه مع ذلك؟",
+ "{0} of the {1} items are pinned or tagged. Delete them all anyway?": "{0} من {1} عناصر مثبّتة أو عليها وسوم. هل تحذفها كلها مع ذلك؟"
 }
