@@ -1336,6 +1336,7 @@
  "{0} file(s) ready to move · {1} total": "{0} ملف جاهز للنقل · الإجمالي {1}",
  "{0} file(s) ready to sort ({1}).": "{0} ملف جاهز للفرز ({1}).",
  "{0} file(s) shared from another app are ready. Tap a PC to send them.": "{0} ملف مُشارك من تطبيق آخر جاهز. اضغط على حاسوب لإرساله إليه.",
+ "{0} file(s) shared from another app go as soon as a PC is connected.": "{0} ملف مشارك من تطبيق آخر يُرسَل بمجرد اتصال حاسوب.",
  "{0} file(s) were moved automatically": "تم نقل {0} ملف تلقائيًا",
  "{0} file(s) were skipped because a program is using them or they need administrator rights.": "تم تخطي {0} ملف لأن برنامجًا يستخدمها أو لأنها تحتاج صلاحيات المسؤول.",
  "{0} file(s), {1}": "{0} ملف، {1}",
