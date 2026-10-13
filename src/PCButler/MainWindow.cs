@@ -107,7 +107,7 @@ public sealed partial class MainWindow : Window
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("shredder", "\uE75C", "Shredder", Shredder, false),
                      ("clipboard", "\uE77F", "Clipboard", new ClipboardPage(this), false),
-                     ("portal", "\uE8AB", "Portal", PortalPage, false),
+                     ("portal", "\uE8AB", "Courier", PortalPage, false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
                      ("settings", "\uE713", "Settings", Settings, true),

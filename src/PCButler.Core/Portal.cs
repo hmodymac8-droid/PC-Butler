@@ -39,9 +39,11 @@ public sealed class PortalDevice
 /// <summary>How Portal behaves, and the PCs it trusts.</summary>
 public sealed class PortalSettings
 {
-    /// <summary>Where received files go; "" = "PC Butler Portal" inside Downloads.</summary>
+    /// <summary>Where received files go; "" = "PC Butler Courier" inside Downloads.</summary>
     [JsonPropertyName("folder")] public string Folder { get; set; } = "";
     [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
+    /// <summary>Let other PCs find this one by its ID over the internet. Off until the user turns it on.</summary>
+    [JsonPropertyName("reachable")] public bool Reachable { get; set; }
 }
 
 /// <summary>Another PC running Portal, as this one sees it right now.</summary>
@@ -54,6 +56,9 @@ public sealed class PortalPeer
     public DateTime LastSeen { get; internal set; }
     public bool Trusted { get; internal set; }
     public bool AutoAccept { get; internal set; }
+    /// <summary>Set while this PC is reached over the internet: its address at the other end of the open path.</summary>
+    public IPEndPoint? Tunnel { get; internal set; }
+    public bool Internet => Tunnel is not null;
     public bool Online => (DateTime.UtcNow - LastSeen).TotalSeconds < 12;
 }
 
@@ -109,6 +114,7 @@ public sealed class PortalPairing
     internal string NonceMine { get; init; } = "";
     internal string Address { get; init; } = "";
     internal int Port { get; init; }
+    internal IPEndPoint? Via { get; init; }
 }
 
 /// <summary>Files another PC wants to send, waiting for Accept.</summary>
@@ -204,10 +210,11 @@ public sealed partial class PortalNode
     /// <summary>
     /// Start listening on the given address (one of Portal.LocalAddresses). Port 0 lets
     /// Windows pick a free one. "save" is called when the trusted devices change, to store
-    /// the settings. discovery: false leaves out the network announcements (the tests do).
+    /// the settings. discovery: false leaves out the local network announcements, internet:
+    /// false the socket for other networks, directory: false the public directory (the tests do).
     /// </summary>
     public static async Task<PortalNode> Start(PortalSettings settings, IPAddress address, Action? save = null, int port = 0,
-                                               bool discovery = true, X509Certificate2? certificate = null)
+                                               bool discovery = true, X509Certificate2? certificate = null, bool internet = true, bool directory = true)
     {
         certificate ??= Portal.Certificate();
         Directory.CreateDirectory(Portal.ReceiveFolder(settings));
@@ -251,7 +258,7 @@ public sealed partial class PortalNode
             catch (SocketException error)
             {
                 // Without announcements the other PC can still be added by its address.
-                Log.Warning($"Portal can't announce itself: {error.Message}");
+                Log.Warning($"Courier can't announce itself: {error.Message}");
                 radio?.Dispose();
                 radio = null;
             }
@@ -262,8 +269,10 @@ public sealed partial class PortalNode
             _ = Task.Run(node.Listen);
             _ = Task.Run(node.Announce);
         }
+        if (internet)
+            node.StartInternet(directory);
         _ = Task.Run(node.Housekeeping);
-        Log.Info($"Portal started on {address}:{bound}");
+        Log.Info($"Courier started on {address}:{bound}");
         return node;
     }
 
@@ -314,6 +323,7 @@ public sealed partial class PortalNode
         }
         stopping.Cancel();
         radio?.Dispose();
+        StopInternet();
         // Remember where the trusted PCs were last seen, to find them again next time.
         lock (gate)
         {
@@ -335,7 +345,7 @@ public sealed partial class PortalNode
         {
         }
         await app.DisposeAsync();
-        Log.Info("Portal stopped");
+        Log.Info("Courier stopped");
         Changed?.Invoke();
     }
 
@@ -410,7 +420,7 @@ public sealed partial class PortalNode
             // An announcement is not proof of who sent it, so it never renames a PC that is already trusted.
             if (!peer.Trusted || peer.Name.Length == 0)
                 peer.Name = name;
-            (peer.Address, peer.Port, peer.LastSeen) = (address, port, DateTime.UtcNow);
+            (peer.Address, peer.Port, peer.LastSeen, peer.Tunnel) = (address, port, DateTime.UtcNow, null);
         }
         if (isNew)
             Raise();
@@ -448,7 +458,8 @@ public sealed partial class PortalNode
         {
             List<PortalPeer> quiet;
             lock (gate)
-                quiet = peers.Values.Where(peer => peer.Trusted && !peer.Online && peer.Address.Length > 0 && peer.Port > 0).ToList();
+                quiet = peers.Values.Where(peer => peer is { Trusted: true, Online: false, Tunnel: null, Address.Length: > 0, Port: > 0 }).ToList();
+            RefreshPaths();
             foreach (var peer in quiet)
             {
                 try
@@ -497,7 +508,7 @@ public sealed partial class PortalNode
     /// the other end shows the expected one. With no expectation (while pairing) any
     /// certificate is let through and "seen" tells afterwards whose it was.
     /// </summary>
-    private HttpClient Client(string host, int port, string? expectedId, out Func<string?> seen)
+    private HttpClient Client(string host, int port, string? expectedId, out Func<string?> seen, IPEndPoint? via = null)
     {
         string? remote = null;
         seen = () => remote;
@@ -517,6 +528,12 @@ public sealed partial class PortalNode
                 },
             },
         };
+        if (via is not null && link is { } path)
+        {
+            // Over the internet: the same encrypted connection, carried by a stream on the open path instead of a network socket.
+            handler.ConnectCallback = async (_, cancel) => await path.Connect(via, cancel);
+            return new HttpClient(handler) { BaseAddress = new Uri("https://portal.direct"), Timeout = Timeout.InfiniteTimeSpan };
+        }
         return new HttpClient(handler) { BaseAddress = new Uri($"https://{host}:{port}"), Timeout = Timeout.InfiniteTimeSpan };
     }
 
@@ -546,7 +563,7 @@ public sealed partial class PortalNode
         var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
         try
         {
-            using var client = Client(peer.Address, peer.Port, expectedId: null, out var seen);
+            using var client = Client(peer.Address, peer.Port, expectedId: null, out var seen, peer.Tunnel);
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
             limit.CancelAfter(TimeSpan.FromSeconds(15));
             using var started = await client.PostAsJsonAsync($"{Api}/pair/start", new { name = Name, port = Port, commit = HashOf(nonce) }, limit.Token);
@@ -560,7 +577,7 @@ public sealed partial class PortalNode
             var pairing = new PortalPairing
             {
                 PeerId = id, PeerName = Portal.CleanLabel(answer.GetProperty("name").GetString() ?? peer.Name), Incoming = false,
-                Code = PairingCode(Id, id, nonce, theirs), Address = peer.Address, Port = peer.Port,
+                Code = PairingCode(Id, id, nonce, theirs), Address = peer.Address, Port = peer.Port, Via = peer.Tunnel,
             };
             // Only now is this side's random part given away: the other side's is already fixed.
             using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce }, limit.Token);
@@ -591,13 +608,15 @@ public sealed partial class PortalNode
             if (!peers.TryGetValue(pairing.PeerId, out var peer))
                 peer = peers[pairing.PeerId] = new PortalPeer { Id = pairing.PeerId, Address = pairing.Address, Port = pairing.Port };
             (peer.Trusted, peer.Name) = (true, pairing.PeerName);
-            if (pairing.Address.Length > 0 && pairing.Port > 0)
+            if (pairing.Via is not null)
+                (peer.Tunnel, peer.LastSeen) = (pairing.Via, DateTime.UtcNow);
+            else if (pairing.Address.Length > 0 && pairing.Port > 0)
                 (peer.Address, peer.Port) = (pairing.Address, pairing.Port);
             settings.Devices.RemoveAll(device => device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
             settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, Address = peer.Address, Port = peer.Port });
         }
         save();
-        Log.Info($"Portal: paired with {pairing.PeerName}");
+        Log.Info($"Courier: paired with {pairing.PeerName}");
         Raise();
     }
 
@@ -689,7 +708,7 @@ public sealed partial class PortalNode
                 (transfer.State, transfer.Note) = ("failed", note);
         }
 
-        using var client = Client(peer.Address, peer.Port, peer.Id, out _);
+        using var client = Client(peer.Address, peer.Port, peer.Id, out _, peer.Tunnel);
         var stop = stopping.Token;
         try
         {
@@ -863,7 +882,9 @@ public sealed partial class PortalNode
             lock (gate)
             {
                 peer.LastSeen = DateTime.UtcNow;
-                if (context.Connection.RemoteIpAddress is { } from)
+                if (Via(context) is { } across)
+                    peer.Tunnel = across;
+                else if (context.Connection.RemoteIpAddress is { } from)
                     peer.Address = from.MapToIPv4().ToString();
             }
             switch (parts)
@@ -930,7 +951,8 @@ public sealed partial class PortalNode
             pairings.Add(new PortalPairing
             {
                 PeerId = caller, PeerName = Portal.CleanLabel(body.TryGetProperty("name", out var name) ? name.GetString() ?? "" : ""), Incoming = true,
-                Commit = commit, NonceMine = nonce, Address = context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "",
+                Commit = commit, NonceMine = nonce, Via = Via(context),
+                Address = Via(context) is null ? context.Connection.RemoteIpAddress?.MapToIPv4().ToString() ?? "" : "",
                 // Where it says it listens, so this PC can find it again even if its announcements never arrive.
                 Port = body.TryGetProperty("port", out var port) && port.TryGetInt32(out var listens) && listens is > 0 and < 65536 ? listens : PortOf(caller),
             });
@@ -1123,7 +1145,7 @@ public sealed partial class PortalNode
                     job.Transfer.State = "done";
                     job.Transfer.Path = job.Tops.Count == 1 ? job.Tops.Values.First() : Folder;
                     Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), job.Transfer.Name, job.Transfer.Size, true, job.Transfer.Peer, job.Transfer.Path));
-                    Log.Info($"Portal received {job.Transfer.Name} from {job.Transfer.Peer}");
+                    Log.Info($"Courier received {job.Transfer.Name} from {job.Transfer.Peer}");
                     Raise();
                 }
             }
@@ -1157,8 +1179,14 @@ public static partial class Portal
     /// <summary>The node that is running, if any. There is one at a time.</summary>
     public static PortalNode? Current { get; set; }
 
-    public static string ReceiveFolder(PortalSettings settings) =>
-        settings.Folder.Length > 0 ? settings.Folder : System.IO.Path.Combine(ConfigStore.DetectDownloadsFolder(), "PC Butler Portal");
+    public static string ReceiveFolder(PortalSettings settings)
+    {
+        if (settings.Folder.Length > 0)
+            return settings.Folder;
+        // The feature was first called Portal; a folder made under that name stays in use.
+        var old = System.IO.Path.Combine(ConfigStore.DetectDownloadsFolder(), "PC Butler Portal");
+        return Directory.Exists(old) ? old : System.IO.Path.Combine(ConfigStore.DetectDownloadsFolder(), "PC Butler Courier");
+    }
 
     public static string Fingerprint(System.Security.Cryptography.X509Certificates.X509Certificate certificate) =>
         Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()));
@@ -1366,7 +1394,7 @@ public static partial class Portal
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            Log.Warning($"Could not save Portal's history: {error.Message}");
+            Log.Warning($"Could not save Courier's history: {error.Message}");
         }
     }
 
@@ -1416,7 +1444,7 @@ public static partial class Portal
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or CryptographicException)
         {
-            Log.Warning($"Portal's certificate could not be saved: {error.Message}");
+            Log.Warning($"Courier's certificate could not be saved: {error.Message}");
         }
         return X509CertificateLoader.LoadPkcs12(exported, null);
     }
@@ -1425,7 +1453,7 @@ public static partial class Portal
     public static byte[] NewCertificate()
     {
         using var key = RSA.Create(2048);
-        var request = new CertificateRequest($"CN=PC Butler Portal ({Environment.MachineName})", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var request = new CertificateRequest($"CN=PC Butler Courier ({Environment.MachineName})", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, false));
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1"), new Oid("1.3.6.1.5.5.7.3.2")], false));

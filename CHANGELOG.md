@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.14.0
+
+- Portal is now called Courier.
+- Courier over the internet: every PC has a 12-digit ID. Switch on "Reachable over the internet" on one PC, type its ID on the other, and the two connect directly, with no server in between.
+- IDs are looked up in the public directory that torrent programs use; files never pass through it. Not every pair of networks can link directly (mobile data often can't).
+
 ## 1.13.0
 
 - Portal: send files and whole folders between two PCs running PC Butler, straight over your own network. Nothing goes through the internet.

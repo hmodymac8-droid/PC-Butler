@@ -27,6 +27,10 @@ public sealed class PortalPage : Page
     private readonly ComboBox addresses = new() { Width = 230 };
     private readonly ListView deviceList;
     private readonly TextBox addressBox;
+    private readonly TextBox numberBox;
+    private readonly Button connectButton;
+    private readonly TextBlock connectText = Ui.Muted("", 12);
+    private CancellationTokenSource? connecting;
     private readonly TextBlock queuedText = Ui.Text("", 13, "Primary");
     private readonly ListView transferList;
     private readonly ObservableCollection<Row> transferRows = [];
@@ -40,9 +44,9 @@ public sealed class PortalPage : Page
 
     private static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
-    public PortalPage(MainWindow main) : base(main, "Portal", "Files between your PCs, straight over your own network.")
+    public PortalPage(MainWindow main) : base(main, "Courier", "Files between your PCs, straight from one to the other.")
     {
-        startButton = AddAction("Start Portal", Toggle, accent: true);
+        startButton = AddAction("Start Courier", Toggle, accent: true);
         var page = new StackPanel();
 
         // --- requests from other PCs come first: they wait for an answer ---
@@ -57,7 +61,7 @@ public sealed class PortalPage : Page
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Windows firewall"), 13, weight: FontWeights.Bold), firewallText, firewallButton, first: true));
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Received files go to"), 13, weight: FontWeights.Bold), folderText,
                                         Ui.Row(6, Ui.Button(Ui.T("Open"), OpenFolder), Ui.Button(Ui.T("Change…"), ChangeFolder))));
-        rows.Children.Add(Ui.SettingRow(Ui.T("Network address"), Ui.T("Which of this PC's connections Portal uses. It must be on the same network as the other PC."), addresses));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Network address"), Ui.T("Which of this PC's connections Courier uses. It must be on the same network as the other PC."), addresses));
         var settingsCard = new CardPanel("Settings", "") { Margin = new Thickness(6, 0, 0, 18) };
         settingsCard.SetBody(rows);
 
@@ -80,7 +84,13 @@ public sealed class PortalPage : Page
         addressBox.FlowDirection = FlowDirection.LeftToRight;
         footer.Children.Add(Ui.Row(8, Ui.Muted(Ui.T("Not in the list? Type the address the other PC shows:"), 12), addressBox, Ui.Button(Ui.T("Find"), FindByAddress)));
         footer.Children.Add(queuedText.Dock(Dock.Right));
-        deviceList = Ui.List(("PC", 300, "PlainCell"), ("Status", 170), ("Trust", 250), ("Address", 220));
+        // A PC on another network is found by its ID.
+        var byNumber = deviceCard.AddFooter();
+        numberBox = Ui.Field(width: 210, hint: "000 000 000 000");
+        numberBox.FlowDirection = FlowDirection.LeftToRight;
+        connectButton = Ui.Button(Ui.T("Connect"), ConnectByNumber);
+        byNumber.Children.Add(Ui.Row(8, Ui.Muted(Ui.T("On another network? Type the other PC's ID:"), 12), numberBox, connectButton, connectText));
+        deviceList = Ui.List(("PC", 260, "PlainCell"), ("Status", 170), ("Trust", 240), ("ID", 150), ("Address", 200));
         deviceList.MinHeight = 130;
         deviceList.SelectionMode = SelectionMode.Single;
         deviceList.AllowDrop = true;
@@ -145,7 +155,7 @@ public sealed class PortalPage : Page
         var address = loopback ? IPAddress.Loopback : (addresses.SelectedItem as ComboBoxItem)?.Tag as IPAddress;
         if (address is null)
         {
-            Ui.Info("Portal", Ui.T("This PC is not connected to a network. Connect it to the same network as the other PC, then start Portal."));
+            Ui.Info("Courier", Ui.T("This PC is not connected to a network. Connect it to the same network as the other PC, then start Courier."));
             return;
         }
         starting = true;
@@ -154,14 +164,14 @@ public sealed class PortalPage : Page
             var settings = Main.Config.Portal;
             Portal.ClearParts(Portal.ReceiveFolder(settings));
             var node = await PortalNode.Start(settings, address, () => Dispatcher.BeginInvoke(() =>
-                Main.UpdateConfig(config => config.Portal.Devices = settings.Devices.ToList())), discovery: !loopback);
+                Main.UpdateConfig(config => { config.Portal.Devices = settings.Devices.ToList(); config.Portal.Reachable = settings.Reachable; })), discovery: !loopback, directory: !loopback);
             node.Changed += OnChanged;
             node.Attention += App.Current.PortalNeedsAttention;
             Portal.Current = node;
         }
         catch (IOException error)
         {
-            Ui.Warn("Portal", Ui.T("Portal could not start on {0}.", address) + "\n\n" + error.Message);
+            Ui.Warn("Courier", Ui.T("Courier could not start on {0}.", address) + "\n\n" + error.Message);
         }
         finally
         {
@@ -175,7 +185,7 @@ public sealed class PortalPage : Page
     private void ShowAll()
     {
         var node = Node;
-        startButton.Content = Ui.T(node is null ? "Start Portal" : "Stop Portal");
+        startButton.Content = Ui.T(node is null ? "Start Courier" : "Stop Courier");
         ShowStatus(node);
         ShowAsks(node);
         ShowSettings(node);
@@ -188,27 +198,39 @@ public sealed class PortalPage : Page
         status.Children.Clear();
         if (node is null)
         {
-            status.Children.Add(Ui.Text(Ui.T("Portal is off"), 18, weight: FontWeights.SemiBold));
-            status.Children.Add(Ui.Muted(Ui.T("Start Portal here and on the other PC. The two find each other on the network; pair them once, then send files "
+            status.Children.Add(Ui.Text(Ui.T("Courier is off"), 18, weight: FontWeights.SemiBold));
+            status.Children.Add(Ui.Muted(Ui.T("Start Courier here and on the other PC. The two find each other on the network; pair them once, then send files "
                                               + "and folders either way."), 13, wrap: true).Margin(0, 8, 0, 0));
             status.Children.Add(Ui.Muted(Ui.T("Files go straight between the PCs, encrypted, over your own network. Nothing is uploaded to the internet, and "
-                                              + "nothing listens while Portal is off."), 13, wrap: true).Margin(0, 8, 0, 0));
+                                              + "nothing listens while Courier is off."), 13, wrap: true).Margin(0, 8, 0, 0));
             return;
         }
-        status.Children.Add(Ui.Row(10, Ui.Text("●", 12, "Primary"), Ui.Text(Ui.T("Portal is on"), 18, weight: FontWeights.SemiBold)));
-        status.Children.Add(Ui.Muted(Ui.T("Other PCs see this one as:"), 12).Margin(0, 12, 0, 2));
-        status.Children.Add(Ui.Text(node.Name, 16, weight: FontWeights.SemiBold));
-        status.Children.Add(Ui.Muted(Ui.T("Its address, to type on the other PC if it does not show up there:"), 12, wrap: true).Margin(0, 12, 0, 2));
-        var address = new TextBox
+        status.Children.Add(Ui.Row(10, Ui.Text("●", 12, "Primary"), Ui.Text(Ui.T("Courier is on"), 18, weight: FontWeights.SemiBold)));
+        TextBox Shown(string text, double size) => new()
         {
-            Text = $"{node.Address}:{node.Port}", IsReadOnly = true, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Padding = new Thickness(0),
-            FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 16, Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight,
+            Text = text, IsReadOnly = true, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Padding = new Thickness(0),
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = size, Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        status.Children.Add(address);
+        status.Children.Add(Ui.Muted(Ui.T("This PC ({0}) has the ID:", node.Name), 12).Margin(0, 12, 0, 0));
+        status.Children.Add(Shown(Portal.ShowNumber(node.Number), 26));
+        var reachable = Ui.Switch(Ui.T("Reachable over the internet"), node.Reachable, on => node.Reachable = on);
+        reachable.HorizontalAlignment = HorizontalAlignment.Left;
+        status.Children.Add(reachable.Margin(0, 10, 0, 0));
+        status.Children.Add(Ui.Muted(Ui.T(node.Reachable
+            ? "A PC on another network can find this one by its ID. This PC is listed, with its internet address, in the public directory that "
+              + "torrent programs use; no file goes near it. Switch it off when you are done."
+            : "Off: only PCs on this network see this one. Switch it on to be found by ID from another network."), 12, wrap: true).Margin(0, 4, 0, 0));
+        if (node.Reachable && node.AddressKeepsChanging)
+        {
+            status.Children.Add(Ui.Text(Ui.T("This internet connection gives every link a new address, so PCs on other networks usually can't get through "
+                                             + "to this one. It may still work when this PC is the one that connects."), 12, "Amber", wrap: true).Margin(0, 8, 0, 0));
+        }
+        status.Children.Add(Ui.Muted(Ui.T("On the same network, its address (if it does not show up on the other PC):"), 12, wrap: true).Margin(0, 12, 0, 0));
+        status.Children.Add(Shown($"{node.Address}:{node.Port}", 14));
         if (Portal.OnPublicNetwork())
         {
-            status.Children.Add(Ui.Text(Ui.T("Windows treats this network as Public, where the firewall keeps other PCs out. Portal works on networks set to "
+            status.Children.Add(Ui.Text(Ui.T("Windows treats this network as Public, where the firewall keeps other PCs out. Courier works on networks set to "
                                              + "Private (Windows Settings, Network)."), 12, "Amber", wrap: true).Margin(0, 12, 0, 0));
         }
     }
@@ -290,16 +312,18 @@ public sealed class PortalPage : Page
         var rows = node is null
             ? Main.Config.Portal.Devices.Select(device => new Row
             {
-                Name = device.Name, Tag = device, Dim = true, Cells = [Ui.T("Portal is off"), Ui.T("Paired"), $"{device.Address}:{device.Port}"],
+                Name = device.Name, Tag = device, Dim = true,
+                Cells = [Ui.T("Courier is off"), Ui.T("Paired"), Portal.ShowNumber(Portal.NumberOf(device.Id)), $"{device.Address}:{device.Port}"],
             }).ToList()
             : peers.Select(peer => new Row
             {
                 Name = peer.Name.Length > 0 ? peer.Name : "PC", Tag = peer, Dim = !peer.Online,
                 Cells =
                 [
-                    Ui.T(peer.Online ? "On this network" : "Not seen"),
+                    Ui.T(!peer.Online ? "Not seen" : peer.Internet ? "Over the internet" : "On this network"),
                     Ui.T(!peer.Trusted ? "Not paired yet" : peer.AutoAccept ? "Paired, accepts automatically" : "Paired, asks before taking files"),
-                    peer.Address.Length > 0 ? $"{peer.Address}:{peer.Port}" : "",
+                    Portal.ShowNumber(Portal.NumberOf(peer.Id)),
+                    peer.Tunnel is { } across ? across.ToString() : peer.Address.Length > 0 ? $"{peer.Address}:{peer.Port}" : "",
                 ],
             }).ToList();
         deviceList.ItemsSource = rows;
@@ -376,16 +400,17 @@ public sealed class PortalPage : Page
     {
         if (Node is null)
         {
-            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            Ui.Info("Courier", Ui.T("Start Courier first, here and on the other PC."));
             return null;
         }
         var peer = Chosen();
         if (peer is null)
-            Ui.Info("Portal", Ui.T("Select a PC in the list first."));
+            Ui.Info("Courier", Ui.T("Select a PC in the list first."));
         else if (!peer.Trusted)
-            Ui.Info("Portal", Ui.T("{0} is not paired with this PC yet. Select it and press Pair.", peer.Name));
+            Ui.Info("Courier", Ui.T("{0} is not paired with this PC yet. Select it and press Pair.", peer.Name));
         else if (!peer.Online)
-            Ui.Info("Portal", Ui.T("{0} is not on the network right now. Start Portal on it.", peer.Name));
+            Ui.Info("Courier", Ui.T("{0} is not connected right now. Start Courier on it. If it is on another network, switch on “Reachable over the "
+                                    + "internet” there, then select it here and press Connect.", peer.Name));
         else
             return peer;
         return null;
@@ -409,7 +434,7 @@ public sealed class PortalPage : Page
         var all = queued.Concat(paths).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         queued.Clear();
         if (all.Count > 0 && node.Send(peer, all) is null)
-            Ui.Info("Portal", Ui.T("None of those files could be read."));
+            Ui.Info("Courier", Ui.T("None of those files could be read."));
         ShowAll();
     }
 
@@ -437,18 +462,18 @@ public sealed class PortalPage : Page
     {
         if (Node is not { } node)
         {
-            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            Ui.Info("Courier", Ui.T("Start Courier first, here and on the other PC."));
             return;
         }
         if (Chosen() is not { } peer)
         {
-            Ui.Info("Portal", Ui.T("Select a PC in the list first."));
+            Ui.Info("Courier", Ui.T("Select a PC in the list first."));
             return;
         }
         if (await node.Pair(peer) is { } pairing)
             started.Add(pairing);
         else
-            Ui.Warn("Portal", Ui.T("{0} did not answer. Check that Portal is running on it and that its firewall allows PC Butler.", peer.Name));
+            Ui.Warn("Courier", Ui.T("{0} did not answer. Check that Courier is running on it and that its firewall allows PC Butler.", peer.Name));
         ShowAll();
     }
 
@@ -457,7 +482,7 @@ public sealed class PortalPage : Page
         if (Node is { } node && Chosen() is { Trusted: true } peer)
             node.SetAutoAccept(peer.Id, !peer.AutoAccept);
         else
-            Ui.Info("Portal", Ui.T("Select a paired PC first (with Portal on)."));
+            Ui.Info("Courier", Ui.T("Select a paired PC first (with Courier on)."));
     }
 
     private void ForgetSelected()
@@ -471,10 +496,10 @@ public sealed class PortalPage : Page
         };
         if (id.Length == 0)
         {
-            Ui.Info("Portal", Ui.T("Select a paired PC first."));
+            Ui.Info("Courier", Ui.T("Select a paired PC first."));
             return;
         }
-        if (!Ui.Ask("Portal", Ui.T("Forget {0}? It will have to be paired again before files can go either way.", name)))
+        if (!Ui.Ask("Courier", Ui.T("Forget {0}? It will have to be paired again before files can go either way.", name)))
             return;
         if (Node is { } node)
             node.Forget(id);
@@ -487,20 +512,80 @@ public sealed class PortalPage : Page
     {
         if (Node is not { } node)
         {
-            Ui.Info("Portal", Ui.T("Start Portal first, here and on the other PC."));
+            Ui.Info("Courier", Ui.T("Start Courier first, here and on the other PC."));
             return;
         }
         var parts = addressBox.Text.Trim().Split(':');
         if (parts.Length != 2 || !IPAddress.TryParse(parts[0], out _) || !int.TryParse(parts[1], out var port) || port is < 1 or > 65535)
         {
-            Ui.Info("Portal", Ui.T("Type the address exactly as the other PC shows it under “This PC”, like 192.168.1.20:50000."));
+            Ui.Info("Courier", Ui.T("Type the address exactly as the other PC shows it under “This PC”, like 192.168.1.20:50000."));
             return;
         }
         if (await node.AddByAddress(parts[0], port) is null)
-            Ui.Warn("Portal", Ui.T("No PC Butler Portal answered at {0}. Check that Portal is running there and that its firewall allows PC Butler.", addressBox.Text.Trim()));
+            Ui.Warn("Courier", Ui.T("No PC Butler Courier answered at {0}. Check that Courier is running there and that its firewall allows PC Butler.", addressBox.Text.Trim()));
         else
             addressBox.Text = "";
         ShowAll();
+    }
+
+    /// <summary>Find a PC on another network by its ID: the one typed, or the selected PC's when the box is empty.</summary>
+    private async void ConnectByNumber()
+    {
+        if (connecting is not null)
+        {
+            connecting.Cancel();
+            return;
+        }
+        if (Node is not { } node)
+        {
+            Ui.Info("Courier", Ui.T("Start Courier first, here and on the other PC."));
+            return;
+        }
+        var number = new string(numberBox.Text.Where(char.IsDigit).ToArray());
+        if (number.Length == 0 && Chosen() is { Online: false } offline)
+            number = Portal.NumberOf(offline.Id);
+        if (number.Length != 12)
+        {
+            Ui.Info("Courier", Ui.T("Type the twelve digits the other PC shows under “This PC”. It must have Courier started and “Reachable over the internet” on."));
+            return;
+        }
+        connecting = new CancellationTokenSource();
+        connectButton.Content = Ui.T("Stop");
+        connectText.Text = Ui.T("Looking for {0}… this can take up to a minute.", Portal.ShowNumber(number));
+        PortalPeer? peer = null;
+        var problem = PortalConnectProblem.None;
+        try
+        {
+            (peer, problem) = await node.ConnectById(number, connecting.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        var stopped = connecting.IsCancellationRequested;
+        connecting.Dispose();
+        connecting = null;
+        connectButton.Content = Ui.T("Connect");
+        connectText.Text = "";
+        ShowAll();
+        if (peer is not null)
+        {
+            numberBox.Text = "";
+            deviceList.SelectedItem = deviceList.Items.OfType<Row>().FirstOrDefault(row => (row.Tag as PortalPeer)?.Id == peer.Id);
+            if (!peer.Trusted)
+                Ui.Info("Courier", Ui.T("Found {0}. It is in the list now: select it and press Pair.", peer.Name));
+        }
+        else if (!stopped)
+        {
+            Ui.Warn("Courier", Ui.T(problem switch
+            {
+                PortalConnectProblem.NoDirectory => "This PC could not reach the public directory that IDs are looked up in. This network may block it.",
+                PortalConnectProblem.NotFound => "No PC is announced under {0}. Check the number, and that the other PC has Courier started with “Reachable over the "
+                                                 + "internet” on (it can take a minute or two after switching it on).",
+                PortalConnectProblem.NoPath => "{0} was found, but the two networks would not let a direct link through. This happens with mobile data and some "
+                                               + "internet providers; Courier has no go-between server to fall back on.",
+                _ => "That is not an ID of another PC.",
+            }, Portal.ShowNumber(number)));
+        }
     }
 
     private void CancelSelected()
@@ -528,12 +613,12 @@ public sealed class PortalPage : Page
 
     private void ChangeFolder()
     {
-        if (Ui.PickFolder(Ui.T("Folder for files received through Portal"), Portal.ReceiveFolder(Main.Config.Portal)) is not { } folder)
+        if (Ui.PickFolder(Ui.T("Folder for files received through Courier"), Portal.ReceiveFolder(Main.Config.Portal)) is not { } folder)
             return;
         Main.UpdateConfig(config => config.Portal.Folder = folder);
         ShowSettings(Node);
         if (Node is not null)
-            Ui.Info("Portal", Ui.T("The new folder is used the next time Portal starts."));
+            Ui.Info("Courier", Ui.T("The new folder is used the next time Courier starts."));
     }
 
     /// <summary>The firewall rule needs administrator rights, so the optional helper adds it (Windows asks first).</summary>
@@ -544,7 +629,7 @@ public sealed class PortalPage : Page
         {
             if (!AdminHelper.Running)
             {
-                if (!Ui.Ask("Portal", Ui.T("Windows only lets a program accept connections from other PCs once an administrator allows it.\n\n"
+                if (!Ui.Ask("Courier", Ui.T("Windows only lets a program accept connections from other PCs once an administrator allows it.\n\n"
                                            + "PC Butler starts its small helper for this, and Windows will ask for your permission. The rule covers PC Butler "
                                            + "only, on private networks only.\n\nAllow it now?"))
                     || !Sensors.StartHelper())
@@ -554,7 +639,7 @@ public sealed class PortalPage : Page
             }
             var done = await Task.Run(() => AdminHelper.Send("allow_portal", []));
             if (done is null || !done.Contains("portal"))
-                Ui.Warn("Portal", Ui.T("The firewall rule could not be added. You can also allow PC Butler yourself when Windows asks about it."));
+                Ui.Warn("Courier", Ui.T("The firewall rule could not be added. You can also allow PC Butler yourself when Windows asks about it."));
         }
         finally
         {

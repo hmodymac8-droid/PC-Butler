@@ -440,9 +440,9 @@ async Task<bool> Until(Func<bool> condition, int seconds = 15)
 
 var (hereSettings, thereSettings) = (new PortalSettings { Folder = Path.Combine(temp, "PortalHere") }, new PortalSettings { Folder = Path.Combine(temp, "PortalThere") });
 int hereSaved = 0, thereAsked = 0;
-var here = await PortalNode.Start(hereSettings, System.Net.IPAddress.Loopback, () => hereSaved++, discovery: false, certificate: Identity());
-var there = await PortalNode.Start(thereSettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity());
-var outsider = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "PortalOutsider") }, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity());
+var here = await PortalNode.Start(hereSettings, System.Net.IPAddress.Loopback, () => hereSaved++, discovery: false, certificate: Identity(), internet: false);
+var there = await PortalNode.Start(thereSettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), internet: false);
+var outsider = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "PortalOutsider") }, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), internet: false);
 there.Attention += _ => Interlocked.Increment(ref thereAsked);
 Check(here.Id.Length == 64 && here.Id != there.Id && here.Port != there.Port, "each PC has its own identity");
 
@@ -541,6 +541,168 @@ AdminHelper.Poll(helperDir, [], (_, _) => { allowed += 100; return true; }, () =
 Check(allowed == 1 && File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"portal\""), "the helper firewall request does that one thing only");
 Check(Portal.LocalAddresses().All(item => !System.Net.IPAddress.IsLoopback(item.Address)) && !Portal.FirewallAllows(@"C:\nowhere\nothing.exe")
       && Portal.BroadcastAddresses(System.Net.IPAddress.Loopback).Count > 0, "addresses and the firewall can be read");
+
+// ---------------------------------------------------------------- the link across the internet (pretended on this PC)
+Section("tunnel");
+{
+    // Two ends joined by a bad line: one packet in twelve is lost, and some arrive late and out of order.
+    ReliableStream? near = null, far = null;
+    var line = new Random(7);
+    void Carry(Func<ReliableStream?> to, byte[] packet, int length)
+    {
+        var copy = packet.AsSpan(0, length).ToArray();
+        lock (line)
+        {
+            if (line.Next(12) == 0)
+                return;
+            var late = line.Next(6) == 0 ? line.Next(5, 40) : 0;
+            _ = Task.Delay(late).ContinueWith(_ => to()?.OnPacket(copy[0], copy.AsSpan(1)));
+        }
+    }
+    near = new ReliableStream((packet, length) => Carry(() => far, packet, length));
+    far = new ReliableStream((packet, length) => Carry(() => near, packet, length));
+    using var beat = new CancellationTokenSource();
+    _ = Task.Run(async () =>
+    {
+        while (!beat.IsCancellationRequested)
+        {
+            near.Tick();
+            far.Tick();
+            await Task.Delay(10);
+        }
+    });
+    var outward = new byte[3_000_000];
+    var homeward = new byte[700_000];
+    Random.Shared.NextBytes(outward);
+    Random.Shared.NextBytes(homeward);
+    async Task<byte[]> ReadAll(Stream from)
+    {
+        var all = new MemoryStream();
+        var piece = new byte[70_000];
+        for (int read; (read = await from.ReadAsync(piece)) > 0;)
+            all.Write(piece, 0, read);
+        return all.ToArray();
+    }
+    var gotOutward = ReadAll(far);
+    var gotHomeward = ReadAll(near);
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    await Task.WhenAll(
+        Task.Run(async () => { await near.WriteAsync(outward); await near.Complete(); }),
+        Task.Run(async () => { await far.WriteAsync(homeward); await far.Complete(); }));
+    var finished = await Task.WhenAny(Task.WhenAll(gotOutward, gotHomeward), Task.Delay(60_000)) != null && gotOutward.IsCompletedSuccessfully && gotHomeward.IsCompletedSuccessfully;
+    Check(finished && gotOutward.Result.SequenceEqual(outward) && gotHomeward.Result.SequenceEqual(homeward),
+          $"data crosses a line that loses and shuffles packets, whole and in order, both ways ({clock.ElapsedMilliseconds} ms)");
+    for (var waited = 0; waited < 100 && !(near.Over && far.Over); waited++)
+        await Task.Delay(50);
+    Check(near.Over && far.Over && !near.Failed && !far.Failed, "and both ends see it finish cleanly");
+    beat.Cancel();
+}
+{
+    // Two real sockets on this PC: open a path, open a stream, send and get it homeward.
+    using var caller = new PortalLink(System.Net.IPAddress.Loopback);
+    using var answerer = new PortalLink(System.Net.IPAddress.Loopback);
+    using var closedDoor = new PortalLink(System.Net.IPAddress.Loopback);
+    var answererAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, answerer.Port);
+    answerer.AllowPath = _ => true;
+    answerer.Accepted = async (stream, _) =>
+    {
+        // Sends homeward whatever arrives.
+        var piece = new byte[60_000];
+        for (int read; (read = await stream.ReadAsync(piece)) > 0;)
+            await stream.WriteAsync(piece.AsMemory(0, read));
+        await stream.Complete();
+    };
+    Check(!await caller.PunchTo(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, closedDoor.Port), TimeSpan.FromSeconds(1.2)),
+          "a PC that is not reachable does not answer a knock");
+    Check(await caller.PunchTo(answererAt, TimeSpan.FromSeconds(5)) && caller.IsOpen(answererAt), "a path opens to a PC that is");
+    var message = new byte[2_500_000];
+    Random.Shared.NextBytes(message);
+    await using var line = await caller.Connect(answererAt);
+    var echoed = Task.Run(async () =>
+    {
+        var all = new MemoryStream();
+        var piece = new byte[60_000];
+        for (int read; (read = await line.ReadAsync(piece)) > 0;)
+            all.Write(piece, 0, read);
+        return all.ToArray();
+    });
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    await line.WriteAsync(message);
+    await line.Complete();
+    Check(await Task.WhenAny(echoed, Task.Delay(30_000)) == echoed && echoed.Result.SequenceEqual(message),
+          $"a stream over real sockets carries data outward and homeward ({message.Length * 2 / 1048576.0 / watch.Elapsed.TotalSeconds:0} MB/s on this PC)");
+    var refusedStream = false;
+    try
+    {
+        await closedDoor.Connect(answererAt);
+    }
+    catch (IOException)
+    {
+        refusedStream = true;
+    }
+    Check(refusedStream, "no stream without an open path");
+}
+
+// ---------------------------------------------------------------- portal over the internet (two PCs pretended on this one; the public directory is left out)
+Section("portal by ID");
+{
+    var packed = Bencode.Encode(new Dictionary<string, object>
+    {
+        ["t"] = new byte[] { 0, 7 }, ["y"] = "q", ["q"] = "get_peers", ["a"] = new Dictionary<string, object> { ["id"] = new byte[20], ["n"] = -42L, ["l"] = new List<object> { "x", 3L } },
+    });
+    Check(Encoding.Latin1.GetString(packed).StartsWith("d1:ad2:id20:") && Bencode.Decode(packed) is Dictionary<string, object> unpacked
+          && unpacked["a"] is Dictionary<string, object> inner && (long)inner["n"] == -42 && inner["l"] is List<object> { Count: 2 }
+          && Encoding.ASCII.GetString((byte[])unpacked["q"]) == "get_peers", "the directory's message format is written and read back");
+    Check(Bencode.Decode(Encoding.ASCII.GetBytes("d1:a")) is null && Bencode.Decode(Encoding.ASCII.GetBytes("5:ab")) is null && Bencode.Decode(Encoding.ASCII.GetBytes("i12")) is null
+          && Bencode.Decode(Encoding.ASCII.GetBytes(new string('l', 50))) is null && Bencode.Decode([]) is null, "broken messages from strangers are refused, not crashed on");
+    var someId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a certificate")));
+    Check(Portal.NumberOf(someId) is { Length: 12 } digits && digits.All(char.IsDigit) && digits == Portal.NumberOf(someId.ToLowerInvariant())
+          && Portal.ShowNumber("482019337615") == "482 019 337 615" && Portal.DirectoryKey(digits, false).Length == 20
+          && !Portal.DirectoryKey(digits, false).SequenceEqual(Portal.DirectoryKey(digits, true)), "a PC's ID is twelve digits made from its certificate");
+
+    var (homeSettings, awaySettings) = (new PortalSettings { Folder = Path.Combine(temp, "PortalHome") }, new PortalSettings { Folder = Path.Combine(temp, "PortalAway"), Reachable = true });
+    var home = await PortalNode.Start(homeSettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
+    var away = await PortalNode.Start(awaySettings, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
+    var shut = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "PortalShut") }, System.Net.IPAddress.Loopback, discovery: false, certificate: Identity(), directory: false);
+    var awayAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, away.LinkPort);
+    Check(home.Number.Length == 12 && home.Number != away.Number && away.Reachable && !home.Reachable && home.LinkPort > 0, "each PC has its ID; being reachable is a choice");
+    Check(await home.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, shut.LinkPort)) is null, "a PC that is not reachable can not be connected to");
+    Check(await home.ConnectDirect(awayAt, "000000000000") is null, "a PC that answers under another ID than the one typed is not accepted");
+    var far = await home.ConnectDirect(awayAt, away.Number);
+    Check(far is { Internet: true, Online: true, Trusted: false } && far.Id == away.Id, "a reachable PC is found and identified across the path");
+    Check((await home.ConnectById("12 34")).Problem == PortalConnectProblem.BadNumber && (await home.ConnectById(home.Number)).Problem == PortalConnectProblem.BadNumber
+          && (await home.ConnectById("123 456 789 012")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
+
+    // Pairing and files work over the path exactly as on a local network, in both directions.
+    var pairAsk = await home.Pair(far!);
+    Check(pairAsk is not null && await Until(() => away.Pairings.Count == 1 && away.Pairings[0].Code.Length == 7) && away.Pairings[0].Code == pairAsk!.Code, "pairing over the path shows the same code on both");
+    home.Confirm(pairAsk!);
+    away.Confirm(away.Pairings[0]);
+    var homeSeenFromAway = away.Peers.Single(peer => peer.Id == home.Id);
+    Check(homeSeenFromAway is { Trusted: true, Internet: true } && awaySettings.Devices.Count == 1, "both PCs trust each other and know the way back");
+    away.SetAutoAccept(home.Id, true);
+    home.SetAutoAccept(away.Id, true);
+    var cargo = new byte[9_000_000];
+    Random.Shared.NextBytes(cargo);
+    var cargoFolder = Path.Combine(temp, "PortalCargo", "Trip");
+    Directory.CreateDirectory(Path.Combine(cargoFolder, "day 2"));
+    File.WriteAllBytes(Path.Combine(cargoFolder, "film.mp4"), cargo);
+    File.WriteAllText(Path.Combine(cargoFolder, "day 2", "note.txt"), "hello from afar");
+    var timer = System.Diagnostics.Stopwatch.StartNew();
+    var outbound = home.Send(far!, [cargoFolder])!;
+    Check(await Until(() => !outbound.Running, 60) && outbound.State == "done" && File.ReadAllBytes(Path.Combine(awaySettings.Folder, "Trip", "film.mp4")).SequenceEqual(cargo)
+          && File.ReadAllText(Path.Combine(awaySettings.Folder, "Trip", "day 2", "note.txt")) == "hello from afar",
+          $"a folder crosses the path whole ({outbound.State} {outbound.Note}, {cargo.Length / 1048576.0 / timer.Elapsed.TotalSeconds:0.0} MB/s on this PC)");
+    var reply = away.Send(homeSeenFromAway, [Path.Combine(cargoFolder, "day 2", "note.txt")])!;
+    Check(await Until(() => !reply.Running, 30) && reply.State == "done" && File.ReadAllText(Path.Combine(homeSettings.Folder, "note.txt")) == "hello from afar",
+          $"and files come back the other way ({reply.State} {reply.Note})");
+
+    away.Reachable = false;
+    Check(!awaySettings.Reachable && await shut.ConnectDirect(awayAt, away.Number) is null, "switching reachable off closes the door to new PCs");
+    await home.Stop();
+    await away.Stop();
+    await shut.Stop();
+}
 
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
