@@ -82,6 +82,8 @@ public sealed partial class SettingsPage : Page
         quick.Children.Add(Ui.Muted(Ui.T("A small tile that stays on top of other windows. Drag files or folders onto it to sort them, lock them in "
                                          + "the Vault, shred them or recycle them. Drag the tile to move it."), 12, wrap: true).Margin(0, 2, 0, 0));
         AddSandbox(quick);
+        AddWindowsUpdates(quick);
+        AddPcName(quick);
         quick.Children.Add(new Border { Height = 1, Background = Ui.Paint("Line"), Margin = new Thickness(0, 18, 0, 0) });
 
         // Save settings sits at the bottom, always in view, because nothing in the form below applies until it is pressed.
@@ -244,6 +246,85 @@ public sealed partial class SettingsPage : Page
             ? "Windows Sandbox needs Windows Pro, Enterprise or Education."
             : "A throwaway copy of Windows for trying files and programs safely. Everything in it is deleted when you close it."),
             12, wrap: true).Margin(0, 2, 0, 0));
+    }
+
+    /// <summary>Stop Windows updates: a switch that holds them back until it is switched off again (administrator rights).</summary>
+    private static void AddWindowsUpdates(StackPanel quick)
+    {
+        var showing = false;
+        CheckBox? toggle = null;
+        toggle = Ui.Switch(Ui.T("Stop Windows updates"), TuneUp.IsApplied(TuneUp.WindowsUpdate), async on =>
+        {
+            if (showing)
+                return;
+            void PutBack()
+            {
+                showing = true;
+                toggle!.IsChecked = !on;
+                showing = false;
+            }
+            if (on && !Ui.Ask("Windows updates", Ui.T("Stop Windows updates?\n\nWindows will not download or install updates until you switch this "
+                                                      + "off again. That includes security fixes, so the PC is less protected the longer it stays on."), warning: true))
+            {
+                PutBack();
+                return;
+            }
+            if (!await Admin.Ensure("Windows updates", Ui.T("Changing Windows updates needs administrator rights.")))
+            {
+                PutBack();
+                return;
+            }
+            toggle!.IsEnabled = false;
+            var result = await Task.Run(() => on ? TuneUp.Apply([TuneUp.WindowsUpdate], null) : TuneUp.Undo(tweak => tweak.Key == TuneUp.WindowsUpdate));
+            toggle.IsEnabled = true;
+            if (result.NeedsHelper.Count > 0 || result.Changed == 0)
+            {
+                PutBack();
+                Ui.Warn("Windows updates", Ui.T("Windows updates could not be changed."));
+                return;
+            }
+            Ui.Info("Windows updates", Ui.T(on ? "Windows updates are stopped. Windows Update in Windows' own Settings shows them as paused."
+                                               : "Windows updates are back on. Open Windows Update and press Check for updates to catch up."));
+        });
+        quick.Children.Add(toggle.Margin(0, 12, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("Holds back all Windows updates, security fixes included, until you switch it off. Needs administrator rights."),
+                                    12, wrap: true).Margin(0, 2, 0, 0));
+    }
+
+    /// <summary>The PC's name in Windows, with a button that changes it (administrator rights and a restart).</summary>
+    private static void AddPcName(StackPanel quick)
+    {
+        var field = Ui.Field(PcName.Pending, 200);
+        field.MaxLength = 15;
+        Button? rename = null;
+        rename = Ui.Button(Ui.T("Rename"), async () =>
+        {
+            var name = field.Text.Trim();
+            if (name.Equals(PcName.Pending, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!PcName.Valid(name))
+            {
+                Ui.Warn("PC name", Ui.T("A PC name is 1 to 15 English letters, digits and hyphens. It cannot be only digits, or begin or end with a hyphen."));
+                return;
+            }
+            if (!await Admin.Ensure("PC name", Ui.T("Renaming the PC needs administrator rights.")))
+                return;
+            rename!.IsEnabled = false;
+            var done = await Task.Run(() => AdminHelper.Send("rename_pc", [name]));
+            rename.IsEnabled = true;
+            if (done is not { Count: 1 })
+            {
+                Ui.Warn("PC name", Ui.T("Windows did not accept the new name."));
+                return;
+            }
+            if (Ui.Ask("PC name", Ui.T("This PC will be called {0} after it restarts.\n\nRestart now? Save your work in other programs first.", name)))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown.exe", "/r /t 5") { CreateNoWindow = true })?.Dispose();
+        });
+        var label = Ui.Text(Ui.T("PC name"));
+        label.VerticalAlignment = VerticalAlignment.Center;
+        quick.Children.Add(Ui.Row(10, label, field, rename).Margin(0, 14, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("The name other devices on the network, and other PCs in Courier, see. Needs administrator rights and a restart."),
+                                    12, wrap: true).Margin(0, 2, 0, 0));
     }
 
     private System.Collections.ObjectModel.ObservableCollection<Row> CategoryRows => (System.Collections.ObjectModel.ObservableCollection<Row>)categories.ItemsSource;

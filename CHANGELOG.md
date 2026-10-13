@@ -3,6 +3,16 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.17.0
+
+- Booster has an Advanced tab: lasting changes that make the whole PC lighter, in four presets (Low, Medium, High, Extreme) or a choice of your own. They cover Game Mode, background game recording, tips and promoted apps, the power plan, transparency and animations, and (with administrator rights) telemetry, SysMain, search indexing and a few rarely used services.
+- Undo all changes: what each setting was is written down before it is changed, and one button puts everything back.
+- Settings: a switch that stops Windows updates until you switch it off again (administrator rights). Security fixes stop too, so use it with care.
+- Settings: rename the PC (administrator rights and a restart).
+- Internet: the PC's local and public IP address, each with a Copy button.
+- Courier: every transfer shows the time elapsed and the time left, and can be paused and resumed from either PC.
+- Courier IDs are digits only now: nine digits, like 418 205 937. Every PC gets a new ID, and both PCs need this version to find each other.
+
 ## 1.16.0
 
 - Courier is quicker and simpler. The first time, choose "Share from this PC" or type the other PC's ID and press Connect; after that Courier starts with PC Butler and stays connected, with no clicks.

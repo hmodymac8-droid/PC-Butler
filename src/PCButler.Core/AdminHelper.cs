@@ -10,7 +10,7 @@ namespace PCButler.Core;
 public sealed class HelperMessage
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
-    /// <summary>"stop_services", "start_services" or "allow_portal".</summary>
+    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore" or "rename_pc".</summary>
     [JsonPropertyName("action")] public string Action { get; set; } = "";
     /// <summary>Asked: the services to act on. Answered: the ones it worked for.</summary>
     [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
@@ -23,8 +23,9 @@ public sealed class HelperMessage
 /// the helper carries it out and leaves the answer in another.
 ///
 /// Any program can write that file, so the helper only accepts what is listed here: it
-/// can pause and resume three named Windows services, and let Portal through the
-/// firewall for this program's own file on private networks. Nothing else.
+/// can pause and resume three named Windows services, let Courier through the firewall
+/// for this program's own file, apply and put back the tweaks in TuneUp's catalogue, and
+/// give the PC a new name. Nothing else.
 /// </summary>
 public static class AdminHelper
 {
@@ -89,8 +90,10 @@ public static class AdminHelper
     /// The helper's side: carry out a waiting request, if there is one. "stopped" is the
     /// helper's own list of what it has paused, so it can resume them when it ends.
     /// </summary>
-    public static void Poll(string directory, List<string> stopped, Func<string, bool, bool>? change = null, Func<bool>? allowPortal = null)
+    public static void Poll(string directory, List<string> stopped, Func<string, bool, bool>? change = null, Func<bool>? allowPortal = null,
+                            Func<TweakStep, string>? tune = null, Func<TweakStep, string, bool>? untune = null, Func<string, bool>? rename = null)
     {
+        rename ??= PcName.Set;
         change ??= ChangeService;
         allowPortal ??= Portal.AllowThroughFirewall;
         HelperMessage? message;
@@ -105,14 +108,22 @@ public static class AdminHelper
         {
             return;
         }
-        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal"))
+        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc"))
             return;
+        var services = message.Action is "stop_services" or "start_services";
         var stop = message.Action == "stop_services";
         var done = new List<string>();
         // The firewall request carries nothing to act on: the rule is always for this program's own file.
         if (message.Action == "allow_portal" && allowPortal())
             done.Add("portal");
-        foreach (var service in message.Action == "allow_portal" ? [] : message.Services)
+        if (message.Action == "tune_apply")
+            done.AddRange(TuneUp.HelperApply(message.Services, tune));
+        if (message.Action == "tune_restore")
+            done.AddRange(TuneUp.HelperRestore(message.Services, untune));
+        // A name Windows would refuse is refused here already.
+        if (message.Action == "rename_pc" && message.Services is [var name] && PcName.Valid(name) && rename(name))
+            done.Add(name);
+        foreach (var service in services ? message.Services : [])
         {
             // Only the listed services, spelled as listed; and only resume what this helper paused.
             var key = PausableServices.FirstOrDefault(item => item.Key.Equals(service, StringComparison.OrdinalIgnoreCase)).Key;
@@ -143,7 +154,7 @@ public static class AdminHelper
         stopped.Clear();
     }
 
-    private static string RunSc(params string[] arguments)
+    internal static string RunSc(params string[] arguments)
     {
         try
         {

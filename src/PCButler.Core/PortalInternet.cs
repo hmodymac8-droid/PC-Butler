@@ -14,7 +14,7 @@ namespace PCButler.Core;
 public enum PortalConnectProblem
 {
     None,
-    /// <summary>Not an ID (six characters), or this PC's own.</summary>
+    /// <summary>Not an ID (nine digits), or this PC's own.</summary>
     BadNumber,
     /// <summary>The public directory could not be reached from this network.</summary>
     NoDirectory,
@@ -46,7 +46,7 @@ public sealed partial class PortalNode
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private List<PortalClient> otherClients = [];
 
-    /// <summary>This PC's ID: six characters, like K7M-2QX.</summary>
+    /// <summary>This PC's ID: nine digits, like 418 205 937.</summary>
     public string Number => Portal.NumberOf(Id);
     /// <summary>The port of the IPv4 socket used across the internet.</summary>
     public int LinkPort => link4?.Port ?? 0;
@@ -494,36 +494,21 @@ public sealed partial class PortalNode
 
 public static partial class Portal
 {
-    /// <summary>The characters of an ID: digits and letters, without I, L, O and U, which are easily taken for others.</summary>
-    private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-
     /// <summary>
-    /// A PC's ID: six characters (30 bits of its certificate's fingerprint), like "K7M2QX". It
+    /// A PC's ID: nine digits made from its certificate's fingerprint, like "418205937". It
     /// finds the PC; it does not prove who it is: pairing does that.
     /// </summary>
-    public static string NumberOf(string fingerprint)
-    {
-        var bits = Convert.ToUInt64(fingerprint[..8], 16) >> 2;
-        var text = new char[6];
-        for (var index = 5; index >= 0; index--, bits >>= 5)
-            text[index] = Alphabet[(int)(bits & 31)];
-        return new string(text);
-    }
+    public static string NumberOf(string fingerprint) => (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000).ToString("D9");
 
-    /// <summary>An ID as typed: any case, any spaces or dashes, and O, I, L taken for 0, 1, 1. "" when it can't be one.</summary>
-    public static string NormalizeNumber(string typed)
-    {
-        var clean = new string(typed.ToUpperInvariant().Where(char.IsLetterOrDigit)
-            .Select(character => character switch { 'O' => '0', 'I' or 'L' => '1', 'U' => 'V', _ => character }).ToArray());
-        return IsNumber(clean) ? clean : clean.Length == 0 ? "" : clean;
-    }
+    /// <summary>An ID as typed: only its digits count, so spaces and dashes do no harm.</summary>
+    public static string NormalizeNumber(string typed) => new(typed.Where(char.IsAsciiDigit).ToArray());
 
-    public static bool IsNumber(string number) => number.Length == 6 && number.All(Alphabet.Contains);
+    public static bool IsNumber(string number) => number.Length == 9 && number.All(char.IsAsciiDigit);
 
-    /// <summary>"K7M2QX" as "K7M-2QX".</summary>
-    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]}-{number[3..]}" : number;
+    /// <summary>"418205937" as "418 205 937".</summary>
+    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]} {number[3..6]} {number[6..]}" : number;
 
     /// <summary>Where in the public directory a PC with this ID announces itself, or where others leave their address for it ("knock").</summary>
     public static byte[] DirectoryKey(string number, bool knock) =>
-        SHA1.HashData(Encoding.ASCII.GetBytes($"pcbutler-courier-v2|{(knock ? "knock" : "here")}|{number}"));
+        SHA1.HashData(Encoding.ASCII.GetBytes($"pcbutler-courier-v3|{(knock ? "knock" : "here")}|{number}"));
 }

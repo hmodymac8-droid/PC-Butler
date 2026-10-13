@@ -47,7 +47,7 @@ public sealed class PortalSettings
     [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
     /// <summary>"host" (the PC the others connect to), "client" (connects to a host by its ID), or "" until chosen.</summary>
     [JsonPropertyName("role")] public string Role { get; set; } = "";
-    /// <summary>A client's host, by its ID (six characters).</summary>
+    /// <summary>A client's host, by its ID (nine digits).</summary>
     [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
     /// <summary>Start Courier with PC Butler, so a client is connected and a host is reachable without a click.</summary>
     [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
@@ -75,8 +75,16 @@ public sealed class PortalPeer
 /// <summary>One batch of files on its way in or out, for the page to show.</summary>
 public sealed class PortalTransfer
 {
+    private readonly System.Diagnostics.Stopwatch moving = new();
     private long done;
     private int cancelled;
+    private int paused;
+    private bool pausedThere;
+    private string state = "active";
+    private long sampleAt = Environment.TickCount64, sampleDone;
+    private double rate;
+
+    public PortalTransfer() => moving.Start();
 
     public required string Id { get; init; }
     public required string Name { get; init; }
@@ -87,7 +95,15 @@ public sealed class PortalTransfer
     public required string Peer { get; init; }
     public DateTime Started { get; } = DateTime.Now;
     /// <summary>"waiting" (for the other PC to accept), "active", "done", "failed", "refused" or "cancelled".</summary>
-    public string State { get; internal set; } = "active";
+    public string State
+    {
+        get => state;
+        internal set
+        {
+            state = value;
+            Clock();
+        }
+    }
     /// <summary>Why it failed, in the user's language.</summary>
     public string Note { get; internal set; } = "";
     /// <summary>Where the received files ended up.</summary>
@@ -95,8 +111,54 @@ public sealed class PortalTransfer
     public long Done => Interlocked.Read(ref done);
     public bool Cancelled => Volatile.Read(ref cancelled) != 0;
     public bool Running => State is "waiting" or "active";
+    /// <summary>Held on this PC until Resume.</summary>
+    public bool Paused => Volatile.Read(ref paused) != 0;
+    /// <summary>Held on the other PC; only its user can let it go on.</summary>
+    public bool PausedThere
+    {
+        get => pausedThere;
+        internal set
+        {
+            pausedThere = value;
+            Clock();
+        }
+    }
+    /// <summary>How long it has been moving: waiting for an answer and pauses are not counted.</summary>
+    public TimeSpan Elapsed => moving.Elapsed;
+    /// <summary>Bytes a second over the last few seconds; 0 while nothing moves.</summary>
+    public double Speed => State == "active" && !Paused && !PausedThere && Environment.TickCount64 - Volatile.Read(ref sampleAt) < 5000 ? rate : 0;
+    /// <summary>How long the rest takes at the present speed; null when that can't be told.</summary>
+    public TimeSpan? Remaining => Speed is > 0 and var speed && State == "active" ? TimeSpan.FromSeconds(Math.Max(0, Size - Done) / speed) : null;
 
-    internal void Add(long bytes) => Interlocked.Add(ref done, bytes);
+    /// <summary>The request carrying the piece that is on its way, so a pause takes effect at once.</summary>
+    internal CancellationTokenSource? Flight { get; set; }
+
+    internal void Add(long bytes)
+    {
+        var total = Interlocked.Add(ref done, bytes);
+        var now = Environment.TickCount64;
+        lock (moving)
+        {
+            var since = now - sampleAt;
+            if (since < 1000)
+                return;
+            // A long gap (a pause, a lost connection) says nothing about the speed now.
+            var latest = since > 5000 ? 0 : Math.Max(0, total - sampleDone) * 1000.0 / since;
+            rate = rate <= 0 || latest <= 0 ? latest : rate * 0.7 + latest * 0.3;
+            (sampleAt, sampleDone) = (now, total);
+        }
+    }
+
+    private void Clock()
+    {
+        lock (moving)
+        {
+            if (state == "active" && !Paused && !pausedThere)
+                moving.Start();
+            else
+                moving.Stop();
+        }
+    }
 
     /// <summary>Stop it from this PC. The other PC is told with its next request.</summary>
     public void Cancel()
@@ -105,6 +167,37 @@ public sealed class PortalTransfer
             return;
         Volatile.Write(ref cancelled, 1);
         State = "cancelled";
+        try
+        {
+            Flight?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    /// <summary>Hold it where it is. What has arrived stays, and Resume carries on from there.</summary>
+    public void Pause()
+    {
+        if (State != "active" || Paused)
+            return;
+        Volatile.Write(ref paused, 1);
+        Clock();
+        try
+        {
+            Flight?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    public void Resume()
+    {
+        Volatile.Write(ref paused, 0);
+        lock (moving)
+            (sampleAt, sampleDone, rate) = (Environment.TickCount64, Done, 0);
+        Clock();
     }
 }
 
@@ -634,6 +727,15 @@ public sealed partial class PortalNode
                 var failures = 0;
                 do
                 {
+                    if (transfer.Paused)
+                    {
+                        // Held on this PC: say so to the other one, and wait here until Resume or Cancel.
+                        await Hold(client, transfer, true);
+                        while (transfer.Paused && !transfer.Cancelled)
+                            await Task.Delay(200, stop);
+                        if (!transfer.Cancelled)
+                            await Hold(client, transfer, false);
+                    }
                     if (transfer.Cancelled)
                     {
                         await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
@@ -649,7 +751,22 @@ public sealed partial class PortalNode
                     try
                     {
                         using var piece = new ByteArrayContent(buffer, 0, count);
-                        using var answer = await client.PutAsync($"{Api}/send/{transfer.Id}/{index}?offset={offset}", piece, stop);
+                        using var flight = CancellationTokenSource.CreateLinkedTokenSource(stop);
+                        transfer.Flight = flight;
+                        using var answer = await client.PutAsync($"{Api}/send/{transfer.Id}/{index}?offset={offset}", piece, flight.Token);
+                        transfer.Flight = null;
+                        if (answer.StatusCode == HttpStatusCode.Locked)
+                        {
+                            // Held on the other PC: ask now and then until its user lets it go on.
+                            transfer.PausedThere = true;
+                            Raise();
+                            while (!transfer.Cancelled && !transfer.Paused
+                                   && (await client.GetFromJsonAsync<JsonElement>($"{Api}/send/{transfer.Id}", stop)).GetProperty("state").GetString() == "paused")
+                                await Task.Delay(1000, stop);
+                            transfer.PausedThere = false;
+                            Raise();
+                            continue;
+                        }
                         if (answer.StatusCode == HttpStatusCode.Gone)
                         {
                             if (transfer.Running)
@@ -663,6 +780,11 @@ public sealed partial class PortalNode
                         transfer.Add(received - offset);
                         offset = received;
                         failures = 0;
+                    }
+                    catch (OperationCanceledException) when (!stop.IsCancellationRequested && (transfer.Paused || transfer.Cancelled))
+                    {
+                        // Pause or Cancel cut the piece short; what arrived of it stays on the other PC.
+                        transfer.Flight = null;
                     }
                     catch (Exception error) when (error is HttpRequestException or IOException)
                     {
@@ -691,6 +813,19 @@ public sealed partial class PortalNode
         {
             Raise();
         }
+    }
+
+    /// <summary>Tell the receiving PC that the sender holds this transfer, or lets it go on. A PC that does not know the request is not troubled.</summary>
+    private async Task Hold(HttpClient client, PortalTransfer transfer, bool on)
+    {
+        try
+        {
+            using var answer = await client.PostAsync($"{Api}/send/{transfer.Id}/hold?on={(on ? 1 : 0)}", null, stopping.Token);
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException)
+        {
+        }
+        Raise();
     }
 
     /// <summary>Fill the buffer from the file at the given place; returns how much was read.</summary>
@@ -792,7 +927,12 @@ public sealed partial class PortalNode
                         }
                         Raise();
                     }
-                    await Json(context, 200, new { state = job.Transfer.Cancelled ? "cancelled" : job.State });
+                    await Json(context, 200, new { state = job.Transfer.Cancelled ? "cancelled" : job.Transfer.Paused && job.State == "accepted" ? "paused" : job.State });
+                    break;
+                case ["send", var id, "hold"] when method == "POST" && JobPattern().IsMatch(id) && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
+                    job.Transfer.PausedThere = context.Request.Query["on"] == "1";
+                    await Json(context, 200, new { });
+                    Raise();
                     break;
                 case ["send", var id, var number] when method == "PUT" && JobPattern().IsMatch(id) && int.TryParse(number, out var index)
                                                        && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
@@ -975,6 +1115,12 @@ public sealed partial class PortalNode
             await Json(context, 410, new { });
             return;
         }
+        if (job.Transfer.Paused)
+        {
+            await Json(context, 423, new { });
+            return;
+        }
+        job.Transfer.PausedThere = false;
         if (job.State != "accepted" || index < 0 || index >= job.Files.Count || !long.TryParse(context.Request.Query["offset"], out var offset) || offset < 0)
         {
             await Json(context, 400, new { });
@@ -1006,7 +1152,7 @@ public sealed partial class PortalNode
                 int read;
                 while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
                 {
-                    if (job.Transfer.Cancelled)
+                    if (job.Transfer.Cancelled || job.Transfer.Paused)
                         break;
                     if (read > room)
                     {
@@ -1033,6 +1179,12 @@ public sealed partial class PortalNode
             {
                 DeleteParts(job);
                 await Json(context, 410, new { });
+                return;
+            }
+            if (job.Transfer.Paused && length < size)
+            {
+                // Held in the middle of a piece: what arrived is kept, and the sender carries on from there.
+                await Json(context, 423, new { });
                 return;
             }
             if (length == size)

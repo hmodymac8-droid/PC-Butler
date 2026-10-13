@@ -507,7 +507,7 @@ Section("courier host and clients");
     Check(await alice.ConnectDirect(hostAt, "000000000000") is null, "a host that answers under another ID than the one expected is not taken");
     Check(await host.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, stranger.LinkPort)) is null, "a client takes no path it did not open itself");
     Check((await alice.ConnectById("K7M")).Problem == PortalConnectProblem.BadNumber && (await alice.ConnectById(alice.Number)).Problem == PortalConnectProblem.BadNumber
-          && (await alice.ConnectById("k7m-2qx")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
+          && (await alice.ConnectById("418 205 937")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
     var early = alice.Send(aliceHost!, [Make(Path.Combine(temp, "CourierOut"), "early.txt", "too early")])!;
     Check(await Until(() => early.State == "failed") && !Directory.EnumerateFiles(hostSettings.Folder).Any(), "nothing can be sent before pairing");
 
@@ -547,6 +547,38 @@ Section("courier host and clients");
     var downward = host.Send(host.Peers.Single(peer => peer.Id == alice.Id), [album])!;
     Check(await Until(() => !downward.Running, 30) && downward.State == "done" && File.ReadAllText(Path.Combine(aliceSettings.Folder, "Album", "inner", "deep", "three.txt")) == "three"
           && new FileInfo(Path.Combine(aliceSettings.Folder, "Album", "empty.txt")).Length == 0, $"a folder goes from the host to a client, structure and all ({downward.State} {downward.Note})");
+
+    // Pause and resume, from the sending PC and from the receiving one.
+    var bigFilm = new byte[90_000_000];
+    Random.Shared.NextBytes(bigFilm);
+    var bigFile = Path.Combine(temp, "CourierOut", "bigFilm film.mkv");
+    File.WriteAllBytes(bigFile, bigFilm);
+    host.SetAutoAccept(alice.Id, true);
+    var held = alice.Send(aliceToHost, [bigFile])!;
+    Check(await Until(() => held.Done > 0, 30), "a bigFilm file starts moving");
+    held.Pause();
+    await Task.Delay(1200);
+    var (heldAt, heldFor) = (held.Done, held.Elapsed);
+    var heldThere = host.Transfers.Last(transfer => transfer.Incoming);
+    await Task.Delay(1200);
+    Check(held is { Paused: true, State: "active" } && held.Done == heldAt && heldAt < bigFilm.Length && held.Elapsed == heldFor && held.Remaining is null,
+          $"Pause holds a transfer where it is, and its clock too ({held.Done} of {bigFilm.Length})");
+    Check(heldThere.PausedThere && heldThere.State == "active", "the receiving PC is told the sender paused");
+    held.Resume();
+    Check(await Until(() => !held.Running, 60) && held.State == "done" && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "bigFilm film.mkv")).SequenceEqual(bigFilm)
+          && held.Elapsed > heldFor, $"Resume carries on from there, and the file arrives whole ({held.State} {held.Note})");
+    var heldBack = alice.Send(aliceToHost, [bigFile])!;
+    Check(await Until(() => host.Transfers.Last(transfer => transfer.Incoming) is var arriving && arriving != heldThere && arriving.Done > 0, 30), "another one starts");
+    var arrivingHere = host.Transfers.Last(transfer => transfer.Incoming);
+    arrivingHere.Pause();
+    Check(await Until(() => heldBack.PausedThere, 20) && heldBack.State == "active", "paused on the receiving PC, the sender waits and says so");
+    var arrivedSoFar = arrivingHere.Done;
+    await Task.Delay(1000);
+    Check(arrivingHere.Done == arrivedSoFar && arrivedSoFar < bigFilm.Length, "and nothing more arrives meanwhile");
+    arrivingHere.Resume();
+    Check(await Until(() => !heldBack.Running, 60) && heldBack.State == "done" && !heldBack.PausedThere
+          && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "bigFilm film (1).mkv")).SequenceEqual(bigFilm), $"and goes on when the receiver resumes ({heldBack.State} {heldBack.Note})");
+    host.SetAutoAccept(alice.Id, false);
 
     // Client to client, through the host.
     Check(await Until(() => alice.OtherClients.Any(client => client.Id == bob.Id && client.Online), 25) && alice.OtherClients.All(client => client.Id != alice.Id),
@@ -706,11 +738,90 @@ Section("courier IDs");
           && Bencode.Decode(Encoding.ASCII.GetBytes(new string('l', 50))) is null && Bencode.Decode([]) is null, "broken messages from strangers are refused, not crashed on");
     var someId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a certificate")));
     var shortId = Portal.NumberOf(someId);
-    Check(shortId.Length == 6 && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
-          && !shortId.Any(character => character is 'I' or 'L' or 'O' or 'U') && Portal.DirectoryKey(shortId, false).Length == 20
-          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is six characters made from its certificate ({shortId})");
-    Check(Portal.ShowNumber("K7M2QX") == "K7M-2QX" && Portal.NormalizeNumber(" k7m-2qx ") == "K7M2QX" && Portal.NormalizeNumber("O1L-ISU") == "0111SV"
-          && !Portal.IsNumber("K7M2Q") && !Portal.IsNumber("K7M2QXX") && Portal.NormalizeNumber("") == "", "an ID is read however it is typed, and look-alike letters count as the digits");
+    Check(shortId.Length == 9 && shortId.All(char.IsAsciiDigit) && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
+          && Portal.NumberOf(new string('0', 64)) == "000000000" && Portal.DirectoryKey(shortId, false).Length == 20
+          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is nine digits made from its certificate ({shortId})");
+    Check(Portal.ShowNumber("418205937") == "418 205 937" && Portal.NormalizeNumber(" 418-205 937 ") == "418205937" && Portal.NormalizeNumber("K7M-2QX") == "72"
+          && !Portal.IsNumber("41820593") && !Portal.IsNumber("4182059370") && !Portal.IsNumber("K7M2QX123") && Portal.NormalizeNumber("") == "",
+          "an ID is digits only, read however it is typed");
+
+    // ------------------------------------------------------------ tune-up: lasting changes that can all be put back
+    Section("tune-up");
+    var tuneRoot = $@"Software\PCButlerTests\{Guid.NewGuid():N}";
+    var tuneState = Path.Combine(temp, "tuneup-test.json");
+    using (var tuneKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(tuneRoot))
+    {
+        tuneKey.SetValue("Glass", 1, Microsoft.Win32.RegistryValueKind.DWord);
+        tuneKey.SetValue("AlreadyOff", 0, Microsoft.Win32.RegistryValueKind.DWord);
+        Tweak[] testTweaks =
+        [
+            new("glass", 1, false, "Glass", "", [new RegistryStep(false, tuneRoot, "Glass", 0), new RegistryStep(false, tuneRoot, "Fresh", 7)]),
+            new("nothing", 1, false, "Nothing", "", [new RegistryStep(false, tuneRoot, "AlreadyOff", 0)]),
+            new("deep", 2, false, "Deep", "", [new RegistryStep(false, tuneRoot + @"\Deeper", "Stamp", "{later}")]),
+            new("service", 2, true, "Service", "", [new ServiceStep("Pretend")]),
+            new("other", 0, true, "Other", "", [new ServiceStep("Elsewhere")], "update"),
+        ];
+        var helperAsked = new List<string>();
+        var helperThere = false;
+        List<string>? PretendHelper(string action, List<string> items)
+        {
+            if (!helperThere)
+                return null;
+            helperAsked.Add(action + " " + string.Join(",", items));
+            return action == "tune_apply" ? items.Select(item => $"{item}#0=2:0:1").ToList() : items;
+        }
+        var tuned = TuneUp.Apply(["glass", "nothing", "deep", "service", "no-such-tweak"], "medium", testTweaks, tuneState, PretendHelper);
+        Check(tuned.Changed == 2 && tuned.NeedsHelper.SequenceEqual(["service"]) && tuneKey.GetValue("Glass") is 0 && tuneKey.GetValue("Fresh") is 7
+              && tuneKey.OpenSubKey("Deeper")?.GetValue("Stamp") is string stamp && stamp.EndsWith('Z') && stamp.Length == 20,
+              "a preset changes what it lists, and leaves what needs the helper when the helper is not there");
+        var written = TuneUp.Load(tuneState);
+        Check(written.Level == "medium" && written.Applied["glass"].SequenceEqual(["d:1", "-"]) && !written.Applied.ContainsKey("nothing") && !written.Applied.ContainsKey("service")
+              && TuneUp.IsApplied("deep", tuneState), "what was there before is written down, and a value already as wanted is not counted as ours");
+        helperThere = true;
+        Check(TuneUp.Apply(["other"], null, testTweaks, tuneState, PretendHelper).Changed == 1 && TuneUp.Load(tuneState) is { Level: "medium" } both
+              && both.Applied.ContainsKey("glass") && both.Applied["other"].SequenceEqual(["2:0:1"]), "a switch outside the tune-up is added without disturbing it");
+        tuneKey.SetValue("Fresh", 99, Microsoft.Win32.RegistryValueKind.DWord); // changed by the user since
+        var retuned = TuneUp.Apply(["glass", "service"], "custom", testTweaks, tuneState, PretendHelper);
+        Check(retuned is { Changed: 2, NeedsHelper.Count: 0 } && tuneKey.OpenSubKey("Deeper")?.GetValue("Stamp") is null && tuneKey.GetValue("Fresh") is 7
+              && TuneUp.Load(tuneState) is { Level: "custom" } custom && custom.Applied.Keys.Order().SequenceEqual(["glass", "other", "service"])
+              && custom.Applied["glass"].SequenceEqual(["d:1", "d:99"]) && helperAsked.Contains("tune_apply service"),
+              "choosing again puts the old choice back first, so only the new one is in force");
+        helperThere = false;
+        var half = TuneUp.Undo(null, testTweaks, tuneState, PretendHelper);
+        Check(half.Changed == 1 && half.NeedsHelper.SequenceEqual(["service"]) && tuneKey.GetValue("Glass") is 1 && tuneKey.GetValue("Fresh") is 99
+              && TuneUp.Load(tuneState) is { Level: "custom" } leftOver && leftOver.Applied.ContainsKey("service"), "Undo puts values back, and keeps what it could not undo for the next try");
+        helperThere = true;
+        Check(TuneUp.Undo(null, testTweaks, tuneState, PretendHelper) is { Changed: 1, NeedsHelper.Count: 0 } && helperAsked.Contains("tune_restore service#0=2:0:1")
+              && TuneUp.Load(tuneState) is { Level: "" } after && after.Applied.Keys.SequenceEqual(["other"]), "with the helper, the rest goes back too; the other switch stays");
+        Check(TuneUp.Undo(tweak => tweak.Key == "other", testTweaks, tuneState, PretendHelper).Changed == 1 && TuneUp.Load(tuneState).Applied.Count == 0, "and can be undone by itself");
+    }
+    Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(tuneRoot, throwOnMissingSubKey: false);
+    Check(TuneUp.ForLevel("low").Count >= 3 && TuneUp.Levels.Zip(TuneUp.Levels.Skip(1)).All(pair => TuneUp.ForLevel(pair.First).All(TuneUp.ForLevel(pair.Second).Contains)
+              && TuneUp.ForLevel(pair.First).Count < TuneUp.ForLevel(pair.Second).Count)
+          && TuneUp.ForLevel("extreme").Count == TuneUp.Catalogue.Count(tweak => tweak.Group == "tune") && !TuneUp.ForLevel("extreme").Contains(TuneUp.WindowsUpdate)
+          && TuneUp.ForLevel("low").All(key => !TuneUp.Catalogue.First(tweak => tweak.Key == key).Admin)
+          && TuneUp.Catalogue.Select(tweak => tweak.Key).Distinct().Count() == TuneUp.Catalogue.Length
+          && TuneUp.Catalogue.All(tweak => tweak.Steps.Length > 0 && tweak.Admin == tweak.Steps.Any(step => step is ServiceStep or RegistryStep { Machine: true })),
+          "each preset holds the one below it and more; Low needs no administrator rights; machine-wide changes are all marked for the helper");
+    var helperDid = new List<string>();
+    var applied = TuneUp.HelperApply(["sysmain", "game_mode", "windows_update", "evil", "sysmain"], step => { helperDid.Add(step.ToString()!); return step is ServiceStep ? "2:1:1" : "-"; });
+    Check(applied.Count == 9 && applied[0] == "sysmain#0=2:1:1" && helperDid.Count == 9 && helperDid.All(did => !did.Contains("GameBar")),
+          "the helper applies administrator tweaks from the catalogue only, each once");
+    var restored = TuneUp.HelperRestore(
+        ["sysmain#0=2:1:1", "sysmain#0=4:0:0", "sysmain#5=2:0:0", "game_mode#0=d:0", "scheduler#0=d:20", "scheduler#0=s:text", "scheduler#1=-", "evil#0=-",
+         "windows_update#1=s:2026-01-01T00:00:00Z", "windows_update#1=s:calc.exe", "windows_update#0=d:35", @"sysmain#0=..\..\x"],
+        (step, before) => { helperDid.Add("back " + before); return true; });
+    Check(restored.SequenceEqual(["sysmain#0=2:1:1", "scheduler#0=d:20", "scheduler#1=-", "windows_update#1=s:2026-01-01T00:00:00Z", "windows_update#0=d:35"]),
+          $"the helper puts back only values of the right kind, in places the catalogue names ({string.Join(" ", restored)})");
+    Check(TuneUp.ServiceStart("RpcSs").Start == 2 && TuneUp.ServiceStart("no-such-service").Start == -1, "a service's start type can be read");
+    string? renamedTo = null;
+    foreach (var wanted in new[] { "Bad Name!", "12345", "-edge", "this-name-is-too-long", "Study-PC" })
+    {
+        File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), System.Text.Json.JsonSerializer.Serialize(new HelperMessage { Id = "n", Action = "rename_pc", Services = [wanted] }));
+        AdminHelper.Poll(helperDir, [], rename: name => { renamedTo = (renamedTo ?? "") + name; return true; });
+    }
+    Check(renamedTo == "Study-PC" && PcName.Valid("A") && PcName.Valid("PC-01") && !PcName.Valid("") && PcName.Pending.Length > 0, "a PC is renamed only to a name Windows allows");
+    Check(System.Net.IPAddress.TryParse(NetworkAddresses.Local(), out var localIp) || NetworkAddresses.Local() == "", $"the local address is read ({localIp})");
 
 }
 

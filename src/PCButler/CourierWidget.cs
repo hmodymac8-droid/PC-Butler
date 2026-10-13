@@ -28,6 +28,7 @@ public sealed class CourierWidget : Window
     private readonly Border collapseButton;
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly Dictionary<PortalTransfer, (ProgressBar Bar, TextBlock Detail, long Done, DateTime At, double Speed)> rows = [];
+    private readonly Dictionary<PortalTransfer, Border> pauses = [];
     private string asksShown = "", transfersShown = "";
     private bool collapsed;
 
@@ -283,7 +284,10 @@ public sealed class CourierWidget : Window
             transfersShown = key;
             transfersPanel.Children.Clear();
             foreach (var gone in rows.Keys.Where(transfer => !shown.Contains(transfer)).ToList())
+            {
                 rows.Remove(gone);
+                pauses.Remove(gone);
+            }
             foreach (var transfer in shown)
             {
                 var bar = new ProgressBar { Height = 5, Maximum = 100, Margin = new Thickness(0, 5, 0, 3) };
@@ -291,8 +295,18 @@ public sealed class CourierWidget : Window
                 var name = Ui.Text(transfer.Name, 12.5, weight: FontWeights.SemiBold);
                 name.TextTrimming = TextTrimming.CharacterEllipsis;
                 var cancel = Small("\uE711", Ui.T("Cancel"), () => { transfer.Cancel(); Refresh(); });
+                var pause = Small("", Ui.T("Pause"), () =>
+                {
+                    if (transfer.Paused)
+                        transfer.Resume();
+                    else
+                        transfer.Pause();
+                    Refresh();
+                });
+                pauses[transfer] = pause;
                 var top = new DockPanel();
                 top.Children.Add(cancel.Dock(Dock.Right));
+                top.Children.Add(pause.Dock(Dock.Right));
                 top.Children.Add(Ui.Glyph(transfer.Incoming ? "\uE896" : "\uE898", 12, transfer.Incoming ? "Primary" : "Text").Margin(0, 0, 8, 0).Dock(Dock.Left));
                 top.Children.Add(name);
                 transfersPanel.Children.Add(new StackPanel { Margin = new Thickness(0, 12, 0, 0), Children = { top, bar, detail } });
@@ -310,14 +324,23 @@ public sealed class CourierWidget : Window
             bar.Value = transfer.State == "done" ? 100 : percent;
             bar.IsIndeterminate = transfer.State == "waiting";
             var direction = Ui.T(transfer.Incoming ? "From {0}" : "To {0}", transfer.Peer);
+            var held = transfer.Paused || transfer.PausedThere;
+            var times = Courier.Times(transfer);
             detail.Text = transfer.State switch
             {
-                "waiting" => $"{direction}  ·  " + Ui.T(transfer.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept"),
-                "done" => $"{direction}  ·  " + Ui.T("Done") + $"  ·  {Ui.FormatSize(transfer.Size)}",
+                "done" => $"{direction}  ·  " + Ui.T("Done") + $"  ·  {Ui.FormatSize(transfer.Size)}" + (times.Length > 0 ? $"  ·  {times}" : ""),
                 "active" => $"{direction}  ·  {percent:0}%  ·  {Ui.FormatSize(transfer.Done)} / {Ui.FormatSize(transfer.Size)}"
-                            + (speed > 0 ? $"  ·  {Ui.FormatSize((long)speed)}/s" : ""),
-                _ => $"{direction}  ·  " + Ui.T(transfer.State switch { "cancelled" => "Cancelled", "refused" => "Refused", _ => "Failed" }),
+                            + (held ? "  ·  " + Courier.State(transfer) : speed > 0 ? $"  ·  {Ui.FormatSize((long)speed)}/s" : "")
+                            + (times.Length > 0 ? "\n" + times : ""),
+                _ => $"{direction}  ·  " + Courier.State(transfer),
             };
+            if (pauses.TryGetValue(transfer, out var button))
+            {
+                // Only what is moving can be held, and only this PC's own pause can be let go here.
+                button.Visibility = transfer.State == "active" ? Visibility.Visible : Visibility.Collapsed;
+                ((TextBlock)button.Child).Text = transfer.Paused ? "" : "";
+                button.ToolTip = Ui.T(transfer.Paused ? "Resume" : "Pause");
+            }
         }
     }
 }

@@ -66,8 +66,8 @@ public sealed record WindowedProgram(int Pid, string Name, string Title);
 /// </summary>
 public static class BoostMode
 {
-    private const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
-    private const string UltimatePerformance = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+    internal const string HighPerformance = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+    internal const string UltimatePerformance = "e9a42b02-d5df-448d-aa00-03f14749eb61";
 
     [DllImport("psapi.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

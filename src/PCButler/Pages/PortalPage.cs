@@ -59,7 +59,7 @@ public sealed class PortalPage : Page
         var page = new StackPanel();
 
         // --- the first time: share from this PC, or connect to another one ---
-        welcomeId = Ui.Field(width: 170, hint: "K7M-2QX");
+        welcomeId = Ui.Field(width: 170, hint: "418 205 937");
         welcomeId.FlowDirection = FlowDirection.LeftToRight;
         welcomeId.FontSize = 16;
         welcomeId.KeyDown += (_, e) =>
@@ -76,7 +76,7 @@ public sealed class PortalPage : Page
         // --- this PC, beside its settings ---
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
         statusCard.SetBody(status);
-        hostNumberBox = Ui.Field(width: 150, hint: "K7M-2QX");
+        hostNumberBox = Ui.Field(width: 150, hint: "418 205 937");
         hostNumberBox.FlowDirection = FlowDirection.LeftToRight;
         hostNumberBox.LostFocus += (_, _) => SaveHostNumber(hostNumberBox.Text);
         hostNumberBox.KeyDown += (_, e) =>
@@ -96,7 +96,7 @@ public sealed class PortalPage : Page
         var rows = new StackPanel();
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Role"), 13, weight: FontWeights.Bold), roleText, Ui.Button(Ui.T("Change"), ChangeRole), first: true));
         hostNumberRow = Ui.SettingRow(Ui.Text(Ui.T("The other PC's ID"), 13, weight: FontWeights.Bold),
-                                      Ui.Muted(Ui.T("The six characters the host shows. Change it to connect to another PC."), 12), hostNumberBox);
+                                      Ui.Muted(Ui.T("The nine digits the host shows. Change it to connect to another PC."), 12), hostNumberBox);
         rows.Children.Add(hostNumberRow);
         rows.Children.Add(Ui.SettingRow(Ui.T("Start with PC Butler"), Ui.T("Connected (or reachable) as soon as PC Butler runs, without a click."), autoStartSwitch));
         rows.Children.Add(Ui.SettingRow(Ui.T("Show the Courier widget"), Ui.T("A small window while PCs are connected: drop files on it to send them, and watch them go."),
@@ -147,9 +147,10 @@ public sealed class PortalPage : Page
 
         // --- what is moving, and what has moved ---
         transferCard = new CardPanel("Transfers", "\uE896");
-        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Cancel selected"), CancelSelected));
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Pause or resume selected"), PauseSelected));
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Cancel selected"), CancelSelected).Margin(6, 0, 0, 0));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Margin(6));
-        transferList = Ui.List(("Name", 320, "PlainCell"), ("Direction", 230), ("Progress", 200), ("Speed", 110), ("Status", 300));
+        transferList = Ui.List(("Name", 320, "PlainCell"), ("Direction", 230), ("Progress", 200), ("Speed", 110), ("Time", 210), ("Status", 300));
         transferList.MinHeight = 160;
         transferList.ItemsSource = transferRows;
         transferCard.SetBody(transferList);
@@ -234,7 +235,7 @@ public sealed class PortalPage : Page
         var number = Portal.NormalizeNumber(welcomeId.Text);
         if (!Portal.IsNumber(number))
         {
-            Ui.Info("Courier", Ui.T("Type the ID exactly as the other PC shows it: six letters and digits, like K7M-2QX."));
+            Ui.Info("Courier", Ui.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."));
             welcomeId.Focus();
             return;
         }
@@ -537,16 +538,13 @@ public sealed class PortalPage : Page
             shown[transfer] = entry;
             var active = transfer.State == "active";
             var percent = transfer.Size > 0 ? done * 100 / transfer.Size : 100;
-            var state = Ui.T(transfer.State switch
-            {
-                "waiting" => transfer.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept",
-                "done" => "Done", "cancelled" => "Cancelled", "refused" => "Refused", "failed" => "Failed", _ => "Moving…",
-            });
+            var state = Courier.State(transfer);
             entry.Row.Cells =
             [
                 Ui.T(transfer.Incoming ? "From {0}" : "To {0}", transfer.Peer),
                 active ? $"{percent}%  ·  {Ui.FormatSize(done)} / {Ui.FormatSize(transfer.Size)}" : Ui.FormatSize(transfer.Size),
-                active && entry.Speed > 0 ? Ui.FormatSize((long)entry.Speed) + "/s" : "",
+                active && !transfer.Paused && !transfer.PausedThere && entry.Speed > 0 ? Ui.FormatSize((long)entry.Speed) + "/s" : "",
+                transfer.State is "active" or "done" ? Courier.Times(transfer) : "",
                 transfer.Note.Length > 0 ? $"{state}: {transfer.Note}" : state,
             ];
             entry.Row.Dim = !transfer.Running;
@@ -674,6 +672,25 @@ public sealed class PortalPage : Page
         else
             Main.UpdateConfig(config => config.Portal.Devices.RemoveAll(device => device.Id == id));
         ShowAll();
+    }
+
+    /// <summary>Hold the selected transfers where they are, or let the held ones go on.</summary>
+    private void PauseSelected()
+    {
+        var chosen = Ui.Selected(transferList).Select(row => row.Tag).OfType<PortalTransfer>().Where(transfer => transfer.State == "active").ToList();
+        if (chosen.Count == 0)
+        {
+            Ui.Info("Courier", Ui.T("Select a transfer that is moving first."));
+            return;
+        }
+        foreach (var transfer in chosen)
+        {
+            if (transfer.Paused)
+                transfer.Resume();
+            else
+                transfer.Pause();
+        }
+        ShowTransfers();
     }
 
     private void CancelSelected()

@@ -15,6 +15,8 @@ public sealed class InternetPage : Page
     private readonly TextBlock status = Ui.Text("", 18, weight: FontWeights.SemiBold);
     private readonly ListView results;
     private CancellationTokenSource? running;
+    private readonly TextBox localAddress = AddressBox();
+    private readonly TextBox publicAddress = AddressBox();
 
     public InternetPage(MainWindow main) : base(main, "Internet", "How fast is your connection, really?")
     {
@@ -23,7 +25,20 @@ public sealed class InternetPage : Page
         foreach (var card in stats)
             card.Set("—");
 
-        var panel = new CardPanel("Speed test", "");
+        // This PC's two addresses, each with a button that copies it.
+        var addresses = new CardPanel("This PC's addresses", "");
+        addresses.Controls.Children.Add(Ui.Button(Ui.T("Refresh"), ShowAddresses));
+        var lines = new StackPanel { Margin = new Thickness(20, 12, 20, 14) };
+        lines.Children.Add(AddressLine("On your network (local IP)", localAddress));
+        lines.Children.Add(AddressLine("On the internet (public IP)", publicAddress).Margin(0, 8, 0, 0));
+        lines.Children.Add(Ui.Muted(Ui.T("The public address is what websites see. It is read by asking Cloudflare which address the request came from."), 12, wrap: true)
+                             .Margin(0, 8, 0, 0));
+        addresses.SetBody(lines);
+        addresses.Margin = new Thickness(0, 0, 0, 16);
+        Children.Add(addresses.Dock(Dock.Top));
+        ShowAddresses();
+
+        var panel = new CardPanel("Speed test","");
         panel.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory));
         var top = new StackPanel { Margin = new Thickness(20, 14, 20, 10) };
         status.Text = Ui.T("Press Start test.");
@@ -38,6 +53,33 @@ public sealed class InternetPage : Page
         panel.SetBody(body);
         Children.Add(panel);
         ShowHistory(SpeedTest.History());
+    }
+
+    private static StackPanel AddressLine(string label, TextBox value)
+    {
+        var caption = Ui.Muted(Ui.T(label));
+        caption.Width = 230;
+        caption.VerticalAlignment = VerticalAlignment.Center;
+        var copy = Ui.Button(Ui.T("Copy"), () =>
+        {
+            if (System.Net.IPAddress.TryParse(value.Text, out _))
+                Admin.Copy(value.Text);
+        });
+        return Ui.Row(12, caption, value, copy);
+    }
+
+    private static TextBox AddressBox() => new()
+    {
+        IsReadOnly = true, BorderThickness = new Thickness(0), Background = System.Windows.Media.Brushes.Transparent, Padding = new Thickness(0), MinWidth = 260,
+        FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"), FontSize = 16, FontWeight = FontWeights.SemiBold,
+        Foreground = Ui.Paint("Text"), FlowDirection = FlowDirection.LeftToRight, VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    private async void ShowAddresses()
+    {
+        localAddress.Text = NetworkAddresses.Local() is { Length: > 0 } local ? local : Ui.T("Not connected");
+        publicAddress.Text = Ui.T("Looking…");
+        publicAddress.Text = await NetworkAddresses.Public() is { Length: > 0 } seen ? seen : Ui.T("Could not be read");
     }
 
     private static string Speed(double megabits) => megabits >= 100 ? $"{megabits:0}" : $"{megabits:0.0}";

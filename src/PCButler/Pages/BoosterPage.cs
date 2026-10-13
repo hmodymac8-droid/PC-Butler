@@ -83,6 +83,9 @@ public sealed class BoosterPage : Page
             Content = new ScrollViewer { Content = boost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
         });
 
+        // Advanced: lasting changes for the whole PC, in presets, with one Undo.
+        tabs.Items.Add(new TabItem { Header = Ui.T("Advanced"), Content = new BoosterAdvanced() });
+
         // Startup apps: fewer of them means a faster sign-in and less running in the background.
         var bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Refresh"), RefreshStartup));

@@ -14,6 +14,27 @@ public static class Courier
 {
     private static bool starting;
 
+    /// <summary>A length of time as 0:42, 12:05 or 1:02:33.</summary>
+    public static string Time(TimeSpan time) =>
+        time.TotalHours >= 1 ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{time.Minutes}:{time.Seconds:00}";
+
+    /// <summary>"2:10 elapsed · 0:45 left" for a transfer that has started moving; "" before that.</summary>
+    public static string Times(PortalTransfer transfer)
+    {
+        if (transfer.Elapsed < TimeSpan.FromSeconds(1))
+            return "";
+        var text = Ui.T("{0} elapsed", Time(transfer.Elapsed));
+        return transfer.Remaining is { } left ? text + "  ·  " + Ui.T("{0} left", Time(left)) : text;
+    }
+
+    /// <summary>What a transfer is doing, in words.</summary>
+    public static string State(PortalTransfer transfer) => Ui.T(transfer.State switch
+    {
+        "waiting" => transfer.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept",
+        "done" => "Done", "cancelled" => "Cancelled", "refused" => "Refused", "failed" => "Failed",
+        _ => transfer.Paused ? "Paused" : transfer.PausedThere ? "Paused on the other PC" : "Moving…",
+    });
+
     /// <summary>The running node, if any.</summary>
     public static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
@@ -48,7 +69,7 @@ public static class Courier
         if (settings.Role is not (PortalSettings.Host or PortalSettings.Client))
             return Ui.T("Choose first whether this PC shares (the host) or connects to another PC (a client).");
         if (settings.Role == PortalSettings.Client && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 0)
-            return Ui.T("Type the ID of the PC to connect to first: the six characters it shows in Courier.");
+            return Ui.T("Type the ID of the PC to connect to first: the nine digits it shows in Courier.");
         starting = true;
         try
         {
