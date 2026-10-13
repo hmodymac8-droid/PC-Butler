@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.12.2
+
+- Licence: PC Butler is now proprietary software (all rights reserved). It stays free to download and use. Versions up to 1.12.1 remain under the GPL v3 they were released with.
+
 ## 1.12.1
 
 - Launch: the launch screen comes up first, and everything else starts behind it. While it shows, the Cleaner scans and the Programs page reads the installed programs and checks for updates, so the results are waiting.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 namespace PCButler.Core;
 
@@ -6,8 +6,8 @@ namespace PCButler.Core;
 public static class AppInfo
 {
     public const string Name = "PC Butler";
-    /// <summary>Must match the tag of the GitHub release this is published as (v1.12.1).</summary>
-    public const string Version = "1.12.1";
+    /// <summary>Must match the tag of the GitHub release this is published as (v1.12.2).</summary>
+    public const string Version = "1.12.2";
     /// <summary>Where updates are looked for.</summary>
     public const string Repo = "hmodymac8-droid/PC-Butler";
     public const string ExeName = "PCButler.exe";

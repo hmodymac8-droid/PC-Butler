@@ -742,7 +742,7 @@
  "Version": "الإصدار",
  "Version control, with the Git Bash terminal": "إدارة نسخ الشيفرة، مع طرفية Git Bash",
  "Version {0}": "النسخة {0}",
- "Version {0}  ·  GPL v3  ·  © 2026 hmodymac8-droid": "النسخة {0}  ·  رخصة GPL v3  ·  © 2026 hmodymac8-droid",
+ "Version {0}  ·  © 2026 hmodymac8-droid  ·  All rights reserved": "النسخة {0}  ·  © 2026 hmodymac8-droid  ·  جميع الحقوق محفوظة",
  "Version {0} is available (you have {1}).": "النسخة {0} متوفرة (لديك {1}).",
  "Version {0} is available. Right-click this icon and choose Install, or open {1}.": "النسخة {0} متوفرة. انقر بالزر الأيمن على هذه الأيقونة واختر «تثبيت»، أو افتح {1}.",
  "View splash screen": "عرض شاشة البداية",

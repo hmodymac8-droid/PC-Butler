@@ -12,8 +12,9 @@ Rebuild the Python/Tkinter program **Downloads Sorter** in **C#** as **PC Butler
 - New name: **PC Butler** (the owner first said "PC Keeper"; that is an existing commercial
   product, PCKeeper, so "PC Butler" was chosen instead and matches this repository's name).
 - New repository: `hmodymac8-droid/PC-Butler` (this one).
-- License: **GPL v3** (`LICENSE` is the official text). Copyright line: `hmodymac8-droid`.
-  The owner confirmed it stays that way (no real name).
+- License: **proprietary, all rights reserved**, from version 1.12.2 (`LICENSE` holds the terms; it is the page the setup wizard
+  shows). Versions 1.0.0 to 1.12.1 were GPL v3 and stay so as released. Copyright line: `hmodymac8-droid`
+  (the owner confirmed no real name). Only the owner changes the program; contributions are not accepted.
 - Releases start again at **1.0.0** (tag `v1.0.0`).
 
 ## The reference: the Python program
@@ -247,4 +248,6 @@ run the Python program.
   project folder (not in git) fixes that. It is unrelated to this repository, but explains why
   that program's history may look empty on the owner's PC.
 - The Python project switched from MIT to GPL v3 at version 1.8; versions 1.5 to 1.7 remain
-  MIT. This C# project is GPL v3 from the start.
+  MIT. This C# project was GPL v3 from 1.0.0 to 1.12.1 and is proprietary from 1.12.2. Everything in it was written for the
+  owner, who holds the copyright, so nobody else's permission was needed; what it bundles from others (the fonts under the
+  OFL, the .NET runtime under MIT) allows use in closed software.

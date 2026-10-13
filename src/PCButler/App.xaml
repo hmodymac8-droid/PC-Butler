@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- SPDX-License-Identifier: LicenseRef-PCButler-Proprietary -->
 <!-- Copyright (c) 2026 hmodymac8-droid -->
 <Application x:Class="PCButler.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"

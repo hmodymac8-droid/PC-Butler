@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 using System.IO;
 using System.Windows;
@@ -27,7 +27,7 @@ public sealed class AboutPage : Page
         var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 24, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text") };
         name.Inlines.Add(AppInfo.Name);
         name.Inlines.Add(new System.Windows.Documents.Run(".") { Foreground = Ui.Paint("Primary") });
-        var version = Ui.Muted(Ui.T("Version {0}  ·  GPL v3  ·  © 2026 hmodymac8-droid", AppInfo.Version), 12).Margin(0, 2, 0, 0);
+        var version = Ui.Muted(Ui.T("Version {0}  ·  © 2026 hmodymac8-droid  ·  All rights reserved", AppInfo.Version), 12).Margin(0, 2, 0, 0);
         tab.Children.Add(Ui.Row(0, mark, new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { name, version } }).Margin(0, 4, 0, 22));
 
         var description = Ui.Text(Ui.T("A tidy space for everything you download. Keep your folders in order, make room for what matters, "

@@ -12,10 +12,10 @@
     <RootNamespace>PCButler</RootNamespace>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.12.1</Version>
+    <Version>1.12.2</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
-    <Copyright>Copyright (c) 2026 hmodymac8-droid. GPL-3.0-only.</Copyright>
+    <Copyright>Copyright (c) 2026 hmodymac8-droid. All rights reserved.</Copyright>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 

@@ -83,7 +83,9 @@ The speed test talks to `speed.cloudflare.com` and update checks talk to GitHub 
 
 Copyright (c) 2026 hmodymac8-droid.
 
-Released under the [GNU General Public License, version 3](LICENSE). You are free to use, change and share it, including commercially, but any version you distribute must keep this copyright notice, say what you changed, and come with its full source code under the same license.
+PC Butler is proprietary software, not open source. It is free to download and use from the [Releases](../../releases) page, for personal or commercial purposes. You may not copy, redistribute, modify or reuse the program or its source code without the owner's written permission; the source in this repository is shown for reference only, and contributions are not accepted. The full terms are in [LICENSE](LICENSE).
+
+Versions 1.0.0 to 1.12.1 were released under the GNU General Public License, version 3, which still applies to those versions as released. Version 1.12.2 and later are under the licence above.
 
 The bundled fonts in `src/PCButler/Fonts`, [DM Sans](https://github.com/googlefonts/dm-fonts) and [Manrope](https://github.com/googlefonts/manrope), are under the SIL Open Font License; their licence texts are next to them.
 
@@ -167,6 +169,8 @@ dotnet run --project tests/PCButler.Tests
 
 حقوق النشر (c) 2026 hmodymac8-droid.
 
-البرنامج منشور بموجب [رخصة جنو العمومية، الإصدار 3](LICENSE). يحق لك استخدامه وتعديله ومشاركته، حتى تجاريًا، بشرط أن تُبقي أي نسخة توزّعها على إشعار حقوق النشر هذا، وأن توضّح ما غيّرته، وأن ترفق شيفرتها المصدرية كاملة بالرخصة نفسها.
+PC Butler برنامج مملوك وليس مفتوح المصدر. تنزيله واستخدامه مجاني من صفحة [الإصدارات](../../releases)، للاستخدام الشخصي أو التجاري. لا يحق نسخ البرنامج أو إعادة توزيعه أو تعديله أو إعادة استخدام شيفرته المصدرية دون إذن كتابي من المالك؛ الشيفرة في هذا المستودع معروضة للاطلاع فقط، ولا تُقبل المساهمات. الشروط الكاملة في ملف [LICENSE](LICENSE).
+
+الإصدارات من 1.0.0 إلى 1.12.1 نُشرت بموجب رخصة جنو العمومية، الإصدار 3، وهي ما زالت تسري على تلك الإصدارات كما نُشرت. الإصدار 1.12.2 وما بعده تحت الرخصة أعلاه.
 
 </div>

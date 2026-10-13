@@ -1,4 +1,4 @@
-; SPDX-License-Identifier: GPL-3.0-only
+; SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 ; Copyright (c) 2026 hmodymac8-droid
 ; Inno Setup script for PC Butler. build.ps1 compiles it and passes AppVersion and
 ; DistDir (the published program folder) on the command line.

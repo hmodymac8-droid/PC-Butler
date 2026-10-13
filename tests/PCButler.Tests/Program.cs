@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 //
 // Engine tests. Everything happens in a temporary folder (PCBUTLER_DATA points there),

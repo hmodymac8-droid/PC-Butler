@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 using System.IO.Pipes;
 using System.Security.Cryptography;

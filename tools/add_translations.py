@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 # Copyright (c) 2026 hmodymac8-droid
 """Add or update Arabic translations in src/PCButler.Core/Translations/ar.json.
 
