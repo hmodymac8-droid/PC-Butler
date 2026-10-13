@@ -24,6 +24,14 @@ public sealed class OverlaySettings
     [JsonPropertyName("gpu")] public bool Gpu { get; set; } = true;
     [JsonPropertyName("memory")] public bool Memory { get; set; } = true;
     [JsonPropertyName("temperatures")] public bool Temperatures { get; set; } = true;
+    /// <summary>The graphics card's own memory in use.</summary>
+    [JsonPropertyName("video_memory")] public bool VideoMemory { get; set; } = true;
+    /// <summary>Milliseconds per frame, next to the frames per second.</summary>
+    [JsonPropertyName("frame_time")] public bool FrameTime { get; set; }
+    [JsonPropertyName("fan")] public bool Fan { get; set; }
+    /// <summary>Download and upload speed of the whole PC.</summary>
+    [JsonPropertyName("network")] public bool Network { get; set; }
+    [JsonPropertyName("clock")] public bool Clock { get; set; }
     /// <summary>Program file names (game.exe) always taken for a game, full screen or not.</summary>
     [JsonPropertyName("games")] public List<string> Games { get; set; } = [];
 }
@@ -246,6 +254,48 @@ public static class FpsMeter
             {
             }
         }
+    }
+}
+
+/// <summary>How much the PC is sending and receiving, from Windows' own counters of its network adapters.</summary>
+public sealed class NetworkMeter
+{
+    private long lastReceived = -1, lastSent;
+    private long lastAt;
+
+    /// <summary>Bytes a second down and up since the previous call; null the first time.</summary>
+    public (long Down, long Up)? Read()
+    {
+        long received = 0, sent = 0;
+        try
+        {
+            foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (adapter.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up
+                    || adapter.NetworkInterfaceType is System.Net.NetworkInformation.NetworkInterfaceType.Loopback or System.Net.NetworkInformation.NetworkInterfaceType.Tunnel)
+                    continue;
+                var totals = adapter.GetIPStatistics();
+                received += totals.BytesReceived;
+                sent += totals.BytesSent;
+            }
+        }
+        catch (System.Net.NetworkInformation.NetworkInformationException)
+        {
+            return null;
+        }
+        var now = Environment.TickCount64;
+        var seconds = (now - lastAt) / 1000.0;
+        (long, long)? speed = lastReceived >= 0 && seconds > 0.2 && received >= lastReceived && sent >= lastSent
+            ? ((long)((received - lastReceived) / seconds), (long)((sent - lastSent) / seconds)) : null;
+        (lastReceived, lastSent, lastAt) = (received, sent, now);
+        return speed;
+    }
+
+    /// <summary>A speed in the units people know from their connection: megabits a second.</summary>
+    public static string Megabits(long bytesPerSecond)
+    {
+        var megabits = bytesPerSecond * 8 / 1_000_000.0;
+        return megabits >= 100 ? $"{megabits:0}" : megabits >= 10 ? $"{megabits:0.0}" : $"{megabits:0.00}";
     }
 }
 

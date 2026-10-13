@@ -41,12 +41,24 @@ public sealed class BenchmarkPage : Page
         corner.SelectedIndex = Math.Clamp(settings.Corner, 0, 3);
         corner.SelectionChanged += (_, _) => Change(overlay => overlay.Corner = Math.Max(0, corner.SelectedIndex));
         rows.Children.Add(Ui.SettingRow(Ui.T("Corner"), "", corner));
-        var show = Ui.Row(18,
-            Check("Frames per second", settings.Fps, (overlay, on) => overlay.Fps = on),
-            Check("Processor", settings.Cpu, (overlay, on) => overlay.Cpu = on),
-            Check("Graphics card", settings.Gpu, (overlay, on) => overlay.Gpu = on),
-            Check("Memory", settings.Memory, (overlay, on) => overlay.Memory = on),
-            Check("Temperatures", settings.Temperatures, (overlay, on) => overlay.Temperatures = on));
+        var show = new WrapPanel { MaxWidth = 620 };
+        foreach (var box in new[]
+                 {
+                     Check("Frames per second", settings.Fps, (overlay, on) => overlay.Fps = on),
+                     Check("Frame time", settings.FrameTime, (overlay, on) => overlay.FrameTime = on),
+                     Check("Processor", settings.Cpu, (overlay, on) => overlay.Cpu = on),
+                     Check("Graphics card", settings.Gpu, (overlay, on) => overlay.Gpu = on),
+                     Check("Temperatures", settings.Temperatures, (overlay, on) => overlay.Temperatures = on),
+                     Check("Memory (RAM)", settings.Memory, (overlay, on) => overlay.Memory = on),
+                     Check("Video memory (VRAM)", settings.VideoMemory, (overlay, on) => overlay.VideoMemory = on),
+                     Check("Graphics card fan", settings.Fan, (overlay, on) => overlay.Fan = on),
+                     Check("Network speed", settings.Network, (overlay, on) => overlay.Network = on),
+                     Check("Clock", settings.Clock, (overlay, on) => overlay.Clock = on),
+                 })
+        {
+            box.Margin = new Thickness(0, 4, 20, 4);
+            show.Children.Add(box);
+        }
         rows.Children.Add(Ui.SettingRow(Ui.T("What it shows"), "", show));
         fpsButton = Ui.Button(Ui.T("Start the helper"), StartHelper);
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Frames per second need administrator rights"), 13, weight: FontWeights.Bold), fpsState, fpsButton));

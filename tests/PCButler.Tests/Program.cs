@@ -851,6 +851,14 @@ Section("courier IDs");
           && CpuSensor.Choose([("CPU Package", null), ("CPU Core #1 Distance to TjMax", 39f)]) is null && CpuSensor.Choose([]) is null,
           "the processor's temperature is its package (Intel) or Tctl/Tdie (AMD), else its hottest core, and never a distance to the limit");
     Check(CpuSensor.DriverInstalled || CpuSensor.Read() is null, "without the driver no processor temperature is claimed");
+    Check(NetworkMeter.Megabits(125_000) == "1.00" && NetworkMeter.Megabits(2_500_000) == "20.0" && NetworkMeter.Megabits(50_000_000) == "400",
+          "network speed is given in megabits a second");
+    var meter = new NetworkMeter();
+    var firstSpeed = meter.Read();
+    Thread.Sleep(300);
+    Check(firstSpeed is null && meter.Read() is null or { Down: >= 0, Up: >= 0 }, "network speed needs two readings");
+    Check(UsageMonitor.VideoMemory() is var (videoUsed, videoTotal) && videoUsed is null or >= 0 && (videoTotal is null || videoTotal > 0),
+          $"the graphics card's memory can be read ({UsageMonitor.VideoMemory()})");
     var recorder = new BenchmarkRecorder("eldenring.exe");
     for (var tick = 0; tick < 5; tick++)
         recorder.Add(new BenchmarkSample(60, 40, 90, 50, 70, 65));

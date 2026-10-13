@@ -21,6 +21,7 @@ public sealed class HomePage : Page
     private readonly AmountCard space = new("Free space", "");
     private readonly StackPanel drives = new();
     private readonly TextBlock gpuTemperature = Ui.Text("—", 13);
+    private readonly TextBlock cpuTemperature = Ui.Text("—", 13);
     private readonly TextBlock sensorsText = Ui.Muted("", 12.5, wrap: true);
     private readonly Button sensorsButton;
     private readonly TextBlock score = new() { FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Primary"), FontFamily = Ui.DisplayFont, Text = "—" };
@@ -57,13 +58,17 @@ public sealed class HomePage : Page
         var storage = new StackPanel { Margin = new Thickness(20, 14, 20, 14) };
         storage.Children.Add(PanelTitle("", "Storage"));
         storage.Children.Add(drives);
+        var processorTemperature = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 10, 0, 0) };
+        processorTemperature.Children.Add(Ui.Row(8, Ui.Glyph("\uE950", 14), Ui.Text(Ui.T("Processor temperature"), 13)));
+        processorTemperature.Children.Add(cpuTemperature.Dock(Dock.Right));
+        storage.Children.Add(Line(processorTemperature, 10));
         var temperature = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 10, 0, 0) };
         temperature.Children.Add(Ui.Row(8, Ui.Glyph("", 14), Ui.Text(Ui.T("Graphics card temperature"), 13)));
         temperature.Children.Add(gpuTemperature.Dock(Dock.Right));
         storage.Children.Add(Line(temperature, 10));
         var sensors = new StackPanel { Margin = new Thickness(0, 9, 0, 0) };
         sensors.Children.Add(sensorsText);
-        sensorsButton = Ui.Button(Ui.T("Read the motherboard's sensors too (asks for administrator rights)"), TurnOnSensors);
+        sensorsButton = Ui.Button(Ui.T("Start the helper (asks for administrator rights)"), TurnOnSensors);
         sensorsButton.HorizontalAlignment = HorizontalAlignment.Left;
         sensors.Children.Add(sensorsButton.Margin(0, 8));
         storage.Children.Add(Line(sensors, 10));
@@ -140,9 +145,16 @@ public sealed class HomePage : Page
         if (App.Current.Usage.Latest is not { } sample)
             return;
         var busy = sample.Cpu >= 85;
+        // The processor's own temperature: from the helper (with the PawnIO driver), or from a hardware-monitor program.
+        var cpuDegrees = Sensors.Latest()?.CpuTemperature ?? Sensors.MonitorApp()?.Cpu;
+        var cpuHot = cpuDegrees >= 90;
         processor.Set(sample.Cpu.ToString(), Ui.T("% usage"), sample.Cpu, busy ? "Amber" : "Primary",
                       Ui.T(busy ? "Working hard" : sample.Cpu >= 50 ? "Busy" : "Running smoothly"),
-                      Ui.T("{0} processor threads", Environment.ProcessorCount), Ui.T(busy ? "High activity" : "Normal activity"));
+                      cpuDegrees is { } shown ? $"{Math.Round(shown)}°C  ·  " + Ui.T("{0} processor threads", Environment.ProcessorCount)
+                                              : Ui.T("{0} processor threads", Environment.ProcessorCount),
+                      Ui.T(cpuHot ? "Running hot" : busy ? "High activity" : "Normal activity"));
+        cpuTemperature.Text = cpuDegrees is { } degreesNow ? $"{Math.Round(degreesNow)}°C  ·  " + Ui.T(cpuHot ? "Hot" : "Normal") : "—";
+        cpuTemperature.Foreground = Ui.Paint(cpuHot ? "Amber" : "Text");
         var full = sample.MemoryPercent >= 85;
         var used = Ui.FormatSize(sample.MemoryUsed).Split(' ');
         memory.Set(used[0], Ui.T("{0} in use", used[1]), sample.MemoryPercent, full ? "Amber" : "Blue",
@@ -214,10 +226,8 @@ public sealed class HomePage : Page
         var monitor = Sensors.MonitorApp();
         var reading = Sensors.Latest();
         var fans = monitor?.Fans.Count > 0 ? monitor.Value.Fans : reading?.Fans ?? [];
-        if (reading?.CpuTemperature is { } ownDegrees)
-            lines.Add(Ui.T("Processor: {0} °C", ownDegrees));
-        else if (monitor?.Cpu is { } cpuDegrees)
-            lines.Add(Ui.T("Processor: {0} °C (from {1})", cpuDegrees, monitor.Value.App));
+        if (reading?.CpuTemperature is null && monitor?.Cpu is not null)
+            lines.Add(Ui.T("The processor's temperature comes from {0}.", monitor.Value.App));
         if (reading?.Temperature is { } zone && monitor?.Cpu is null)
             lines.Add(Ui.T("Motherboard sensor: {0} °C", zone));
         if (fans.Count > 0)

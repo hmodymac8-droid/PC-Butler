@@ -101,6 +101,7 @@ public sealed class OverlayController
     private BenchmarkRecorder? recorder;
     private int recordedPid;
     private DateTime lastInFront, lastAsked;
+    private readonly NetworkMeter network = new();
 
     public OverlayController() => timer.Tick += (_, _) => Tick();
 
@@ -189,14 +190,25 @@ public sealed class OverlayController
             return;
         }
         var rows = new List<(string, string, bool)>();
+        static string Gigabytes(long bytes) => (bytes / 1073741824.0).ToString("0.0");
         if (settings.Fps)
             rows.Add(("FPS", fps?.ToString() ?? "—", true));
+        if (settings.FrameTime && fps is > 0)
+            rows.Add(("ms", (1000.0 / fps.Value).ToString("0.0"), false));
         if (settings.Cpu)
             rows.Add(("CPU", $"{reading.Cpu,3}%" + (settings.Temperatures && reading.CpuTemperature is { } cpu ? $"  {cpu}°C" : ""), false));
         if (settings.Gpu && (reading.Gpu is not null || reading.GpuTemperature is not null))
             rows.Add(("GPU", (reading.Gpu is { } use ? $"{use,3}%" : "  —") + (settings.Temperatures && reading.GpuTemperature is { } gpu ? $"  {gpu}°C" : ""), false));
+        if (settings.VideoMemory && sample?.Gpu?.MemoryUsed is { } videoUsed)
+            rows.Add(("VRAM", Gigabytes(videoUsed) + (sample.Gpu.MemoryTotal is { } videoTotal ? $" / {Gigabytes(videoTotal)} GB" : " GB"), false));
+        if (settings.Fan && sample?.Gpu?.Fan is { } fan)
+            rows.Add(("FAN", $"{fan} RPM", false));
         if (settings.Memory)
-            rows.Add(("RAM", $"{reading.MemoryPercent,3}%", false));
+            rows.Add(("RAM", $"{reading.MemoryPercent,3}%" + (sample is null ? "" : $"  {Gigabytes(sample.MemoryUsed)} / {Gigabytes(sample.MemoryTotal)} GB"), false));
+        if (settings.Network && network.Read() is { } speed)
+            rows.Add(("NET", $"↓{NetworkMeter.Megabits(speed.Down)}  ↑{NetworkMeter.Megabits(speed.Up)} Mb/s", false));
+        if (settings.Clock)
+            rows.Add(("TIME", DateTime.Now.ToString("HH:mm"), false));
         if (rows.Count == 0)
         {
             window?.Hide();

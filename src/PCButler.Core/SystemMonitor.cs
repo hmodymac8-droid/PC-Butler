@@ -12,7 +12,7 @@ public sealed record DriveUsage(string Name, long Total, long Free)
 }
 
 /// <summary>The graphics card: usage and temperature are null when Windows won't tell without administrator rights.</summary>
-public sealed record GpuStatus(string Name, int? Usage, int? Temperature, int? Fan = null);
+public sealed record GpuStatus(string Name, int? Usage, int? Temperature, int? Fan = null, long? MemoryUsed = null, long? MemoryTotal = null);
 
 /// <summary>One reading of how busy the PC is.</summary>
 public sealed record UsageSample(int Cpu, long MemoryTotal, long MemoryUsed, GpuStatus? Gpu)
@@ -149,7 +149,57 @@ public sealed class UsageMonitor
         return gpuName = "";
     }
 
+    private static long? videoMemoryTotal;
+
+    /// <summary>The graphics card's own memory in bytes: how much is in use (as Task Manager's "dedicated GPU memory") and how much there is.</summary>
+    public static (long? Used, long? Total) VideoMemory()
+    {
+        long? used = null;
+        try
+        {
+            var data = new PerformanceCounterCategory("GPU Adapter Memory").ReadCategory();
+            if (data.Contains("Dedicated Usage"))
+            {
+                // One instance per adapter; the card in use is the one holding the most.
+                foreach (InstanceData instance in data["Dedicated Usage"]!.Values)
+                    used = Math.Max(used ?? 0, instance.RawValue);
+            }
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        {
+        }
+        if (videoMemoryTotal is null)
+        {
+            long most = 0;
+            try
+            {
+                using var adapters = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}");
+                foreach (var name in adapters?.GetSubKeyNames() ?? [])
+                {
+                    if (!name.All(char.IsDigit))
+                        continue;
+                    using var adapter = adapters!.OpenSubKey(name);
+                    if (adapter?.GetValue("HardwareInformation.qwMemorySize") is long size)
+                        most = Math.Max(most, size);
+                }
+            }
+            catch (Exception error) when (error is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+            {
+            }
+            videoMemoryTotal = most;
+        }
+        return (used, videoMemoryTotal > 0 ? videoMemoryTotal : null);
+    }
+
     private GpuStatus? ReadGpu()
+    {
+        if (ReadGpuItself() is not { } status)
+            return null;
+        var (used, total) = VideoMemory();
+        return status with { MemoryUsed = used, MemoryTotal = total };
+    }
+
+    private GpuStatus? ReadGpuItself()
     {
         // NVIDIA's own tool reports both use and temperature, with no special rights.
         var nvidia = Path.Combine(Environment.SystemDirectory, "nvidia-smi.exe");

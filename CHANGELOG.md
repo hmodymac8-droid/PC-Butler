@@ -3,6 +3,11 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.18.1
+
+- The performance overlay can show more: video memory (VRAM) in use, memory (RAM) in gigabytes as well as percent, frame time, the graphics card's fan, network speed and a clock. Each has its own tick box on the Benchmark page.
+- Home: the processor's temperature has its own line, like the graphics card's, and shows on the Processor card. It needs the PawnIO driver and the helper, or LibreHardwareMonitor running.
+
 ## 1.18.0
 
 - Benchmark, a new page: a performance overlay that shows frames per second, processor, graphics card, memory and temperatures in a corner of the screen. PC Butler notices a game when it fills the screen and shows the overlay by itself; it can also stay on all the time. It is off until you switch it on.
