@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.0
+
+- Right-click menus across PC Butler look better: an icon on each line, a tick on what is on, and submenus that open to the side.
+- Clipboard tags work from the right-click menu: tick a tag in its submenu, or type a new one at the foot of the list (several at once, separated by commas).
+- Clipboard: deleting an item that is pinned or tagged asks first.
+
 ## 1.20.1
 
 - The tray icon opens its new panel with a right-click too; the old menu is gone. A double-click still opens the window.
@@ -17,7 +23,6 @@ Each version is a `## heading` followed by `- ` lines.
 
 - Clipboard: right-click an item, in the list the shortcut opens or on the Clipboard page, for paste, copy, search with Google (a copied picture is searched with Google Lens), open its link or its file's folder, pin and delete.
 - Clipboard tags: give items tags such as "work" or "address". Tags show under each item; searching finds them, and "#work" shows only what is tagged so.
-- Right-click menus across PC Butler look better: an icon on each line, a tick on what is on, and submenus that open to the side.
 - The Clipboard page has two tabs, History and Settings, instead of one long page.
 - A clipboard history file that can't be read is set aside as history.broken.json instead of being written over.
 
