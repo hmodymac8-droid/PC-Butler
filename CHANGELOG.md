@@ -3,6 +3,11 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.1
+
+- Courier has its own encrypted connection code now, the same on Windows and in the PC Butler phone app, so a PC and a phone work together: install this version on every PC that talks to a phone.
+- Files shared to PC Butler from another app on the phone are sent by themselves, to the PC that is connected (or as soon as one is).
+
 ## 1.21.0
 
 - Right-click menus across PC Butler look better: an icon on each line, a tick on what is on, and submenus that open to the side.
