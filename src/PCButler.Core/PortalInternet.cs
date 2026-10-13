@@ -41,8 +41,6 @@ public sealed partial class PortalNode
     private PortalLink? link4, link6;
     private PortalDht? dht4, dht6;
     private PortalMapping? mapping;
-    /// <summary>Connections this PC makes to itself on behalf of a PC on the other end of a path: local port -> that PC's address.</summary>
-    private readonly ConcurrentDictionary<int, IPEndPoint> pumps = new();
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private List<PortalClient> otherClients = [];
 
@@ -168,40 +166,23 @@ public sealed partial class PortalNode
         link6?.Dispose();
     }
 
-    /// <summary>
-    /// A PC at the other end of a path opened a stream: join it to this PC's own listener, so
-    /// what arrives is handled by the encrypted connection like any other.
-    /// </summary>
+    /// <summary>A PC at the other end of a path opened a stream: answer its requests on it, over the encrypted connection.</summary>
     private async Task PumpIn(ReliableStream stream, IPEndPoint from)
     {
-        var local = 0;
         try
         {
-            using var inside = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };
-            await inside.ConnectAsync(Address, Port, stopping.Token);
-            local = ((IPEndPoint)inside.Client.LocalEndPoint!).Port;
-            pumps[local] = from;
-            await using var wire = inside.GetStream();
-            var inward = stream.CopyToAsync(wire, 64 * 1024, stopping.Token);
-            var outward = wire.CopyToAsync(stream, 64 * 1024, stopping.Token);
-            await Task.WhenAny(inward, outward);
-            // When one direction ends the other fails soon after: that is the connection closing, not a problem to report.
-            foreach (var direction in new[] { inward, outward })
-                _ = direction.ContinueWith(done => _ = done.Exception, TaskContinuationOptions.OnlyOnFaulted);
+            await PortalHttp.Serve(stream, certificate, from, Handle, stopping.Token);
         }
-        catch (Exception error) when (error is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException
+                                          or System.Security.Authentication.AuthenticationException)
         {
+            // The other PC went away, or showed no certificate.
         }
         finally
         {
-            pumps.TryRemove(local, out _);
             stream.Dispose();
         }
     }
-
-    /// <summary>The address across the internet of whoever made this request. Every request comes in over a path; anything else gets nothing.</summary>
-    private IPEndPoint? Via(Microsoft.AspNetCore.Http.HttpContext context) =>
-        pumps.TryGetValue(context.Connection.RemotePort, out var via) && context.Connection.RemoteIpAddress is { } from && IPAddress.IsLoopback(from) ? via : null;
 
     // --- the host ---
 

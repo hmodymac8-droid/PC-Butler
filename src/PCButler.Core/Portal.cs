@@ -13,14 +13,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Server.Kestrel.Https;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace PCButler.Core;
 
@@ -276,7 +268,6 @@ public sealed partial class PortalNode
         public string RelayTo { get; init; } = "";
     }
 
-    private readonly WebApplication app;
     private readonly X509Certificate2 certificate;
     private readonly PortalSettings settings;
     private readonly Action save;
@@ -290,10 +281,7 @@ public sealed partial class PortalNode
 
     /// <summary>This PC's id: the fingerprint of its certificate.</summary>
     public string Id { get; }
-    public string Name { get; } = Environment.MachineName;
-    /// <summary>The encrypted connection's own listener: on this PC only (127.0.0.1), fed by the paths across the internet.</summary>
-    public IPAddress Address { get; } = IPAddress.Loopback;
-    public int Port { get; }
+    public string Name { get; } = Portal.DeviceName;
     public string Folder { get; }
     public bool IsHost { get; }
     /// <summary>Something changed: devices, pairings, requests or transfers. Raised on a background thread.</summary>
@@ -301,9 +289,9 @@ public sealed partial class PortalNode
     /// <summary>Another PC is asking for something the user must answer (a pairing, or files to accept).</summary>
     public event Action<string>? Attention;
 
-    private PortalNode(WebApplication app, X509Certificate2 certificate, PortalSettings settings, Action save, int port)
+    private PortalNode(X509Certificate2 certificate, PortalSettings settings, Action save)
     {
-        (this.app, this.certificate, this.settings, this.save, Port) = (app, certificate, settings, save, port);
+        (this.certificate, this.settings, this.save) = (certificate, settings, save);
         Id = Portal.Fingerprint(certificate);
         Folder = Portal.ReceiveFolder(settings);
         IsHost = settings.Role == PortalSettings.Host;
@@ -325,36 +313,8 @@ public sealed partial class PortalNode
             throw new IOException("Choose whether this PC is the host or a client first.");
         certificate ??= Portal.Certificate();
         Directory.CreateDirectory(Portal.ReceiveFolder(settings));
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrelHttpsConfiguration();
-        builder.WebHost.ConfigureKestrel(options =>
-        {
-            options.AddServerHeader = false;
-            options.Limits.MaxRequestBodySize = ChunkSize + 64 * 1024;
-            // On this PC only: what comes from other PCs arrives over a path and is handed to this listener here.
-            options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(new HttpsConnectionAdapterOptions
-            {
-                ServerCertificate = certificate,
-                // Every caller shows its own certificate. None is signed by an authority; who it is gets checked by fingerprint.
-                ClientCertificateMode = ClientCertificateMode.RequireCertificate,
-                ClientCertificateValidation = (_, _, _) => true,
-            }));
-        });
-        var app = builder.Build();
-        PortalNode? node = null;
-        app.Run(context => node!.Handle(context));
-        try
-        {
-            await app.StartAsync();
-        }
-        catch (Exception error) when (error is IOException or SocketException or InvalidOperationException)
-        {
-            await app.DisposeAsync();
-            throw new IOException(error.Message, error);
-        }
-        var bound = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()).Port;
-        node = new PortalNode(app, certificate, settings, save ?? (() => { }), bound);
+        // Nothing listens on a network port: requests arrive over the paths across the internet, and are answered right there.
+        var node = new PortalNode(certificate, settings, save ?? (() => { }));
         node.StartInternet(local);
         _ = Task.Run(node.Housekeeping);
         Log.Info($"Courier started as {(node.IsHost ? "host" : "client")}, ID {node.Number}");
@@ -411,15 +371,6 @@ public sealed partial class PortalNode
         save();
         foreach (var transfer in Transfers)
             transfer.Cancel();
-        try
-        {
-            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-            await app.StopAsync(limit.Token);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        await app.DisposeAsync();
         Log.Info("Courier stopped");
         Changed?.Invoke();
     }
@@ -849,25 +800,20 @@ public sealed partial class PortalNode
     [GeneratedRegex("^[A-Fa-f0-9]{32}$")] private static partial Regex NoncePattern();
     [GeneratedRegex("^[a-f0-9]{16,40}$")] private static partial Regex JobPattern();
 
-    private static Task Json(HttpContext context, int status, object body)
-    {
-        context.Response.StatusCode = status;
-        context.Response.ContentType = "application/json; charset=utf-8";
-        return context.Response.WriteAsync(JsonSerializer.Serialize(body));
-    }
+    private static Task Json(PortalExchange context, int status, object body) => context.Json(status, body);
 
-    private async Task Handle(HttpContext context)
+    private async Task Handle(PortalExchange context)
     {
-        var path = context.Request.Path.Value ?? "";
-        var shown = context.Connection.ClientCertificate;
+        var path = context.Path;
+        var shown = context.ClientCertificate;
         if (!path.StartsWith(Api + "/", StringComparison.Ordinal) || shown is null || stopped)
         {
-            context.Response.StatusCode = 404;
+            context.Fail(404);
             return;
         }
         var caller = Portal.Fingerprint(shown);
         var parts = path[(Api.Length + 1)..].Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var method = context.Request.Method;
+        var method = context.Method;
         try
         {
             switch (parts)
@@ -894,7 +840,7 @@ public sealed partial class PortalNode
             lock (gate)
             {
                 peer.LastSeen = DateTime.UtcNow;
-                if (Via(context) is { } across)
+                if (context.Via is { } across)
                     peer.Tunnel = across;
             }
             switch (parts)
@@ -930,7 +876,7 @@ public sealed partial class PortalNode
                     await Json(context, 200, new { state = job.Transfer.Cancelled ? "cancelled" : job.Transfer.Paused && job.State == "accepted" ? "paused" : job.State });
                     break;
                 case ["send", var id, "hold"] when method == "POST" && JobPattern().IsMatch(id) && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
-                    job.Transfer.PausedThere = context.Request.Query["on"] == "1";
+                    job.Transfer.PausedThere = context.Query("on") == "1";
                     await Json(context, 200, new { });
                     Raise();
                     break;
@@ -939,22 +885,21 @@ public sealed partial class PortalNode
                     await Piece(context, job, index);
                     break;
                 default:
-                    context.Response.StatusCode = 404;
+                    context.Fail(404);
                     break;
             }
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or UnauthorizedAccessException or JsonException)
         {
             // The other PC went away mid-request, or the disk refused: it asks again.
-            if (!context.Response.HasStarted)
-                context.Response.StatusCode = 500;
+            context.Fail(500);
         }
     }
 
     /// <summary>Another PC starts pairing: remember the hash of its random part and answer with this side's.</summary>
-    private async Task PairStart(HttpContext context, string caller)
+    private async Task PairStart(PortalExchange context, string caller)
     {
-        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var body = await context.ReadJson();
         var commit = body.TryGetProperty("commit", out var value) ? value.GetString() ?? "" : "";
         // Clients pair with the host; a client is never asked by anyone.
         if (!IsHost)
@@ -974,22 +919,22 @@ public sealed partial class PortalNode
             pairings.RemoveAll(old => old.PeerId == caller || old.State != "waiting");
             if (pairings.Count >= 5)
             {
-                context.Response.StatusCode = 429;
+                context.Fail(429);
                 return;
             }
             pairings.Add(new PortalPairing
             {
                 PeerId = caller, PeerName = Portal.CleanLabel(body.TryGetProperty("name", out var name) ? name.GetString() ?? "" : ""), Incoming = true,
-                Commit = commit, NonceMine = nonce, Via = Via(context),
+                Commit = commit, NonceMine = nonce, Via = context.Via,
             });
         }
         await Json(context, 200, new { name = Name, nonce });
     }
 
     /// <summary>The other PC gives its random part away. If it matches the hash sent first, the code is known and the user is asked.</summary>
-    private async Task PairReveal(HttpContext context, string caller)
+    private async Task PairReveal(PortalExchange context, string caller)
     {
-        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var body = await context.ReadJson();
         var nonce = body.TryGetProperty("nonce", out var value) ? value.GetString() ?? "" : "";
         PortalPairing? pairing;
         lock (gate)
@@ -1008,9 +953,9 @@ public sealed partial class PortalNode
     }
 
     /// <summary>A paired PC says what it wants to send. It waits until the user accepts, unless that PC is accepted automatically.</summary>
-    private async Task Offer(HttpContext context, PortalPeer peer)
+    private async Task Offer(PortalExchange context, PortalPeer peer)
     {
-        var body = await context.Request.ReadFromJsonAsync<JsonElement>();
+        var body = await context.ReadJson();
         var id = body.GetProperty("id").GetString() ?? "";
         var files = new List<(string, long)>();
         foreach (var item in body.GetProperty("files").EnumerateArray())
@@ -1046,7 +991,7 @@ public sealed partial class PortalNode
         var root = relayTo is null ? Folder : System.IO.Path.Combine(Portal.RelayFolder, id);
         var total = files.Sum(file => file.Item2);
         Directory.CreateDirectory(root);
-        if (new DriveInfo(System.IO.Path.GetPathRoot(root)!).AvailableFreeSpace < total + (64L << 20))
+        if (Portal.FreeSpace(root) < total + (64L << 20))
         {
             await Json(context, 507, new { full = true });
             return;
@@ -1108,7 +1053,7 @@ public sealed partial class PortalNode
     /// One piece of one file. It must start exactly where the last one ended; if it doesn't,
     /// the answer says where to continue, which is how a broken transfer picks up again.
     /// </summary>
-    private async Task Piece(HttpContext context, IncomingJob job, int index)
+    private async Task Piece(PortalExchange context, IncomingJob job, int index)
     {
         if (job.Transfer.Cancelled || job.State == "refused")
         {
@@ -1121,13 +1066,13 @@ public sealed partial class PortalNode
             return;
         }
         job.Transfer.PausedThere = false;
-        if (job.State != "accepted" || index < 0 || index >= job.Files.Count || !long.TryParse(context.Request.Query["offset"], out var offset) || offset < 0)
+        if (job.State != "accepted" || index < 0 || index >= job.Files.Count || !long.TryParse(context.Query("offset"), out var offset) || offset < 0)
         {
             await Json(context, 400, new { });
             return;
         }
         var (path, size) = job.Files[index];
-        await job.Gate.WaitAsync(context.RequestAborted);
+        await job.Gate.WaitAsync(context.Aborted);
         try
         {
             if (job.Finished.Contains(index))
@@ -1150,7 +1095,7 @@ public sealed partial class PortalNode
                 var buffer = new byte[1 << 17];
                 var room = size - part.Length;
                 int read;
-                while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
+                while ((read = await context.Body.ReadAsync(buffer, context.Aborted)) > 0)
                 {
                     if (job.Transfer.Cancelled || job.Transfer.Paused)
                         break;
@@ -1160,7 +1105,7 @@ public sealed partial class PortalNode
                         tooMuch = true;
                         break;
                     }
-                    await part.WriteAsync(buffer.AsMemory(0, read), context.RequestAborted);
+                    await part.WriteAsync(buffer.AsMemory(0, read), context.Aborted);
                     room -= read;
                     job.Transfer.Add(read);
                 }
@@ -1276,8 +1221,19 @@ public static partial class Portal
     public static string Fingerprint(System.Security.Cryptography.X509Certificates.X509Certificate certificate) =>
         Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()));
 
+    /// <summary>This device's name as other PCs see it.</summary>
+    public static string DeviceName =>
+#if ANDROID
+        $"{(global::Android.OS.Build.Manufacturer)} {(global::Android.OS.Build.Model)}".Trim();
+#else
+        Environment.MachineName;
+#endif
+
     private static string Netsh(params string[] arguments)
     {
+#if !WINDOWS
+        return "";
+#else
         try
         {
             var start = new ProcessStartInfo(System.IO.Path.Combine(Environment.SystemDirectory, "netsh.exe"))
@@ -1295,6 +1251,7 @@ public static partial class Portal
         {
             return "";
         }
+#endif
     }
 
     /// <summary>True if the Windows firewall already lets other PCs reach this copy of the program. Needs no special rights.</summary>
@@ -1348,6 +1305,16 @@ public static partial class Portal
     {
         text = Control().Replace(text, " ").Trim();
         return text.Length == 0 ? "PC" : text.Length > 60 ? text[..60] : text;
+    }
+
+    /// <summary>Room left where a folder is (on a phone, the drive root is not where the app's files live, so the folder itself is asked).</summary>
+    public static long FreeSpace(string folder)
+    {
+#if ANDROID
+        return new global::Android.OS.StatFs(folder).AvailableBytes;
+#else
+        return new DriveInfo(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(folder))!).AvailableFreeSpace;
+#endif
     }
 
     /// <summary>Where the host keeps, for a moment, files one client sends to another.</summary>
@@ -1459,7 +1426,7 @@ public static partial class Portal
         {
             if (File.Exists(CertificateFile))
             {
-                var saved = ProtectedData.Unprotect(File.ReadAllBytes(CertificateFile), null, DataProtectionScope.CurrentUser);
+                var saved = Unprotect(File.ReadAllBytes(CertificateFile));
                 var loaded = X509CertificateLoader.LoadPkcs12(saved, null);
                 if (loaded.NotAfter > DateTime.Now.AddDays(7))
                     return loaded;
@@ -1472,7 +1439,7 @@ public static partial class Portal
         try
         {
             Directory.CreateDirectory(AppInfo.DataDir);
-            File.WriteAllBytes(CertificateFile, ProtectedData.Protect(exported, null, DataProtectionScope.CurrentUser));
+            File.WriteAllBytes(CertificateFile, Protect(exported));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or CryptographicException)
         {
@@ -1480,6 +1447,15 @@ public static partial class Portal
         }
         return X509CertificateLoader.LoadPkcs12(exported, null);
     }
+
+#if WINDOWS
+    private static byte[] Protect(byte[] data) => ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
+    private static byte[] Unprotect(byte[] data) => ProtectedData.Unprotect(data, null, DataProtectionScope.CurrentUser);
+#else
+    // The app's own folder can't be read by other apps on Android.
+    private static byte[] Protect(byte[] data) => data;
+    private static byte[] Unprotect(byte[] data) => data;
+#endif
 
     /// <summary>A fresh certificate with its key, as PKCS#12 bytes. Valid for a long time: it is an identity, not a promise from an authority.</summary>
     public static byte[] NewCertificate()

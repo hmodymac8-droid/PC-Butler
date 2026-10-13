@@ -5,7 +5,9 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+#if WINDOWS
 using Microsoft.Win32;
+#endif
 
 namespace PCButler.Core;
 
@@ -133,9 +135,13 @@ public sealed class Config
     [JsonPropertyName("duplicates")] public DuplicatesSettings Duplicates { get; set; } = new();
     [JsonPropertyName("cleaner")] public CleanerSettings Cleaner { get; set; } = new();
     [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
+#if WINDOWS
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
+#endif
     [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
+#if WINDOWS
     [JsonPropertyName("overlay")] public OverlaySettings Overlay { get; set; } = new();
+#endif
     /// <summary>Keyboard shortcuts that work in any program: action -> keys ("Ctrl+Alt+B"). An action without one is not listed.</summary>
     [JsonPropertyName("hotkeys")] public Dictionary<string, string> Hotkeys { get; set; } = [];
     [JsonPropertyName("portal")] public PortalSettings Portal { get; set; } = new();
@@ -178,6 +184,7 @@ public sealed class Config
     {
         if (Language is "en" or "ar")
             return Language;
+#if WINDOWS
         const int LangArabic = 0x01; // primary language id, the low 10 bits of the UI language
         try
         {
@@ -187,6 +194,9 @@ public sealed class Config
         {
             return "en";
         }
+#else
+        return System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ar" ? "ar" : "en";
+#endif
     }
 }
 
@@ -198,8 +208,10 @@ public static class ConfigStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // keep Arabic and other non-ASCII text readable
     };
 
+#if WINDOWS
     [DllImport("kernel32.dll")]
     internal static extern ushort GetUserDefaultUILanguage();
+#endif
 
     public static Config Load()
     {
@@ -253,6 +265,9 @@ public static class ConfigStore
     /// <summary>Look up a per-user Windows folder, honouring a relocated one.</summary>
     public static string ShellFolder(string valueName, string fallback)
     {
+#if !WINDOWS
+        return fallback;
+#else
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(
@@ -264,11 +279,18 @@ public static class ConfigStore
         {
         }
         return fallback;
+#endif
     }
 
+#if ANDROID
+    /// <summary>The phone's shared Download folder.</summary>
+    public static string DetectDownloadsFolder() =>
+        global::Android.OS.Environment.GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads)?.AbsolutePath ?? "/storage/emulated/0/Download";
+#else
     public static string DetectDownloadsFolder() => ShellFolder(
         "{374DE290-123F-4565-9164-39C4925E467B}",
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
+#endif
 
     /// <summary>"Pause for today": the timestamp of the coming midnight.</summary>
     public static string PauseUntilTomorrow() => DateTime.Now.AddDays(1).ToString("yyyy-MM-dd 00:00");
@@ -282,6 +304,9 @@ public static class Autostart
 
     public static bool IsEnabled()
     {
+#if !WINDOWS
+        return false;
+#else
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(Key);
@@ -291,14 +316,17 @@ public static class Autostart
         {
             return false;
         }
+#endif
     }
 
     public static void Set(bool enabled)
     {
+#if WINDOWS
         using var key = Registry.CurrentUser.CreateSubKey(Key);
         if (enabled)
             key.SetValue(ValueName, $"\"{Environment.ProcessPath}\" --background");
         else
             key.DeleteValue(ValueName, throwOnMissingValue: false);
+#endif
     }
 }

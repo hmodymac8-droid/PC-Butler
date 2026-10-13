@@ -486,17 +486,26 @@ Section("courier host and clients");
     host.Attention += _ => Interlocked.Increment(ref hostAsked);
     Check(host.IsHost && !alice.IsHost && Portal.IsNumber(host.Number) && host.Number != alice.Number && host.LinkPort > 0, "each PC has its ID and its role");
 
-    using (var noCertificate = new HttpClient(new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true }))
     {
-        var turnedAway = false;
-        try
+        // Over a real path to the host, a caller that shows no certificate of its own gets nothing.
+        using var bare = new PortalLink(System.Net.IPAddress.Loopback);
+        var turnedAway = !await bare.PunchTo(hostAt, TimeSpan.FromSeconds(5));
+        if (!turnedAway)
         {
-            using var answer = await noCertificate.GetAsync($"https://127.0.0.1:{host.Port}/portal/v1/who");
-            turnedAway = !answer.IsSuccessStatusCode;
-        }
-        catch (HttpRequestException)
-        {
-            turnedAway = true;
+            try
+            {
+                await using var line = await bare.Connect(hostAt);
+                await using var tls = new System.Net.Security.SslStream(line, false, (_, _, _, _) => true);
+                await tls.AuthenticateAsClientAsync("portal.direct");
+                await tls.WriteAsync(Encoding.ASCII.GetBytes("GET /portal/v1/who HTTP/1.1\r\nHost: x\r\n\r\n"));
+                var reply = new byte[256];
+                using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                turnedAway = await tls.ReadAsync(reply, wait.Token) == 0;
+            }
+            catch (Exception error) when (error is IOException or System.Security.Authentication.AuthenticationException or OperationCanceledException)
+            {
+                turnedAway = true;
+            }
         }
         Check(turnedAway, "a caller that shows no certificate gets nothing");
     }

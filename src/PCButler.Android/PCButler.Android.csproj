@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- PC Butler for Android: Courier, the Vault, Duplicates, Storage and the Sorter, on a phone.
+       The logic is PCButler.Core's own files, compiled here for Android (the Windows-only parts are
+       left out with #if WINDOWS); only the screens and the phone's own services are written here. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PCButler.Android</RootNamespace>
+    <ApplicationTitle>PC Butler</ApplicationTitle>
+    <ApplicationId>com.hmodymac8droid.pcbutler</ApplicationId>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- One APK that runs on phones (arm64) and on the emulator (x64). -->
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <AndroidLinkMode Condition="'$(Configuration)' == 'Release'">SdkOnly</AndroidLinkMode>
+    <AndroidSdkDirectory>D:\Android\SDK</AndroidSdkDirectory>
+    <NoWarn>$(NoWarn);CA1416;CA1422;XA4211</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The shared logic, compiled for Android. -->
+    <Compile Include="..\PCButler.Core\AppInfo.cs" Link="Core\AppInfo.cs" />
+    <Compile Include="..\PCButler.Core\Tr.cs" Link="Core\Tr.cs" />
+    <Compile Include="..\PCButler.Core\Config.cs" Link="Core\Config.cs" />
+    <Compile Include="..\PCButler.Core\Sorter.cs" Link="Core\Sorter.cs" />
+    <Compile Include="..\PCButler.Core\Portal.cs" Link="Core\Portal.cs" />
+    <Compile Include="..\PCButler.Core\PortalDht.cs" Link="Core\PortalDht.cs" />
+    <Compile Include="..\PCButler.Core\PortalInternet.cs" Link="Core\PortalInternet.cs" />
+    <Compile Include="..\PCButler.Core\PortalNat.cs" Link="Core\PortalNat.cs" />
+    <Compile Include="..\PCButler.Core\PortalServer.cs" Link="Core\PortalServer.cs" />
+    <Compile Include="..\PCButler.Core\PortalTunnel.cs" Link="Core\PortalTunnel.cs" />
+    <EmbeddedResource Include="..\PCButler.Core\Translations\ar.json" LogicalName="PCButler.Core.ar.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.png" Color="#0D0E11" ForegroundScale="0.7" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#0D0E11" BaseSize="160,160" />
+  </ItemGroup>
+
+</Project>

@@ -448,12 +448,15 @@ public sealed class PortalLink : IDisposable
         socket.ReceiveBufferSize = socket.SendBufferSize = 4 * 1024 * 1024;
         // Windows otherwise reports "connection reset" on the socket when some packet could not be delivered.
         const int SIO_UDP_CONNRESET = -1744830452;
-        try
+        if (OperatingSystem.IsWindows())
         {
-            socket.IOControl(SIO_UDP_CONNRESET, [0, 0, 0, 0], null);
-        }
-        catch (SocketException)
-        {
+            try
+            {
+                socket.IOControl(SIO_UDP_CONNRESET, [0, 0, 0, 0], null);
+            }
+            catch (SocketException)
+            {
+            }
         }
         socket.Bind(new IPEndPoint(address, port));
         Port = ((IPEndPoint)socket.LocalEndPoint!).Port;
