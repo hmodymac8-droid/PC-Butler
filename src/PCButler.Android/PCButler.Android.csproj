@@ -36,12 +36,16 @@
     <Compile Include="..\PCButler.Core\PortalNat.cs" Link="Core\PortalNat.cs" />
     <Compile Include="..\PCButler.Core\PortalServer.cs" Link="Core\PortalServer.cs" />
     <Compile Include="..\PCButler.Core\PortalTunnel.cs" Link="Core\PortalTunnel.cs" />
+    <Compile Include="..\PCButler.Core\Vault.cs" Link="Core\Vault.cs" />
+    <Compile Include="..\PCButler.Core\Duplicates.cs" Link="Core\Duplicates.cs" />
+    <Compile Include="..\PCButler.Core\Storage.cs" Link="Core\Storage.cs" />
     <EmbeddedResource Include="..\PCButler.Core\Translations\ar.json" LogicalName="PCButler.Core.ar.json" />
   </ItemGroup>
 
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.png" Color="#0D0E11" ForegroundScale="0.7" />
     <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#0D0E11" BaseSize="160,160" />
+    <MauiImage Include="Resources\Images\*.png" BaseSize="24,24" />
   </ItemGroup>
 
 </Project>

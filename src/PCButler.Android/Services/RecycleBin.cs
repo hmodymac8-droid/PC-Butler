@@ -47,7 +47,39 @@ public static class RecycleBin
         }
     }
 
-    private sealed record Entry(string Original, string Kept, DateTime At);
+    public sealed record Entry(string Original, string Kept, DateTime At)
+    {
+        public long Size => File.Exists(Kept) ? new FileInfo(Kept).Length : 0;
+    }
+
+    /// <summary>What is in the bin, newest first.</summary>
+    public static List<Entry> Items()
+    {
+        lock (Gate)
+            return Read().Where(entry => File.Exists(entry.Kept)).OrderByDescending(entry => entry.At).ToList();
+    }
+
+    /// <summary>Delete everything in the bin for good. Returns how many files went.</summary>
+    public static int Empty()
+    {
+        lock (Gate)
+        {
+            var gone = 0;
+            foreach (var entry in Read())
+            {
+                try
+                {
+                    File.Delete(entry.Kept);
+                    gone++;
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+            File.WriteAllText(Index, "[]");
+            return gone;
+        }
+    }
 
     private static List<Entry> Read()
     {

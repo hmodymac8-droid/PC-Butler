@@ -24,7 +24,13 @@ public sealed class App : Application
         Resources = Theme.Resources();
     }
 
-    protected override Window CreateWindow(IActivationState? activationState) => new(new Shell());
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        var window = new Window(new Shell());
+        // The vault never stays open behind the user's back: going to the background locks it.
+        window.Stopped += (_, _) => Pages.VaultPage.Current?.Lock();
+        return window;
+    }
 }
 
 /// <summary>The program's colours (the same as on Windows), and the looks of the controls that use them.</summary>
@@ -46,10 +52,16 @@ public static class Theme
         var resources = new ResourceDictionary();
         resources.Add(new Style(typeof(ContentPage)) { Setters = { new() { Property = VisualElement.BackgroundColorProperty, Value = Background } } });
         resources.Add(new Style(typeof(Label)) { Setters = { new() { Property = Label.TextColorProperty, Value = Text } } });
+        var disabled = new VisualState { Name = "Disabled" };
+        disabled.Setters.Add(new Setter { Property = VisualElement.OpacityProperty, Value = 0.4 });
+        var normal = new VisualState { Name = "Normal" };
+        normal.Setters.Add(new Setter { Property = VisualElement.OpacityProperty, Value = 1.0 });
+        var states = new VisualStateGroupList { new VisualStateGroup { Name = "CommonStates", States = { normal, disabled } } };
         resources.Add(new Style(typeof(Button))
         {
             Setters =
             {
+                new() { Property = VisualStateManager.VisualStateGroupsProperty, Value = states },
                 new() { Property = Button.BackgroundColorProperty, Value = Secondary },
                 new() { Property = Button.TextColorProperty, Value = Text },
                 new() { Property = Button.CornerRadiusProperty, Value = 10 },
@@ -91,6 +103,24 @@ public static class Theme
         return button;
     }
 
+    /// <summary>A line of a list that can be tapped: text from the left, the full width.</summary>
+    public static View Row(string text, Action action, bool enabled = true)
+    {
+        var label = new Label { Text = text, FontSize = 15, TextColor = enabled ? Text : Muted, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.TailTruncation };
+        var row = new Border
+        {
+            Content = label, BackgroundColor = Secondary, StrokeThickness = 0, Padding = new Thickness(16, 13),
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 10 },
+        };
+        if (enabled)
+        {
+            var tap = new TapGestureRecognizer();
+            tap.Tapped += (_, _) => action();
+            row.GestureRecognizers.Add(tap);
+        }
+        return row;
+    }
+
     public static Label Title(string text, double size = 22) => new() { Text = text, FontSize = size, FontAttributes = FontAttributes.Bold, TextColor = Text };
     public static Label Body(string text, double size = 14) => new() { Text = text, FontSize = size, TextColor = Text, LineBreakMode = LineBreakMode.WordWrap };
     public static Label Faint(string text, double size = 13) => new() { Text = text, FontSize = size, TextColor = Muted, LineBreakMode = LineBreakMode.WordWrap };
@@ -108,7 +138,11 @@ public sealed class Shell : Microsoft.Maui.Controls.Shell
         SetTabBarTitleColor(this, Theme.Primary);
         SetNavBarIsVisible(this, false);
         var tabs = new TabBar();
-        tabs.Items.Add(new ShellContent { Title = Tr.T("Courier"), Content = new Pages.CourierPage() });
+        tabs.Items.Add(new ShellContent { Title = Tr.T("Courier"), Content = new Pages.CourierPage(), Icon = "tab_courier.png" });
+        tabs.Items.Add(new ShellContent { Title = Tr.T("Sorter"), ContentTemplate = new DataTemplate(typeof(Pages.SorterPage)), Icon = "tab_sorter.png" });
+        tabs.Items.Add(new ShellContent { Title = Tr.T("Duplicates"), ContentTemplate = new DataTemplate(typeof(Pages.DuplicatesPage)), Icon = "tab_duplicates.png" });
+        tabs.Items.Add(new ShellContent { Title = Tr.T("Storage"), ContentTemplate = new DataTemplate(typeof(Pages.StoragePage)), Icon = "tab_storage.png" });
+        tabs.Items.Add(new ShellContent { Title = Tr.T("Vault"), ContentTemplate = new DataTemplate(typeof(Pages.VaultPage)), Icon = "tab_vault.png" });
         Items.Add(tabs);
     }
 }

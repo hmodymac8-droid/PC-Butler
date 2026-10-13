@@ -310,14 +310,11 @@ public sealed class CourierPage : ContentPage
         targets.Children.Clear();
         foreach (var target in all)
         {
-            var row = Theme.Plain($"{(target.Ready ? "●" : "○")}  {target.Name}", () =>
+            targets.Children.Add(Theme.Row($"{(target.Ready ? "●" : "○")}  {target.Name}", () =>
             {
                 if (Courier.Waiting.Count > 0)
                     SendWaiting(target.Tag);
-            });
-            row.IsEnabled = target.Ready;
-            row.HorizontalOptions = LayoutOptions.Fill;
-            targets.Children.Add(row);
+            }, target.Ready));
         }
     }
 
