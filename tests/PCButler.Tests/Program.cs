@@ -420,6 +420,125 @@ VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")
 Check(VaultInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]) && VaultInbox.Take().Count == 0,
       "files waiting for the vault are handed over once");
 
+// ---------------------------------------------------------------- portal (a pretend phone on this PC's own loopback address)
+Section("portal");
+Check(Portal.SafeName(@"..\..\Windows\evil.exe") == "evil.exe" && Portal.SafeName("a<b>:c?.txt") == "a_b__c_.txt" && Portal.SafeName("CON.txt") == "_CON.txt"
+      && Portal.SafeName("...") == "file" && Portal.SafeName("/etc/passwd") == "passwd" && Portal.SafeName("") == "file", "names from the phone are made safe");
+Check(Portal.DeviceName("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1") == "iPhone · Safari"
+      && Portal.DeviceName("Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36") == "Android · Chrome"
+      && Portal.DeviceName("") == "Unknown device", "the phone is named from what its browser says");
+Check(PortalQr.Png("http://192.168.1.20:5000/p/abc") is { Length: > 300 } png && png[1] == 'P' && png[2] == 'N' && png[3] == 'G', "the QR code is a picture");
+var portalFolder = Path.Combine(temp, "PortalIn");
+var portal = await PortalSession.Start(new PortalSettings { Folder = portalFolder }, System.Net.IPAddress.Loopback);
+var portalChanges = 0;
+portal.Changed += () => Interlocked.Increment(ref portalChanges);
+using (var phone = new HttpClient(new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() }))
+using (var stranger = new HttpClient())
+{
+    async Task<(int Status, System.Text.Json.JsonElement Body)> Ask(HttpClient who, HttpMethod how, string what, byte[]? body = null)
+    {
+        using var request = new HttpRequestMessage(how, portal.Url + what) { Content = body is null ? null : new ByteArrayContent(body) };
+        using var response = await who.SendAsync(request);
+        var text = await response.Content.ReadAsStringAsync();
+        return ((int)response.StatusCode, text.StartsWith('{') ? System.Text.Json.JsonDocument.Parse(text).RootElement : default);
+    }
+
+    var root = portal.Url[..portal.Url.IndexOf("/p/")];
+    Check((int)(await stranger.GetAsync(root + "/")).StatusCode == 404 && (int)(await stranger.GetAsync(root + "/p/wrong-secret")).StatusCode == 404
+          && (int)(await stranger.GetAsync(root + "/p/wrong-secret/state")).StatusCode == 404, "without the QR code's secret there is nothing there");
+    var pageText = await phone.GetStringAsync(portal.Url);
+    Check(pageText.Contains("PC Butler") && !pageText.Contains("https://") && !pageText.Contains("src=\"http"), "the page is served and loads nothing from elsewhere");
+    Check((await Ask(phone, HttpMethod.Get, "/state")).Status == 403, "nothing works before saying hello");
+
+    var hello = await Ask(phone, HttpMethod.Post, "/hello");
+    Check(hello.Status == 200 && !hello.Body.GetProperty("approved").GetBoolean() && hello.Body.GetProperty("code").GetString() == portal.Code
+          && portal.Code.Length == 4 && portal.State == PortalState.Asking && portal.Device.Length > 0, "the first phone waits with a code shown on both sides");
+    Check((await Ask(phone, HttpMethod.Get, "/state")).Status == 403 && (await Ask(phone, HttpMethod.Put, "/upload/aaaaaaaaaaaa?name=x.txt&size=1&offset=0", [1])).Status == 403,
+          "and can do nothing until it is allowed");
+    Check((await Ask(stranger, HttpMethod.Post, "/hello")).Status == 403, "a second device is turned away");
+    portal.Approve();
+    Check((await Ask(phone, HttpMethod.Post, "/hello")).Body.GetProperty("approved").GetBoolean() && portal.State == PortalState.Connected
+          && (await Ask(phone, HttpMethod.Get, "/state")).Status == 200 && (await Ask(stranger, HttpMethod.Get, "/state")).Status == 403, "Allow lets that phone in, and only it");
+
+    // Phone to PC, in pieces, with a piece that arrives at the misplaced place in between.
+    var sent = new byte[300_000];
+    Random.Shared.NextBytes(sent);
+    var up = "/upload/0123456789abcdef?name=" + Uri.EscapeDataString(@"..\..\holiday photo.jpg") + "&size=" + sent.Length + "&offset=";
+    var first = await Ask(phone, HttpMethod.Put, up + "0", sent[..100_000]);
+    Check(first.Status == 200 && first.Body.GetProperty("received").GetInt64() == 100_000 && !first.Body.GetProperty("done").GetBoolean(), "a first piece is taken");
+    var misplaced = await Ask(phone, HttpMethod.Put, up + "250000", sent[250_000..]);
+    Check(misplaced.Status == 409 && misplaced.Body.GetProperty("received").GetInt64() == 100_000, "a piece out of place is nobodyHome, with where to continue");
+    Check((await Ask(phone, HttpMethod.Get, "/upload/0123456789abcdef")).Body.GetProperty("received").GetInt64() == 100_000, "the phone can ask how far it got");
+    Check((await Ask(phone, HttpMethod.Put, up + "100000", sent[100_000..200_000])).Status == 200, "the next piece continues");
+    var last = await Ask(phone, HttpMethod.Put, up + "200000", sent[200_000..]);
+    var arrived = Path.Combine(portalFolder, "holiday photo.jpg");
+    Check(last.Body.GetProperty("done").GetBoolean() && File.Exists(arrived) && File.ReadAllBytes(arrived).SequenceEqual(sent)
+          && !File.Exists(Path.Combine(temp, "holiday photo.jpg")), "the file arrives whole, inside the Portal folder and nowhere else");
+    Check(portal.Transfers is [{ State: "done", Incoming: true, Name: "holiday photo.jpg", Done: 300_000 }] && Portal.History() is [{ Incoming: true, Name: "holiday photo.jpg" }, ..],
+          "it is listed as done and logged");
+    var again = await Ask(phone, HttpMethod.Put, "/upload/fedcba9876543210?name=holiday%20photo.jpg&size=3&offset=0", [1, 2, 3]);
+    Check(again.Body.GetProperty("done").GetBoolean() && File.Exists(Path.Combine(portalFolder, "holiday photo (1).jpg")) && File.ReadAllBytes(arrived).Length == 300_000,
+          "a second file of the same name never overwrites the first");
+    Check((await Ask(phone, HttpMethod.Put, "/upload/bbbbbbbbbbbbbbbb?name=big.bin&size=10&offset=0", new byte[50])).Status == 400
+          && !File.Exists(Path.Combine(portalFolder, "big.bin")), "more than it said it would send is nobodyHome");
+    Check((await Ask(phone, HttpMethod.Put, "/upload/cccccccccccccccc?name=empty.txt&size=0&offset=0", [])).Body.GetProperty("done").GetBoolean()
+          && File.Exists(Path.Combine(portalFolder, "empty.txt")), "an empty file arrives too");
+    await Ask(phone, HttpMethod.Put, "/upload/dddddddddddddddd?name=stop.bin&size=1000&offset=0", new byte[400]);
+    Check((await Ask(phone, HttpMethod.Delete, "/upload/dddddddddddddddd")).Status == 200
+          && (await Ask(phone, HttpMethod.Put, "/upload/dddddddddddddddd?name=stop.bin&size=1000&offset=400", new byte[600])).Status == 410
+          && !File.Exists(Path.Combine(portalFolder, "stop.bin")) && !File.Exists(Path.Combine(portalFolder, ".portal-parts", "dddddddddddddddd.part")),
+          "a cancelled file is dropped and stays cancelled");
+    Check((await Ask(phone, HttpMethod.Put, "/upload/..%2F..%2Fx?name=a&size=1&offset=0", [1])).Status == 404, "odd transfer names are not accepted");
+
+    // PC to phone: a file (whole, and a part of it as a browser asks when resuming) and a folder as a zip.
+    var offered = Path.Combine(temp, "PortalOut", "report.pdf");
+    Directory.CreateDirectory(Path.Combine(temp, "PortalOut", "album", "inner"));
+    var outgoing = new byte[200_000];
+    Random.Shared.NextBytes(outgoing);
+    File.WriteAllBytes(offered, outgoing);
+    File.WriteAllText(Path.Combine(temp, "PortalOut", "album", "one.txt"), "one");
+    File.WriteAllText(Path.Combine(temp, "PortalOut", "album", "inner", "two.txt"), "two!");
+    var fileOffer = portal.Offer(offered)!;
+    var folderOffer = portal.Offer(Path.Combine(temp, "PortalOut", "album"))!;
+    Check(portal.Offer(Path.Combine(temp, "nothing-here")) is null && portal.Offer(offered) == fileOffer && portal.Offers.Count == 2 && folderOffer.Size == 7, "files and folders can be offered");
+    var listed = (await Ask(phone, HttpMethod.Get, "/state")).Body.GetProperty("offers");
+    Check(listed.GetArrayLength() == 2 && listed[0].GetProperty("name").GetString() == "report.pdf" && listed[1].GetProperty("name").GetString() == "album.zip", "the phone sees what is offered");
+    Check((await phone.GetByteArrayAsync(portal.Url + "/file/" + fileOffer.Id)).SequenceEqual(outgoing), "the phone fetches a file whole");
+    using (var partial = new HttpRequestMessage(HttpMethod.Get, portal.Url + "/file/" + fileOffer.Id))
+    {
+        partial.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(150_000, null);
+        using var answer = await phone.SendAsync(partial);
+        Check((int)answer.StatusCode == 206 && (await answer.Content.ReadAsByteArrayAsync()).SequenceEqual(outgoing[150_000..]), "or the rest of it, to resume a broken download");
+    }
+    using (var album = new System.IO.Compression.ZipArchive(new MemoryStream(await phone.GetByteArrayAsync(portal.Url + "/file/" + folderOffer.Id))))
+        Check(album.Entries.Select(entry => entry.FullName).Order().SequenceEqual(["album/inner/two.txt", "album/one.txt"])
+              && new StreamReader(album.GetEntry("album/inner/two.txt")!.Open()).ReadToEnd() == "two!", "a folder comes as one zip with its structure");
+    Check((int)(await stranger.GetAsync(portal.Url + "/file/" + fileOffer.Id)).StatusCode == 403
+          && (int)(await phone.GetAsync(portal.Url + "/file/nope")).StatusCode == 404, "only the allowed phone, only what was offered");
+    Check(portal.Transfers.Count(transfer => !transfer.Incoming && transfer.State == "done") == 3 && Portal.History().Count(entry => !entry.Incoming) == 3, "each fetch is listed and logged");
+    portal.RemoveOffer(fileOffer.Id);
+    Check((int)(await phone.GetAsync(portal.Url + "/file/" + fileOffer.Id)).StatusCode == 404, "an offer taken back is gone");
+
+    portal.Refuse();
+    Check((await Ask(phone, HttpMethod.Get, "/state")).Status == 403 && portal.State == PortalState.Waiting, "disconnecting the phone shuts it out");
+    await portal.Stop();
+    var nobodyHome = false;
+    try
+    {
+        await stranger.GetAsync(portal.Url);
+    }
+    catch (HttpRequestException)
+    {
+        nobodyHome = true;
+    }
+    Check(nobodyHome && portal.State == PortalState.Stopped && portalChanges > 5, "after Stop nothing listens any more");
+}
+var allowed = 0;
+File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"p1","action":"allow_portal","services":["Spooler"]}""");
+AdminHelper.Poll(helperDir, [], (_, _) => { allowed += 100; return true; }, () => { allowed++; return true; });
+Check(allowed == 1 && File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"portal\""), "the helper's firewall request does that one thing only");
+Check(Portal.LocalAddresses().All(item => !System.Net.IPAddress.IsLoopback(item.Address)) && !Portal.FirewallAllows(@"C:\nowhere\nothing.exe"), "addresses and the firewall can be read");
+
 // ---------------------------------------------------------------- scrypt and the vault
 Section("vault");
 // RFC 7914, section 12, second test vector.

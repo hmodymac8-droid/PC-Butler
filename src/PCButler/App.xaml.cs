@@ -470,6 +470,7 @@ public partial class App : Application
         Background.Stop();
         Usage.Stop();
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
+        Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4)); // and so does Portal: nothing listens once the program is gone
         if (tray is not null)
         {
             tray.Visible = false;

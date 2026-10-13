@@ -135,6 +135,7 @@ public sealed class Config
     [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
     [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
+    [JsonPropertyName("portal")] public PortalSettings Portal { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
     /// <summary>Show the drop zone, the small always-on-top tile that files can be dragged onto.</summary>

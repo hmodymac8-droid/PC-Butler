@@ -36,6 +36,7 @@ public sealed partial class MainWindow : Window
     public VaultPage Vault { get; }
     private readonly Dictionary<string, string> glyphs = [];
     public ShredderPage Shredder { get; }
+    public PortalPage PortalPage { get; }
     public CleanerPage Cleaner { get; }
     public ProgramsPage Programs { get; }
     public SettingsPage Settings { get; }
@@ -88,6 +89,7 @@ public sealed partial class MainWindow : Window
         History = new HistoryPage(this);
         Vault = new VaultPage(this);
         Shredder = new ShredderPage(this);
+        PortalPage = new PortalPage(this);
         Cleaner = new CleanerPage(this);
         Programs = new ProgramsPage(this);
         Settings = new SettingsPage(this);
@@ -105,6 +107,7 @@ public sealed partial class MainWindow : Window
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("shredder", "\uE75C", "Shredder", Shredder, false),
                      ("clipboard", "\uE77F", "Clipboard", new ClipboardPage(this), false),
+                     ("portal", "\uE8AB", "Portal", PortalPage, false),
                      ("vault", "\uE72E", "Vault", Vault, false),
                      ("history", "\uE81C", "History", History, false),
                      ("settings", "\uE713", "Settings", Settings, true),
@@ -197,6 +200,13 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Put items on the Shredder page's list. Nothing is shredded until the user presses Shred there.</summary>
+    /// <summary>Offer files to the phone through Portal (from the drop zone).</summary>
+    public void SendWithPortal(IEnumerable<string> paths)
+    {
+        ShowPage("portal");
+        PortalPage.Offer(paths);
+    }
+
     public void ShredLater(IEnumerable<string> paths)
     {
         ShowPage("shredder");

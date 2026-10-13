@@ -1,0 +1,280 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: LicenseRef-PCButler-Proprietary -->
+<!-- Copyright (c) 2026 hmodymac8-droid -->
+<!-- The page a phone opens after scanning Portal's QR code. Everything is in this one file:
+     no script, style, font or picture is fetched from anywhere but the PC that serves it. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>PC Butler Portal</title>
+<style>
+  :root { --back:#080a0e; --card:#101216; --raised:#23272c; --line:#22252b; --text:#e8ebf0; --muted:#8a9098; --mint:#42d8a5; --ink:#06150f; --amber:#edb755; --red:#f45a56; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--back); color:var(--text); font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         padding:calc(18px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom)); }
+  main { max-width:560px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  header b { font-size:20px; } header b i { color:var(--mint); font-style:normal; }
+  header span { margin-inline-start:auto; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); display:inline-block; }
+  .dot.on { background:var(--mint); } .dot.off { background:var(--red); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:14px; }
+  h2 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  p { margin:0; color:var(--muted); font-size:14px; }
+  .code { font:600 44px/1 ui-monospace,Consolas,monospace; letter-spacing:10px; color:var(--mint); text-align:center; margin:22px 0 14px; direction:ltr; }
+  button, .button { appearance:none; border:1px solid var(--line); background:var(--raised); color:var(--text); border-radius:9px; padding:12px 16px;
+                    font:inherit; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; text-align:center; }
+  button.main { background:var(--mint); color:var(--ink); border-color:var(--mint); width:100%; padding:15px; font-size:17px; margin-top:14px; }
+  button.small, .button.small { padding:7px 12px; font-size:14px; font-weight:500; }
+  button:disabled { opacity:.5; }
+  ul { list-style:none; margin:14px 0 0; padding:0; }
+  li { border-top:1px solid var(--line); padding:12px 0; }
+  li:first-child { border-top:0; padding-top:0; }
+  .row { display:flex; align-items:center; gap:10px; }
+  .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:ltr; text-align:start; unicode-bidi:plaintext; }
+  .meta { font-size:13px; color:var(--muted); margin-top:3px; }
+  .bar { height:5px; border-radius:3px; background:var(--raised); margin-top:9px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:var(--mint); border-radius:3px; transition:width .2s; }
+  .failed .bar i { background:var(--red); } .failed .meta { color:var(--red); }
+  .empty { margin-top:12px; }
+  .hidden { display:none !important; }
+  footer { text-align:center; font-size:12px; color:var(--muted); margin-top:18px; }
+</style>
+</head>
+<body>
+<main>
+  <header><b>PC Butler<i>.</i> Portal</b><span><i class="dot" id="dot"></i><span id="link"></span></span></header>
+
+  <section id="waiting">
+    <h2 data-t="checkTitle"></h2>
+    <p data-t="checkText"></p>
+    <div class="code" id="code">····</div>
+    <p data-t="checkHint"></p>
+  </section>
+
+  <section id="blocked" class="hidden">
+    <h2 id="blockedTitle"></h2>
+    <p id="blockedText"></p>
+    <button class="main" onclick="location.reload()" data-t="again"></button>
+  </section>
+
+  <div id="ready" class="hidden">
+    <section>
+      <h2 data-t="sendTitle"></h2>
+      <p data-t="sendText"></p>
+      <input type="file" id="picker" multiple class="hidden">
+      <button class="main" id="pick" data-t="choose"></button>
+      <ul id="uploads"></ul>
+    </section>
+    <section>
+      <h2 data-t="getTitle"></h2>
+      <p data-t="getText"></p>
+      <ul id="offers"></ul>
+      <p class="empty" id="noOffers" data-t="noOffers"></p>
+    </section>
+  </div>
+
+  <footer data-t="foot"></footer>
+</main>
+<script>
+"use strict";
+const TEXT = {
+  en: {
+    checkTitle: "Check the code", checkText: "PC Butler on your PC shows a four-digit code. If it is the same as this one, press Allow there.",
+    checkHint: "This keeps anyone else who saw the QR code out.", again: "Try again",
+    sendTitle: "Send to the PC", sendText: "Photos, videos or any files. They are saved in the PC's Portal folder.", choose: "Choose files",
+    getTitle: "Get from the PC", getText: "Files the PC is offering to this phone.", noOffers: "Nothing yet. Add files in PC Butler's Portal page.",
+    foot: "Files go straight between this phone and your PC over your own network.",
+    connected: "Connected to {0}", lost: "Connection lost", waiting: "Waiting",
+    busyTitle: "Another device is connected", busyText: "This session already belongs to another phone. Disconnect it in PC Butler, then try again.",
+    goneTitle: "The session has ended", goneText: "Portal was stopped on the PC, or this phone was turned away. Scan a new QR code to connect again.",
+    download: "Download", folder: "folder, as a zip", cancel: "Cancel", remove: "Remove", retry: "Retry",
+    sending: "{0} of {1} · {2}/s", done: "Sent", cancelled: "Cancelled", failed: "Failed: {0}", waitingTurn: "Waiting…", retrying: "Connection dropped, trying again…",
+    full: "the PC's disk is full", stoppedByPc: "stopped on the PC", network: "no connection",
+  },
+  ar: {
+    checkTitle: "تحقّق من الرمز", checkText: "يعرض PC Butler على حاسوبك رمزًا من أربعة أرقام. إذا كان مطابقًا لهذا الرمز فاضغط «سماح» هناك.",
+    checkHint: "هذا يمنع أي شخص آخر رأى رمز QR من الدخول.", again: "حاول مجددًا",
+    sendTitle: "إرسال إلى الحاسوب", sendText: "صور أو فيديو أو أي ملفات. تُحفظ في مجلد Portal على الحاسوب.", choose: "اختر ملفات",
+    getTitle: "جلب من الحاسوب", getText: "الملفات التي يعرضها الحاسوب على هذا الهاتف.", noOffers: "لا شيء بعد. أضف ملفات من صفحة Portal في PC Butler.",
+    foot: "الملفات تنتقل مباشرة بين هذا الهاتف وحاسوبك عبر شبكتك الخاصة.",
+    connected: "متصل بـ {0}", lost: "انقطع الاتصال", waiting: "بالانتظار",
+    busyTitle: "جهاز آخر متصل", busyText: "هذه الجلسة تخص هاتفًا آخر. افصله من PC Butler ثم حاول مجددًا.",
+    goneTitle: "انتهت الجلسة", goneText: "أُوقف Portal على الحاسوب، أو رُفض هذا الهاتف. امسح رمز QR جديدًا للاتصال من جديد.",
+    download: "تنزيل", folder: "مجلد، كملف zip", cancel: "إلغاء", remove: "إزالة", retry: "إعادة",
+    sending: "{0} من {1} · {2}/ث", done: "أُرسل", cancelled: "أُلغي", failed: "فشل: {0}", waitingTurn: "بالانتظار…", retrying: "انقطع الاتصال، جارٍ إعادة المحاولة…",
+    full: "قرص الحاسوب ممتلئ", stoppedByPc: "أُوقف من الحاسوب", network: "لا يوجد اتصال",
+  },
+};
+const arabic = (navigator.language || "en").toLowerCase().startsWith("ar");
+const T = arabic ? TEXT.ar : TEXT.en;
+const t = (key, ...values) => (T[key] || key).replace(/\{(\d)\}/g, (_, index) => values[index]);
+if (arabic) { document.documentElement.lang = "ar"; document.documentElement.dir = "rtl"; }
+document.querySelectorAll("[data-t]").forEach(element => element.textContent = t(element.dataset.t));
+
+const base = location.pathname.replace(/\/+$/, "");
+const $ = id => document.getElementById(id);
+const size = bytes => { const units = ["B", "KB", "MB", "GB", "TB"]; let index = 0; while (bytes >= 1024 && index < 4) { bytes /= 1024; index++; } return (index ? bytes.toFixed(1) : bytes) + " " + units[index]; };
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let chunk = 4 * 1024 * 1024, approved = false, ended = false, pcName = "";
+
+function show(which) { for (const id of ["waiting", "blocked", "ready"]) $(id).classList.toggle("hidden", id !== which); }
+function link(state, text) { $("dot").className = "dot " + state; $("link").textContent = text; }
+function block(kind) { ended = true; $("blockedTitle").textContent = t(kind + "Title"); $("blockedText").textContent = t(kind + "Text"); show("blocked"); link("off", ""); }
+
+// Say hello, show the code, and wait until Allow is pressed on the PC.
+async function hello() {
+  while (!approved && !ended) {
+    try {
+      const response = await fetch(base + "/hello", { method: "POST", credentials: "same-origin" });
+      if (response.status === 404) return block("gone");
+      if (response.status === 403) return block("busy");
+      const answer = await response.json();
+      pcName = answer.pc || "PC";
+      $("code").textContent = answer.code || "····";
+      link("", t("waiting"));
+      if (answer.approved) { approved = true; show("ready"); watch(); return; }
+    } catch { link("off", t("lost")); }
+    await sleep(1500);
+  }
+}
+
+// Once allowed: keep the list of offered files fresh, and notice when the session ends.
+async function watch() {
+  let misses = 0;
+  while (!ended) {
+    try {
+      const response = await fetch(base + "/state", { credentials: "same-origin", cache: "no-store" });
+      if (response.status === 404 || response.status === 403) return block("gone");
+      const state = await response.json();
+      chunk = state.chunk || chunk;
+      misses = 0;
+      link("on", t("connected", state.pc || pcName));
+      drawOffers(state.offers || []);
+    } catch { if (++misses > 2) link("off", t("lost")); }
+    await sleep(2000);
+  }
+}
+
+let offersKey = "";
+function drawOffers(offers) {
+  const key = JSON.stringify(offers);
+  if (key === offersKey) return;
+  offersKey = key;
+  const list = $("offers");
+  list.textContent = "";
+  $("noOffers").classList.toggle("hidden", offers.length > 0);
+  for (const offer of offers) {
+    const item = document.createElement("li"), row = document.createElement("div"), name = document.createElement("div"), get = document.createElement("a"), meta = document.createElement("div");
+    row.className = "row"; name.className = "name"; name.textContent = offer.name;
+    get.className = "button small"; get.textContent = t("download"); get.href = base + "/file/" + offer.id; get.setAttribute("download", offer.name);
+    meta.className = "meta"; meta.textContent = size(offer.size) + (offer.folder ? " · " + t("folder") : "");
+    row.append(name, get); item.append(row, meta); list.append(item);
+  }
+}
+
+// --- sending files to the PC, a piece at a time, one file after another ---
+const queue = [];
+let working = false;
+$("pick").onclick = () => $("picker").click();
+$("picker").onchange = event => {
+  for (const file of event.target.files) add(file);
+  event.target.value = "";
+  pump();
+};
+
+function add(file) {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => byte.toString(16).padStart(2, "0")).join("");
+  const item = document.createElement("li"), row = document.createElement("div"), name = document.createElement("div"), button = document.createElement("button"),
+        meta = document.createElement("div"), bar = document.createElement("div"), fill = document.createElement("i");
+  row.className = "row"; name.className = "name"; name.textContent = file.name; button.className = "small"; button.textContent = t("cancel");
+  meta.className = "meta"; meta.textContent = t("waitingTurn"); bar.className = "bar"; bar.append(fill);
+  row.append(name, button); item.append(row, meta, bar); $("uploads").prepend(item);
+  const job = { id, file, item, meta, fill, button, sent: 0, state: "queued", abort: null };
+  button.onclick = () => act(job);
+  queue.push(job);
+}
+
+function act(job) {
+  if (job.state === "queued" || job.state === "sending") {
+    job.state = "cancelled";
+    if (job.abort) job.abort.abort();
+    fetch(base + "/upload/" + job.id, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+    finish(job, t("cancelled"), false);
+  } else if (job.state === "failed") {
+    job.state = "queued"; job.item.classList.remove("failed"); job.button.textContent = t("cancel"); job.meta.textContent = t("waitingTurn");
+    pump();
+  } else {
+    job.item.remove();
+    queue.splice(queue.indexOf(job), 1);
+  }
+}
+
+function finish(job, text, failed) {
+  job.meta.textContent = text;
+  job.item.classList.toggle("failed", failed);
+  job.button.textContent = failed ? t("retry") : t("remove");
+  if (!failed && job.state !== "cancelled") job.fill.style.width = "100%";
+}
+
+async function pump() {
+  if (working) return;
+  working = true;
+  for (let job; (job = queue.find(item => item.state === "queued"));) await send(job);
+  working = false;
+}
+
+async function send(job) {
+  job.state = "sending";
+  const { file } = job;
+  const url = offset => base + "/upload/" + job.id + "?name=" + encodeURIComponent(file.name) + "&size=" + file.size + "&offset=" + offset;
+  let offset = job.sent, failures = 0, mark = performance.now(), markBytes = offset, speed = 0;
+  const progress = () => {
+    const now = performance.now();
+    if (now - mark > 700) { speed = (offset - markBytes) / ((now - mark) / 1000); mark = now; markBytes = offset; }
+    job.fill.style.width = (file.size ? offset * 100 / file.size : 100) + "%";
+    job.meta.textContent = t("sending", size(offset), size(file.size), size(speed));
+  };
+  do {
+    if (job.state !== "sending") return;
+    job.abort = new AbortController();
+    try {
+      const response = await fetch(url(offset), { method: "PUT", body: file.slice(offset, offset + chunk), credentials: "same-origin", signal: job.abort.signal });
+      if (response.status === 404 || response.status === 403) { job.state = "failed"; finish(job, t("failed", t("stoppedByPc")), true); return block("gone"); }
+      if (response.status === 410) { job.state = "cancelled"; return finish(job, t("failed", t("stoppedByPc")), false); }
+      if (response.status === 507) { job.state = "failed"; return finish(job, t("failed", t("full")), true); }
+      const answer = await response.json().catch(() => ({}));
+      if (response.status === 200 || response.status === 409) {
+        // 409: the PC already has a different amount (after a dropped piece); carry on from there.
+        offset = job.sent = answer.received ?? offset;
+        failures = 0;
+        progress();
+        if (answer.done) { job.state = "done"; return finish(job, t("done") + " · " + size(file.size), false); }
+        if (answer.busy) await sleep(500);
+        continue;
+      }
+      throw new Error("status " + response.status);
+    } catch (error) {
+      if (job.state !== "sending") return;
+      if (++failures > 8) { job.state = "failed"; return finish(job, t("failed", t("network")), true); }
+      job.meta.textContent = t("retrying");
+      await sleep(Math.min(8000, 500 * 2 ** failures));
+      // Ask the PC how much it has, so the piece that may have half-arrived is not sent twice.
+      try {
+        const known = await fetch(base + "/upload/" + job.id, { credentials: "same-origin", cache: "no-store" });
+        if (known.ok) offset = job.sent = (await known.json()).received ?? offset;
+      } catch { /* still offline: the next round waits longer */ }
+    }
+  } while (offset < file.size || file.size === 0);
+}
+
+// A phone that locks its screen pauses the page; when it comes back, pick up where things stopped.
+document.addEventListener("visibilitychange", () => { if (!document.hidden && approved && !ended) pump(); });
+show("waiting");
+hello();
+</script>
+</body>
+</html>

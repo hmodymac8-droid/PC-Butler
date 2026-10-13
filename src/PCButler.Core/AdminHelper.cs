@@ -10,7 +10,7 @@ namespace PCButler.Core;
 public sealed class HelperMessage
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
-    /// <summary>"stop_services" or "start_services".</summary>
+    /// <summary>"stop_services", "start_services" or "allow_portal".</summary>
     [JsonPropertyName("action")] public string Action { get; set; } = "";
     /// <summary>Asked: the services to act on. Answered: the ones it worked for.</summary>
     [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
@@ -23,7 +23,8 @@ public sealed class HelperMessage
 /// the helper carries it out and leaves the answer in another.
 ///
 /// Any program can write that file, so the helper only accepts what is listed here: it
-/// can pause and resume three named Windows services, and nothing else.
+/// can pause and resume three named Windows services, and let Portal through the
+/// firewall for this program's own file on private networks. Nothing else.
 /// </summary>
 public static class AdminHelper
 {
@@ -88,9 +89,10 @@ public static class AdminHelper
     /// The helper's side: carry out a waiting request, if there is one. "stopped" is the
     /// helper's own list of what it has paused, so it can resume them when it ends.
     /// </summary>
-    public static void Poll(string directory, List<string> stopped, Func<string, bool, bool>? change = null)
+    public static void Poll(string directory, List<string> stopped, Func<string, bool, bool>? change = null, Func<bool>? allowPortal = null)
     {
         change ??= ChangeService;
+        allowPortal ??= Portal.AllowThroughFirewall;
         HelperMessage? message;
         try
         {
@@ -103,11 +105,14 @@ public static class AdminHelper
         {
             return;
         }
-        if (message is null || message.Action is not ("stop_services" or "start_services"))
+        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal"))
             return;
         var stop = message.Action == "stop_services";
         var done = new List<string>();
-        foreach (var service in message.Services)
+        // The firewall request carries nothing to act on: the rule is always for this program's own file.
+        if (message.Action == "allow_portal" && allowPortal())
+            done.Add("portal");
+        foreach (var service in message.Action == "allow_portal" ? [] : message.Services)
         {
             // Only the listed services, spelled as listed; and only resume what this helper paused.
             var key = PausableServices.FirstOrDefault(item => item.Key.Equals(service, StringComparison.OrdinalIgnoreCase)).Key;

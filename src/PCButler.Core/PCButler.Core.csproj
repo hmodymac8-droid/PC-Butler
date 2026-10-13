@@ -13,10 +13,17 @@
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
     <!-- Reads temperature and fan sensors through WMI (only used by the optional administrator helper). -->
     <PackageReference Include="System.Management" Version="10.0.0" />
+    <!-- Portal: the QR code a phone scans (MIT licence), and Windows' own protection for its certificate's key. -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <!-- Portal: the web server that hands the phone its page and moves the files. Part of .NET, no extra download for users. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Translations\ar.json" LogicalName="PCButler.Core.ar.json" />
+    <!-- The page a phone opens for Portal. -->
+    <EmbeddedResource Include="Portal\portal.html" LogicalName="PCButler.Core.portal.html" />
     <!-- The list of changes shown in the What's new window. -->
     <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="PCButler.Core.CHANGELOG.md" />
     <EmbeddedResource Include="..\..\CHANGELOG.ar.md" LogicalName="PCButler.Core.CHANGELOG.ar.md" WithCulture="false" />
