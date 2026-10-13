@@ -40,6 +40,7 @@ public sealed partial class MainWindow : Window
     public CleanerPage Cleaner { get; }
     public ProgramsPage Programs { get; }
     public SettingsPage Settings { get; }
+    public BenchmarkPage Benchmark { get; }
     public AboutPage About { get; }
 
     public MainWindow()
@@ -93,6 +94,7 @@ public sealed partial class MainWindow : Window
         Cleaner = new CleanerPage(this);
         Programs = new ProgramsPage(this);
         Settings = new SettingsPage(this);
+        Benchmark = new BenchmarkPage(this);
         About = new AboutPage(this);
         // (key, icon, sidebar name, page, in the sidebar's bottom group)
         foreach (var (key, glyph, name, page, bottom) in new (string, string, string, Page, bool)[]
@@ -103,6 +105,7 @@ public sealed partial class MainWindow : Window
                      ("cleaner", "\uE74D", "Cleaner", Cleaner, false),
                      ("storage", "\uEDA2", "Storage", new StoragePage(this), false),
                      ("booster", "\uE945", "Booster", new BoosterPage(this), false),
+                     ("benchmark", "", "Benchmark", Benchmark, false),
                      ("programs", "\uE71D", "Programs", Programs, false),
                      ("internet", "\uE774", "Internet", new InternetPage(this), false),
                      ("shredder", "\uE75C", "Shredder", Shredder, false),

@@ -95,7 +95,8 @@ public sealed partial class SettingsPage : Page
         var saveBar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 12, 0, 0) };
         saveBar.Children.Add(save.Dock(Dock.Right));
         saveBar.Children.Add(Ui.Muted(Ui.T("Folders, rules and schedule are applied when you save.")).Margin(0, 0, 14, 0).Dock(Dock.Right));
-        Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = saveBar }.Dock(Dock.Bottom));
+        var general = new DockPanel();
+        general.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = saveBar }.Dock(Dock.Bottom));
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -192,7 +193,75 @@ public sealed partial class SettingsPage : Page
         all.Children.Add(languageRow.Dock(Dock.Top));
         all.Children.Add(quick.Dock(Dock.Top));
         all.Children.Add(grid);
-        Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        general.Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        var tabs = new TabControl();
+        tabs.Items.Add(new TabItem { Header = Ui.T("General"), Content = new Border { Padding = new Thickness(18, 16, 18, 12), Child = general } });
+        tabs.Items.Add(new TabItem { Header = Ui.T("Hotkeys"), Content = HotkeysTab() });
+        Children.Add(tabs);
+    }
+
+    /// <summary>Hotkeys: one shortcut per action, working in any program, applied the moment it is typed.</summary>
+    private ScrollViewer HotkeysTab()
+    {
+        var rows = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
+        rows.Children.Add(Ui.Muted(Ui.T("These shortcuts work whatever program is in front, while PC Butler is running (it can stay in the tray). Click a "
+                                        + "box and press the keys, with Ctrl, Alt, Shift or Win. Backspace clears it."), 12, wrap: true).Margin(24, 8, 24, 10));
+        var first = true;
+        foreach (var (key, label, detail) in Hotkeys.Actions)
+        {
+            var field = Ui.Field(Main.Config.Hotkeys.GetValueOrDefault(key, ""), 190, Ui.T("None"));
+            field.IsReadOnly = true;
+            void Set(string keys)
+            {
+                var before = Main.Config.Hotkeys.GetValueOrDefault(key, "");
+                var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => other.Key != key && Main.Config.Hotkeys.GetValueOrDefault(other.Key, "") == keys).Label : null;
+                if (taken is not null || (keys.Length > 0 && keys == Main.Config.Clipboard.Shortcut && Main.Config.Clipboard.Enabled))
+                {
+                    Ui.Warn("Hotkeys", Ui.T("{0} is already the shortcut for “{1}”.", keys, Ui.T(taken ?? "Clipboard history")));
+                    return;
+                }
+                Main.UpdateConfig(config =>
+                {
+                    if (keys.Length > 0)
+                        config.Hotkeys[key] = keys;
+                    else
+                        config.Hotkeys.Remove(key);
+                });
+                if (App.Current.Keys.Apply(Main.Config.Hotkeys).TryGetValue(key, out var problem))
+                {
+                    Ui.Warn("Hotkeys", problem);
+                    Main.UpdateConfig(config =>
+                    {
+                        if (before.Length > 0)
+                            config.Hotkeys[key] = before;
+                        else
+                            config.Hotkeys.Remove(key);
+                    });
+                    App.Current.Keys.Apply(Main.Config.Hotkeys);
+                }
+                field.Text = Main.Config.Hotkeys.GetValueOrDefault(key, "");
+            }
+            field.PreviewKeyDown += (_, e) =>
+            {
+                e.Handled = true;
+                var pressed = e.Key == Key.System ? e.SystemKey : e.Key;
+                if (pressed is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.Tab)
+                    return;
+                if (Keyboard.Modifiers == ModifierKeys.None)
+                {
+                    if (pressed is Key.Back or Key.Delete)
+                        Set("");
+                    return; // a key alone would take it from every program
+                }
+                Set(Shortcut.Format(Keyboard.Modifiers, pressed));
+            };
+            rows.Children.Add(Ui.SettingRow(Ui.T(label), detail.Length > 0 ? Ui.T(detail) : "", Ui.Row(6, field, Ui.Button(Ui.T("Clear"), () => Set(""))), first));
+            first = false;
+        }
+        var clipboard = Ui.Muted(Main.Config.Clipboard.Shortcut.Length > 0 ? Main.Config.Clipboard.Shortcut : Ui.T("None"));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Clipboard history"), Ui.T("Opens the list of what you copied. It is set on the Clipboard page, where the clipboard "
+                                                                        + "manager is switched on."), clipboard));
+        return new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
     }
 
     /// <summary>Windows Sandbox: a switch (administrator rights and a restart), and a button to open it once it is on.</summary>

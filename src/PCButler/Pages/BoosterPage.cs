@@ -83,9 +83,6 @@ public sealed class BoosterPage : Page
             Content = new ScrollViewer { Content = boost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
         });
 
-        // Advanced: lasting changes for the whole PC, in presets, with one Undo.
-        tabs.Items.Add(new TabItem { Header = Ui.T("Advanced"), Content = new BoosterAdvanced() });
-
         // Startup apps: fewer of them means a faster sign-in and less running in the background.
         var bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Refresh"), RefreshStartup));
@@ -118,6 +115,9 @@ public sealed class BoosterPage : Page
         power.Children.Add(powerList);
         power.Children.Add(Ui.Row(6, Ui.Button(Ui.T("Use this plan"), ApplyPowerPlan, accent: true), Ui.Button(Ui.T("Refresh"), RefreshPower)));
         tabs.Items.Add(new TabItem { Header = Ui.T("Power plan"), Content = power });
+
+        // Advanced, last: lasting changes for the whole PC, in presets, with one Undo.
+        tabs.Items.Add(new TabItem { Header = Ui.T("Advanced"), Content = new BoosterAdvanced() });
 
         tabs.SelectionChanged += (_, e) =>
         {

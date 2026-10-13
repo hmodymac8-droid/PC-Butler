@@ -3,6 +3,15 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.18.0
+
+- Benchmark, a new page: a performance overlay that shows frames per second, processor, graphics card, memory and temperatures in a corner of the screen. PC Butler notices a game when it fills the screen and shows the overlay by itself; it can also stay on all the time. It is off until you switch it on.
+- Frames per second are counted by the administrator helper, by listening to Windows' own "frame shown" events. Nothing is added to the game, so anti-cheat systems are not touched.
+- Game sessions: for each game the overlay measured, the average and highest frame rate, the slowest 1%, and the hottest temperatures.
+- Processor temperature for Intel and AMD: with the free PawnIO driver installed (the Benchmark page has the link), the helper reads the processor's own temperature for the overlay and the Home page.
+- Settings has a Hotkeys tab: shortcuts that work in any program, to open PC Butler, sort now, start or stop Boost for the program in front, show or hide the overlay or the drop zone, and open Courier.
+- Booster: the Advanced tab is now the last one.
+
 ## 1.17.0
 
 - Booster has an Advanced tab: lasting changes that make the whole PC lighter, in four presets (Low, Medium, High, Extreme) or a choice of your own. They cover Game Mode, background game recording, tips and promoted apps, the power plan, transparency and animations, and (with administrator rights) telemetry, SysMain, search indexing and a few rarely used services.

@@ -214,15 +214,19 @@ public sealed class HomePage : Page
         var monitor = Sensors.MonitorApp();
         var reading = Sensors.Latest();
         var fans = monitor?.Fans.Count > 0 ? monitor.Value.Fans : reading?.Fans ?? [];
-        if (monitor?.Cpu is { } cpuDegrees)
+        if (reading?.CpuTemperature is { } ownDegrees)
+            lines.Add(Ui.T("Processor: {0} °C", ownDegrees));
+        else if (monitor?.Cpu is { } cpuDegrees)
             lines.Add(Ui.T("Processor: {0} °C (from {1})", cpuDegrees, monitor.Value.App));
-        else if (reading?.Temperature is { } zone)
+        if (reading?.Temperature is { } zone && monitor?.Cpu is null)
             lines.Add(Ui.T("Motherboard sensor: {0} °C", zone));
         if (fans.Count > 0)
             lines.Add(Ui.T("Fans: {0} RPM", string.Join(", ", fans)));
-        if (monitor?.Cpu is null)
-            lines.Add(Ui.T("A processor's own temperature can only be read by a hardware-monitor driver, which PC Butler does not "
-                           + "install. If LibreHardwareMonitor is running, its processor temperature and fan speeds appear here."));
+        if (monitor?.Cpu is null && reading?.CpuTemperature is null)
+            lines.Add(Ui.T(CpuSensor.DriverInstalled
+                ? "The processor's temperature appears here while the helper is running (the button below)."
+                : "The processor's own temperature, Intel or AMD, needs the free PawnIO driver. The Benchmark page has the link; "
+                  + "once it is installed, start the helper and the temperature appears here."));
         sensorsText.Text = string.Join("\n", lines);
         // The helper only adds the motherboard's sensor and its fans, so it is offered only while it isn't running.
         sensorsButton.Visibility = reading is null ? Visibility.Visible : Visibility.Collapsed;

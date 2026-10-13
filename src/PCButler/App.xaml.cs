@@ -40,6 +40,10 @@ public partial class App : Application
     public UsageMonitor Usage { get; } = new();
     /// <summary>The clipboard manager: records copies while it is on, and opens its list with the shortcut.</summary>
     public ClipboardManager Clips { get; private set; } = null!;
+    /// <summary>The performance overlay of the Benchmark page.</summary>
+    public OverlayController Overlay { get; } = new();
+    /// <summary>The shortcuts of the Settings page's Hotkeys tab.</summary>
+    public Hotkeys Keys { get; private set; } = null!;
     private string trayState = "";
     private bool firstStart;
     private DropZoneWindow? dropZone;
@@ -145,6 +149,10 @@ public partial class App : Application
         Clips = new ClipboardManager();
         if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
             Log.Warning($"Clipboard manager: {clipboardError}");
+        Keys = new Hotkeys(RunHotkey);
+        foreach (var (action, problem) in Keys.Apply(ConfigStore.Load().Hotkeys))
+            Log.Warning($"Hotkey for {action}: {problem}");
+        Overlay.Apply(ConfigStore.Load());
         StartBackground();
         StartCourier();
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
@@ -267,6 +275,60 @@ public partial class App : Application
         else if (!show)
         {
             dropZone?.Close();
+        }
+    }
+
+    /// <summary>A shortcut from the Hotkeys tab was pressed, in whatever program.</summary>
+    private void RunHotkey(string action)
+    {
+        if (exiting)
+            return;
+        switch (action)
+        {
+            case "open":
+                ShowMainWindow();
+                break;
+            case "sort":
+                Background.RequestSort();
+                break;
+            case "dropzone":
+                SetDropZone(!ConfigStore.Load().DropZone);
+                break;
+            case "courier":
+                ShowMainWindow();
+                window?.ShowPage("portal");
+                break;
+            case "overlay":
+                var config = ConfigStore.Load();
+                config.Overlay.Enabled = !config.Overlay.Enabled;
+                ConfigStore.Save(config);
+                window?.UpdateConfig(saved => saved.Overlay.Enabled = config.Overlay.Enabled);
+                Overlay.Apply(config);
+                window?.Benchmark.ShowEnabled();
+                Notify(config.Overlay.Enabled ? "The performance overlay is on." : "The performance overlay is off.", []);
+                break;
+            case "boost":
+                // Boost the program that is in front; pressed again, everything goes back.
+                var front = GameDetector.Foreground();
+                var settings = ConfigStore.Load().Boost;
+                Task.Run(() =>
+                {
+                    if (BoostMode.Active is not null)
+                    {
+                        BoostMode.Stop();
+                        Dispatcher.BeginInvoke(() => Notify("Boost is off: everything is back as it was.", []));
+                        return;
+                    }
+                    var state = BoostMode.Start(settings, front is null || front.Pid == Environment.ProcessId ? 0 : front.Pid);
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        if (state.Favoured.Length > 0)
+                            Notify("Boost is on for {0}.", [state.Favoured]);
+                        else
+                            Notify("Boost is on.", []);
+                    });
+                });
+                break;
         }
     }
 
@@ -566,6 +628,7 @@ public partial class App : Application
         Background.Stop();
         Usage.Stop();
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
+        Overlay.Stop();
         courierWatch.Stop();
         courierWidget?.Close();
         Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4)); // and so does Portal: nothing listens once the program is gone
@@ -583,6 +646,7 @@ public partial class App : Application
     {
         tray?.Dispose();
         Clips?.Dispose();
+        Keys?.Dispose();
         instance?.Dispose();
         base.OnExit(e);
     }

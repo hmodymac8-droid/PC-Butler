@@ -10,9 +10,11 @@
 
   <ItemGroup>
     <!-- Reads the graphics card's use from Windows' own counters (the number Task Manager shows). -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
     <!-- Reads temperature and fan sensors through WMI (only used by the optional administrator helper). -->
-    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.Management" Version="10.0.2" />
     <!-- Portal: Windows' own protection for the key of this PC's certificate. -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <!-- Portal: the server other PCs connect to. Part of .NET, no extra download for users. -->

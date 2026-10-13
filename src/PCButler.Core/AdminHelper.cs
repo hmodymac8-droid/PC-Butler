@@ -10,7 +10,7 @@ namespace PCButler.Core;
 public sealed class HelperMessage
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
-    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore" or "rename_pc".</summary>
+    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore", "rename_pc" or "fps".</summary>
     [JsonPropertyName("action")] public string Action { get; set; } = "";
     /// <summary>Asked: the services to act on. Answered: the ones it worked for.</summary>
     [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
@@ -25,7 +25,7 @@ public sealed class HelperMessage
 /// Any program can write that file, so the helper only accepts what is listed here: it
 /// can pause and resume three named Windows services, let Courier through the firewall
 /// for this program's own file, apply and put back the tweaks in TuneUp's catalogue, and
-/// give the PC a new name. Nothing else.
+/// give the PC a new name, and count the frames programs show. Nothing else.
 /// </summary>
 public static class AdminHelper
 {
@@ -108,7 +108,7 @@ public static class AdminHelper
         {
             return;
         }
-        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc"))
+        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc" or "fps"))
             return;
         var services = message.Action is "stop_services" or "start_services";
         var stop = message.Action == "stop_services";
@@ -120,6 +120,14 @@ public static class AdminHelper
             done.AddRange(TuneUp.HelperApply(message.Services, tune));
         if (message.Action == "tune_restore")
             done.AddRange(TuneUp.HelperRestore(message.Services, untune));
+        // Counting frames: on or off, nothing else to say.
+        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start(directory))
+            done.Add("on");
+        if (message.Action == "fps" && message.Services is ["off"])
+        {
+            FpsMeter.Stop();
+            done.Add("off");
+        }
         // A name Windows would refuse is refused here already.
         if (message.Action == "rename_pc" && message.Services is [var name] && PcName.Valid(name) && rename(name))
             done.Add(name);

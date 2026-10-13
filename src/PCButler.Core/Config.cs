@@ -135,6 +135,9 @@ public sealed class Config
     [JsonPropertyName("schedule")] public ScheduleSettings Schedule { get; set; } = new();
     [JsonPropertyName("boost")] public BoostSettings Boost { get; set; } = new();
     [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
+    [JsonPropertyName("overlay")] public OverlaySettings Overlay { get; set; } = new();
+    /// <summary>Keyboard shortcuts that work in any program: action -> keys ("Ctrl+Alt+B"). An action without one is not listed.</summary>
+    [JsonPropertyName("hotkeys")] public Dictionary<string, string> Hotkeys { get; set; } = [];
     [JsonPropertyName("portal")] public PortalSettings Portal { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;

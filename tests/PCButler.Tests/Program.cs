@@ -823,6 +823,53 @@ Section("courier IDs");
     Check(renamedTo == "Study-PC" && PcName.Valid("A") && PcName.Valid("PC-01") && !PcName.Valid("") && PcName.Pending.Length > 0, "a PC is renamed only to a name Windows allows");
     Check(System.Net.IPAddress.TryParse(NetworkAddresses.Local(), out var localIp) || NetworkAddresses.Local() == "", $"the local address is read ({localIp})");
 
+    // ------------------------------------------------------------ benchmark: what a game is, frame counts, sessions
+    Section("benchmark");
+    ForegroundApp Front(string name, bool fullScreen, string title = "A window") => new(4242, name, title, fullScreen, 0, 0, 1920, 1080);
+    Check(GameDetector.LooksLikeGame(Front("eldenring.exe", true), []) && !GameDetector.LooksLikeGame(Front("eldenring.exe", false), [])
+          && GameDetector.LooksLikeGame(Front("emulator.exe", false), ["notes.exe", " Emulator.exe "]), "a game fills the screen, or is on the user's list");
+    Check(!GameDetector.LooksLikeGame(Front("chrome.exe", true), []) && !GameDetector.LooksLikeGame(Front("explorer.exe", true), [])
+          && !GameDetector.LooksLikeGame(Front("vlc.exe", true), []) && !GameDetector.LooksLikeGame(Front("mystery.exe", true, ""), [])
+          && GameDetector.LooksLikeGame(Front("chrome.exe", true), ["chrome.exe"]), "a browser, a player or the desktop in full screen is not a game, unless listed");
+    Check(GameDetector.Foreground() is null or { Name.Length: > 4, Right: > 0 }, "the window in front can be read");
+    Check(FpsMeter.Choose(144, 300) == 144 && FpsMeter.Choose(0, 60) == 60 && FpsMeter.Choose(0, 0) == 0, "a program's own frame count is used before the graphics kernel's");
+    var fpsDir = Path.Combine(temp, "fps");
+    Directory.CreateDirectory(fpsDir);
+    Check(FpsMeter.Latest(fpsDir) is null, "no frame counts while nobody is counting");
+    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow, Fps = { [4242] = 143, [77] = 60 } }));
+    Check(FpsMeter.Latest(fpsDir) is { Count: 2 } counts && counts[4242] == 143, "the helper's counts are read by program");
+    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow.AddSeconds(-30), Fps = { [4242] = 143 } }));
+    Check(FpsMeter.Latest(fpsDir) is null, "counts the helper stopped refreshing are not shown as if they were live");
+    File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"f1","action":"fps","services":["off"]}""");
+    AdminHelper.Poll(helperDir, []);
+    Check(File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"off\""), "the helper takes the request to stop counting frames");
+    File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"f2","action":"fps","services":["C:\\evil.etl"]}""");
+    AdminHelper.Poll(helperDir, []);
+    Check(File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"services\":[]"), "and nothing but on or off");
+    Check(CpuSensor.Choose([("CPU Core #1", 61f), ("CPU Package", 64.26f), ("CPU Core #1 Distance to TjMax", 39f), ("Core Max", 66f)]) == 64.3
+          && CpuSensor.Choose([("CCD1 (Tdie)", 50f), ("Core (Tctl/Tdie)", 58.5f)]) == 58.5 && CpuSensor.Choose([("CPU Core #1", 61f), ("CPU Core #2", 67f)]) == 67
+          && CpuSensor.Choose([("CPU Package", null), ("CPU Core #1 Distance to TjMax", 39f)]) is null && CpuSensor.Choose([]) is null,
+          "the processor's temperature is its package (Intel) or Tctl/Tdie (AMD), else its hottest core, and never a distance to the limit");
+    Check(CpuSensor.DriverInstalled || CpuSensor.Read() is null, "without the driver no processor temperature is claimed");
+    var recorder = new BenchmarkRecorder("eldenring.exe");
+    for (var tick = 0; tick < 5; tick++)
+        recorder.Add(new BenchmarkSample(60, 40, 90, 50, 70, 65));
+    Check(recorder.Finish() is null, "a few seconds in a game are not a session");
+    for (var tick = 0; tick < 195; tick++)
+        recorder.Add(new BenchmarkSample(tick < 2 ? 20 : tick % 2 == 0 ? 100 : 140, tick % 2 == 0 ? 30 : 50, null, 60, tick == 9 ? 88 : 70, null));
+    Check(recorder.Finish() is { Game: "eldenring.exe", Seconds: 200, FpsLow: 20, FpsHigh: 140, CpuAverage: 40, GpuAverage: 90, CpuHottest: 88, GpuHottest: 65 } played
+          && played.FpsAverage is > 100 and < 125, "a session keeps the average, the slowest 1%, the highest, and the hottest readings");
+    var noFps = new BenchmarkRecorder("quiet.exe");
+    for (var tick = 0; tick < 12; tick++)
+        noFps.Add(new BenchmarkSample(null, 10, null, 30, null, null));
+    Check(noFps.Finish() is { FpsAverage: null, FpsLow: null, GpuAverage: null, CpuHottest: null, CpuAverage: 10 }, "without the helper a session simply has no frame rate");
+    BenchmarkLog.Clear();
+    for (var number = 0; number < 45; number++)
+        BenchmarkLog.Add(new BenchmarkSession { Game = $"game{number}.exe", Seconds = 60 });
+    Check(BenchmarkLog.All() is { Count: 40 } kept && kept[0].Game == "game44.exe", "the log keeps the newest sessions, newest first");
+    BenchmarkLog.Clear();
+    Check(BenchmarkLog.All().Count == 0 && new Config().Overlay is { Enabled: false, Fps: true } && new Config().Hotkeys.Count == 0, "the overlay and every hotkey are off until switched on");
+
 }
 
 // ---------------------------------------------------------------- scrypt and the vault

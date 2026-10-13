@@ -13,6 +13,8 @@ public sealed class SensorReading
     [JsonPropertyName("time")] public DateTime Time { get; set; }
     /// <summary>Degrees Celsius of the hottest thermal zone the PC reports, or null if it reports none.</summary>
     [JsonPropertyName("temperature")] public double? Temperature { get; set; }
+    /// <summary>Degrees Celsius of the processor itself, Intel or AMD. Only with the PawnIO driver installed (see CpuSensor).</summary>
+    [JsonPropertyName("cpu_temperature")] public double? CpuTemperature { get; set; }
     /// <summary>Fan speeds in RPM, for the fans the PC reports (often none).</summary>
     [JsonPropertyName("fans")] public List<int> Fans { get; set; } = [];
 }
@@ -161,6 +163,8 @@ public static class Sensors
             Thread.Sleep(1000);
         }
         AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
+        CpuSensor.Close();
+        FpsMeter.Stop();
         try
         {
             File.Delete(file);
@@ -186,7 +190,7 @@ public static class Sensors
     /// <summary>One reading from Windows' own instrumentation (WMI).</summary>
     public static SensorReading Read()
     {
-        var reading = new SensorReading { Time = DateTime.Now };
+        var reading = new SensorReading { Time = DateTime.Now, CpuTemperature = CpuSensor.Read() };
         try
         {
             // ACPI thermal zones report tenths of a kelvin.
