@@ -260,11 +260,21 @@ public static class FpsMeter
                 {
                     trace.Source.Process();
                 }
-                catch (Exception error) when (error is COMException or InvalidOperationException or ObjectDisposedException)
+                catch (Exception error) when (error is not OutOfMemoryException) // whatever ending the session mid-read throws must not take the program down
                 {
                 }
             }) { IsBackground = true, Name = "PC Butler frame counter" }.Start();
-            timer = new Timer(_ => Write(), null, 1000, 1000);
+            timer = new Timer(_ =>
+            {
+                try
+                {
+                    Write();
+                }
+                catch (Exception error) when (error is not OutOfMemoryException)
+                {
+                    // A tick that lands while the session is being closed has nothing left to write.
+                }
+            }, null, 1000, 1000);
         }
 
         private void Count(TraceEvent data)
@@ -304,7 +314,13 @@ public static class FpsMeter
         public void Dispose()
         {
             timer.Dispose();
-            trace.Dispose();
+            try
+            {
+                trace.Dispose();
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+            }
             try
             {
                 File.Delete(file);
