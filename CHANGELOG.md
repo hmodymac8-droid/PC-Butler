@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.4
+
+- Settings > Hotkeys: the clipboard history's shortcut can be changed there too, like the others.
+
 ## 1.21.3
 
 - Fixed: switching the overlay off could, rarely, close PC Butler.
