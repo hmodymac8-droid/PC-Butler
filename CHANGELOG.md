@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.3
+
+- Fixed: switching the overlay off could, rarely, close PC Butler.
+
 ## 1.21.2
 
 - Frames per second now work without the helper on accounts Windows allows to count frames (members of its "Performance Log Users" group): PC Butler counts them itself, with no permission prompt. Other accounts still use the helper.
