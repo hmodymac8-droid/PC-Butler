@@ -15,6 +15,9 @@ public sealed class ClipboardPage : Page
     private readonly TextBlock count = Ui.Muted("", 12);
     private readonly Button pinButton;
     private readonly TextBox shortcut;
+
+    /// <summary>The shortcut can also be changed on the Settings page's Hotkeys tab: show it as it is now.</summary>
+    public override void Shown() => shortcut.Text = Main.Config.Clipboard.Shortcut;
     private readonly TextBox limit;
 
     public ClipboardPage(MainWindow main) : base(main, "Clipboard", "Everything you copy, ready to paste again.")

@@ -206,6 +206,21 @@ public sealed partial class SettingsPage : Page
         var rows = new StackPanel { Margin = new Thickness(0, 8, 0, 8) };
         rows.Children.Add(Ui.Muted(Ui.T("These shortcuts work whatever program is in front, while PC Butler is running (it can stay in the tray). Click a "
                                         + "box and press the keys, with Ctrl, Alt, Shift or Win. Backspace clears it."), 12, wrap: true).Margin(24, 8, 24, 10));
+        // A box records the keys pressed in it: a modifier and a key, or Backspace to clear.
+        static void Record(TextBox field, Action<string> set) => field.PreviewKeyDown += (_, e) =>
+        {
+            e.Handled = true;
+            var pressed = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (pressed is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.Tab)
+                return;
+            if (Keyboard.Modifiers == ModifierKeys.None)
+            {
+                if (pressed is Key.Back or Key.Delete)
+                    set("");
+                return; // a key alone would take it from every program
+            }
+            set(Shortcut.Format(Keyboard.Modifiers, pressed));
+        };
         var first = true;
         foreach (var (key, label, detail) in Hotkeys.Actions)
         {
@@ -241,26 +256,36 @@ public sealed partial class SettingsPage : Page
                 }
                 field.Text = Main.Config.Hotkeys.GetValueOrDefault(key, "");
             }
-            field.PreviewKeyDown += (_, e) =>
-            {
-                e.Handled = true;
-                var pressed = e.Key == Key.System ? e.SystemKey : e.Key;
-                if (pressed is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.Tab)
-                    return;
-                if (Keyboard.Modifiers == ModifierKeys.None)
-                {
-                    if (pressed is Key.Back or Key.Delete)
-                        Set("");
-                    return; // a key alone would take it from every program
-                }
-                Set(Shortcut.Format(Keyboard.Modifiers, pressed));
-            };
+            Record(field, Set);
             rows.Children.Add(Ui.SettingRow(Ui.T(label), detail.Length > 0 ? Ui.T(detail) : "", Ui.Row(6, field, Ui.Button(Ui.T("Clear"), () => Set(""))), first));
             first = false;
         }
-        var clipboard = Ui.Muted(Main.Config.Clipboard.Shortcut.Length > 0 ? Main.Config.Clipboard.Shortcut : Ui.T("None"));
-        rows.Children.Add(Ui.SettingRow(Ui.T("Clipboard history"), Ui.T("Opens the list of what you copied. It is set on the Clipboard page, where the clipboard "
-                                                                        + "manager is switched on."), clipboard));
+        // The clipboard history keeps its own shortcut (the Clipboard page shows the same one); it is changed here just the same.
+        var clipboard = Ui.Field(Main.Config.Clipboard.Shortcut, 190, Ui.T("None"));
+        clipboard.IsReadOnly = true;
+        void SetClipboard(string keys)
+        {
+            var before = Main.Config.Clipboard.Shortcut;
+            var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => Main.Config.Hotkeys.GetValueOrDefault(other.Key, "") == keys).Label : null;
+            if (taken is not null)
+            {
+                Ui.Warn("Hotkeys", Ui.T("{0} is already the shortcut for “{1}”.", keys, Ui.T(taken)));
+                return;
+            }
+            Main.UpdateConfig(config => config.Clipboard.Shortcut = keys);
+            if (App.Current.Clips.Apply(Main.Config.Clipboard) is { } problem)
+            {
+                Ui.Warn("Hotkeys", problem);
+                Main.UpdateConfig(config => config.Clipboard.Shortcut = before);
+                App.Current.Clips.Apply(Main.Config.Clipboard);
+            }
+            clipboard.Text = Main.Config.Clipboard.Shortcut;
+        }
+        Record(clipboard, SetClipboard);
+        rows.Children.Add(Ui.SettingRow(Ui.T("Clipboard history"),
+                                        Ui.T(Main.Config.Clipboard.Enabled ? "Opens the list of what you copied."
+                                                                           : "Opens the list of what you copied. It works once the clipboard manager is switched on, on the Clipboard page."),
+                                        Ui.Row(6, clipboard, Ui.Button(Ui.T("Clear"), () => SetClipboard("")))));
         return new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
     }
 
