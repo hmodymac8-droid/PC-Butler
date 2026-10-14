@@ -15,6 +15,8 @@ namespace PCButler.Core;
 public sealed class OverlaySettings
 {
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+    /// <summary>Start the administrator helper by itself when a game is detected, so frames are counted without a visit to the page.</summary>
+    [JsonPropertyName("auto_helper")] public bool AutoHelper { get; set; }
     /// <summary>Show it all the time, not only while a game is in front.</summary>
     [JsonPropertyName("always")] public bool Always { get; set; }
     /// <summary>0 top left, 1 top right, 2 bottom left, 3 bottom right.</summary>
@@ -191,8 +193,7 @@ public static class FpsMeter
             session ??= new FpsSession(FileIn(directory));
             return true;
         }
-        catch (Exception error) when (error is UnauthorizedAccessException or COMException or InvalidOperationException or IOException
-                                          or System.ComponentModel.Win32Exception or DllNotFoundException or FileNotFoundException)
+        catch (Exception error) when (error is not OutOfMemoryException)
         {
             Log.Warning($"Frame counting could not start: {error.Message}");
             return false;
