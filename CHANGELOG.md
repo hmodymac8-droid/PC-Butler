@@ -3,6 +3,15 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.2
+
+- PC Butler on the phone has a new look, from a design made in Lovable: darker colors with a mint accent, rounded cards and pill buttons, new icons, and a "PC Butler" bar on every page with its own header and buttons.
+- Courier on the phone: the phone's ID sits in one big card with a copy button; a PC's ID is typed in one box with a paste button next to Connect; the settings (received files, how new PCs get in, stop) open in a sheet from the gear button; a PC's actions open in a sheet.
+- Sorter on the phone: the count and Sort now on top, folders as chips, and a preview grouped by type that opens and closes.
+- Duplicates on the phone: pick how files match with chips; in each group tap the copy to keep and the others are marked Delete; a bar at the bottom shows the space freed and deletes the extras.
+- Storage on the phone: the free space shown big, a Scan button in the header, folders with bars, and a delete button on each large old file.
+- Vault on the phone: new create and unlock screens with a password eye, three tiles to add files, add a folder or make one, a ⋮ sheet for each file, a bar at the bottom while selecting, and lock settings in a sheet.
+
 ## 1.22.1
 
 - Fixed: the overlay could say "helper is off" while the helper was running, and frames per second stayed empty.
