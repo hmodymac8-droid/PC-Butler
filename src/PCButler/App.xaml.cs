@@ -720,6 +720,8 @@ public partial class App : Application
         // A notification for each transfer while the widget, which shows the same, is not on screen.
         courierNotices ??= new CourierNotices();
         courierNotices.Update(node, allowed: courierWidget is not { IsVisible: true });
+        // A PC that wants to connect, or to send files, is asked about in a pop-up.
+        CourierAsk.Watch(node);
     }
 
     /// <summary>The widget was switched on or off on the Courier page.</summary>
