@@ -619,6 +619,22 @@ Section("courier host and clients");
     var afterForget = bob.Send(bobToHost, [note])!;
     Check(await Until(() => afterForget.State == "failed") && hostSettings.Devices.Count == 1, "a forgotten client must pair again");
 
+    // A host that asks for a password: none, or a wrong one, is turned away; the right one lets the PC in without a click.
+    host.UseIncoming(PortalSettings.WithPassword, Portal.HashPassword("open sesame"));
+    var asksBefore = hostAsked;
+    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Needed && !host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted),
+          "a host with a password turns away a PC that gives none, and the PC is told a password is needed");
+    stranger.GivePassword("open says me");
+    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Wrong, "a wrong password is turned away, and said so");
+    stranger.GivePassword("open sesame");
+    var letIn = await stranger.Pair(strangerHost!);
+    Check(letIn is not null && stranger.PasswordWanted == PortalPasswordAsk.None && !stranger.WaitingForHost
+          && host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted) && stranger.HostPeer is { Trusted: true } && hostAsked == asksBefore,
+          "the right password lets the PC in at once, on both sides, without asking the host's user");
+    var withPassword = stranger.Send(strangerHost!, [note])!;
+    Check(await Until(() => !withPassword.Running, 30) && withPassword.State == "done", $"and it can send at once ({withPassword.State} {withPassword.Note})");
+    host.UseIncoming(PortalSettings.Ask, "");
+
     await host.Stop();
     await alice.Stop();
     await bob.Stop();
@@ -1102,6 +1118,32 @@ Check(WebSearch.Google("  what   is" + Environment.NewLine + "PC Butler ") == "h
       && WebSearch.IsPicture(Path.Combine(temp, "b.JPG")) && !WebSearch.IsPicture("notes.txt"), "a text is searched on Google as one line; pictures are told apart");
 Check(new ClipEntry { Kind = "files", Files = [Path.Combine(temp, "a.txt"), Path.Combine(temp, "b.txt")] }.Preview == "a.txt (+1)"
       && new ClipEntry { Text = "one" + Environment.NewLine + "two" }.Preview == "one two", "list previews");
+
+Section("courier saved PCs and passwords");
+{
+    var kept = Portal.HashPassword("correct horse");
+    Check(Portal.CheckPassword("correct horse", kept) && !Portal.CheckPassword("Correct horse", kept) && !Portal.CheckPassword("", kept)
+          && !Portal.CheckPassword("correct horse", "") && !kept.Contains("correct") && kept != Portal.HashPassword("correct horse"),
+          "a password is kept salted and stretched, and only the same one matches");
+    var saved = new PortalSettings { Role = PortalSettings.Client, HostNumber = "111222333",
+                                     Devices = [new PortalDevice { Id = "AA", Name = "Old host" }] };
+    PortalSavedList.Start(saved);
+    Check(saved.Saved is [{ Number: "111222333" }], "the host of before is on the list");
+    Check(PortalSavedList.Add(saved, "444 555 666", "Office") && !PortalSavedList.Add(saved, "12", "") && saved.Saved.Count == 2
+          && PortalSavedList.Add(saved, "444555666", "") && PortalSavedList.Find(saved, "444555666")!.Name == "Office", "PCs are added by their ID, once each");
+    PortalSavedList.Rename(saved, "444555666", "  Work PC ");
+    Check(PortalSavedList.Find(saved, "444555666")!.Name == "Work PC" && PortalSavedList.Remember(saved, "444555666", "DESKTOP-1") == "Work PC"
+          && PortalSavedList.Remember(saved, "777888999", "Laptop") == "Laptop" && saved.Saved.Count == 3, "a name given stays; a PC connected to is added under its own");
+    PortalSavedList.ToggleFavorite(saved, "444555666");
+    PortalSavedList.ToggleFavorite(saved, "777888999");
+    Check(saved.Saved.Count(item => item.Favorite) == 1 && PortalSavedList.Find(saved, "777888999")!.Favorite, "one favourite at most");
+    PortalSavedList.Start(saved);
+    Check(saved.HostNumber == "777888999", "the favourite is the PC connected to at start");
+    PortalSavedList.ToggleFavorite(saved, "777888999");
+    Check(!saved.Saved.Any(item => item.Favorite), "the same one again is no longer the favourite");
+    PortalSavedList.Remove(saved, "777888999");
+    Check(PortalSavedList.Find(saved, "777888999") is null && saved.HostNumber.Length == 9 && saved.HostNumber != "777888999", "removed, and the PC connected to moves to another");
+}
 
 Section("translations, updates");
 Tr.Language = "ar";

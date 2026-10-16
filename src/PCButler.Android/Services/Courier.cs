@@ -68,7 +68,7 @@ public static class Courier
         try
         {
             Portal.ClearParts(Portal.ReceiveFolder(settings));
-            var node = await PortalNode.Start(settings, () => Update(saved => { saved.Devices = settings.Devices.ToList(); saved.HostNumber = settings.HostNumber; }));
+            var node = await PortalNode.Start(settings, () => Update(saved => { saved.Devices = settings.Devices.ToList(); saved.HostNumber = settings.HostNumber; saved.Saved = settings.Saved.ToList(); }));
             Portal.Current = node;
             CourierService.Begin();
             return null;
@@ -102,9 +102,11 @@ public static class Courier
             return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, peer.Online)).ToList();
         var host = node.HostPeer;
         var list = new List<Target>();
+        // Paired on this side is not enough: the host has to have let this PC in too.
+        var allowed = host is { Online: true, Trusted: true } && !node.WaitingForHost;
         if (host is not null)
-            list.Add(new Target(host.Name, host, host is { Online: true, Trusted: true }));
-        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && host is { Online: true, Trusted: true })));
+            list.Add(new Target(host.Name, host, allowed));
+        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && allowed)));
         return list;
     }
 
