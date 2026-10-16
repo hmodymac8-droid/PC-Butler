@@ -21,8 +21,8 @@ public sealed record Doc(AUri Tree, string Id, string ParentId, string Name, str
 
 /// <summary>
 /// The phone's folders, through Android's own folder picker: PC Butler sees only the folders
-/// the user chose, and keeps that access across restarts. Each page keeps its own list
-/// ("sorter", "duplicates", "storage"). Android doesn't offer the Download folder itself or
+/// the user chose, and keeps that access across restarts. The Sorter keeps its own list;
+/// Duplicates and Storage share one. Android doesn't offer the Download folder itself or
 /// the whole phone in that picker; any other folder, or one inside Download, can be chosen.
 /// </summary>
 public static class Folders
@@ -38,10 +38,24 @@ public static class Folders
         return Saved(page).Where(allowed.Contains).Select(text => AUri.Parse(text)!).ToList();
     }
 
-    private static List<string> Saved(string page) =>
-        Preferences.Default.Get("folders." + page, "").Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+    /// <summary>Duplicates and Storage only look, so they share one list; the Sorter moves files, and keeps its own.</summary>
+    private static string Key(string page) => page == "sorter" ? "folders.sorter" : "folders.look";
 
-    private static void Save(string page, List<string> list) => Preferences.Default.Set("folders." + page, string.Join("\n", list.Distinct()));
+    private static List<string> Saved(string page)
+    {
+        var key = Key(page);
+        if (key == "folders.look" && !Preferences.Default.ContainsKey(key))
+        {
+            // From before the list was shared: both pages' folders, together.
+            var both = new[] { "folders.duplicates", "folders.storage" }.SelectMany(old => Split(Preferences.Default.Get(old, ""))).Distinct();
+            Preferences.Default.Set(key, string.Join("\n", both));
+        }
+        return Split(Preferences.Default.Get(key, ""));
+    }
+
+    private static List<string> Split(string text) => text.Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+    private static void Save(string page, List<string> list) => Preferences.Default.Set(Key(page), string.Join("\n", list.Distinct()));
 
     /// <summary>Ask the user for a folder and add it to the page's list. False when nothing was chosen.</summary>
     public static async Task<bool> Add(string page)
@@ -63,7 +77,7 @@ public static class Folders
     {
         var text = tree.ToString()!;
         Save(page, Saved(page).Where(item => item != text).ToList());
-        if (new[] { "sorter", "duplicates", "storage" }.Any(other => Saved(other).Contains(text)))
+        if (new[] { "sorter", "storage" }.Any(other => Saved(other).Contains(text)))
             return;
         try
         {
@@ -146,6 +160,14 @@ public static class Folders
             Log.Warning($"A folder could not be read: {error.Message}");
         }
         return list;
+    }
+
+    /// <summary>True when the folder holds nothing at all, hidden files included (deleting a folder takes everything in it).</summary>
+    public static bool IsEmpty(Doc folder)
+    {
+        var uri = DocumentsContract.BuildChildDocumentsUriUsingTree(folder.Tree, folder.Id)!;
+        using var cursor = Resolver.Query(uri, [DocumentsContract.Document.ColumnDocumentId], null, null, null);
+        return cursor is not null && cursor.Count == 0;
     }
 
     /// <summary>Every file in the folder, at any depth.</summary>
@@ -303,6 +325,7 @@ public static class Results
             Waiting[code] = answer;
         try
         {
+            App.LeavingOnPurpose();
             activity.StartActivityForResult(intent, code);
         }
         catch (ActivityNotFoundException)

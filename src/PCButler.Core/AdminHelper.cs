@@ -121,7 +121,7 @@ public static class AdminHelper
         if (message.Action == "tune_restore")
             done.AddRange(TuneUp.HelperRestore(message.Services, untune));
         // Counting frames: on or off, nothing else to say.
-        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start(directory))
+        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start())
             done.Add("on");
         if (message.Action == "fps" && message.Services is ["off"])
         {

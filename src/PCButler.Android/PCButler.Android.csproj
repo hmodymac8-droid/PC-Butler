@@ -34,6 +34,7 @@
     <Compile Include="..\PCButler.Core\PortalDht.cs" Link="Core\PortalDht.cs" />
     <Compile Include="..\PCButler.Core\PortalInternet.cs" Link="Core\PortalInternet.cs" />
     <Compile Include="..\PCButler.Core\PortalNat.cs" Link="Core\PortalNat.cs" />
+    <Compile Include="..\PCButler.Core\PortalSaved.cs" Link="Core\PortalSaved.cs" />
     <Compile Include="..\PCButler.Core\PortalServer.cs" Link="Core\PortalServer.cs" />
     <Compile Include="..\PCButler.Core\PortalTunnel.cs" Link="Core\PortalTunnel.cs" />
     <Compile Include="..\PCButler.Core\Vault.cs" Link="Core\Vault.cs" />

@@ -266,10 +266,20 @@ public static class ConfigStore
         return config;
     }
 
+    /// <summary>Write the settings, unless the file holds exactly these already (reading costs the disk nothing; writing does).</summary>
     public static void Save(Config config)
     {
+        var text = JsonSerializer.Serialize(config, Options);
+        try
+        {
+            if (File.Exists(AppInfo.ConfigFile) && File.ReadAllText(AppInfo.ConfigFile) == text)
+                return;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
         Directory.CreateDirectory(AppInfo.DataDir);
-        File.WriteAllText(AppInfo.ConfigFile, JsonSerializer.Serialize(config, Options));
+        File.WriteAllText(AppInfo.ConfigFile, text);
     }
 
     /// <summary>Look up a per-user Windows folder, honouring a relocated one.</summary>
