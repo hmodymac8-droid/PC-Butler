@@ -87,6 +87,43 @@ public static class Ui
         return box;
     }
 
+    /// <summary>
+    /// A box for a Courier ID: digits only, typed or pasted (Arabic-Indic digits become 0-9,
+    /// anything else is left out), at most nine. Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A and Backspace work as in any box.
+    /// </summary>
+    public static TextBox DigitsOnly(TextBox box, int most = 9)
+    {
+        static string Digits(string text) => new(text.Select(c => c is >= '٠' and <= '٩' ? (char)('0' + (c - '٠'))
+                                                             : c is >= '۰' and <= '۹' ? (char)('0' + (c - '۰')) : c)
+                                                     .Where(char.IsAsciiDigit).ToArray());
+        box.MaxLength = most;
+        InputMethod.SetIsInputMethodEnabled(box, false);
+        box.PreviewTextInput += (_, e) =>
+        {
+            var digits = Digits(e.Text);
+            e.Handled = true;
+            if (digits.Length > 0)
+                Put(digits);
+        };
+        DataObject.AddPastingHandler(box, (_, e) =>
+        {
+            e.CancelCommand();
+            if (e.DataObject.GetData(DataFormats.UnicodeText) is string text)
+                Put(Digits(text));
+        });
+        // Typed or pasted digits replace the selection, up to the most there may be.
+        void Put(string digits)
+        {
+            var start = box.SelectionStart;
+            var kept = box.Text.Remove(start, box.SelectionLength);
+            digits = digits[..Math.Min(digits.Length, Math.Max(0, most - kept.Length))];
+            box.Text = kept.Insert(start, digits);
+            box.SelectionStart = start + digits.Length;
+            box.SelectionLength = 0;
+        }
+        return box;
+    }
+
     /// <summary>Children side by side, each followed by the given gap.</summary>
     public static StackPanel Row(double gap, params UIElement[] children)
     {

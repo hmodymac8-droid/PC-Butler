@@ -61,7 +61,7 @@ public sealed class PortalPage : Page
         var page = new StackPanel();
 
         // --- the first time: share from this PC, or connect to another one ---
-        welcomeId = Ui.Field(width: 170, hint: "205 937");
+        welcomeId = Ui.DigitsOnly(Ui.Field(width: 170, hint: "205937"));
         welcomeId.FlowDirection = FlowDirection.LeftToRight;
         welcomeId.FontSize = 16;
         welcomeId.KeyDown += (_, e) =>
@@ -78,7 +78,7 @@ public sealed class PortalPage : Page
         // --- this PC, beside its settings ---
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
         statusCard.SetBody(status);
-        hostNumberBox = Ui.Field(width: 150, hint: "205 937");
+        hostNumberBox = Ui.DigitsOnly(Ui.Field(width: 150, hint: "205937"));
         hostNumberBox.FlowDirection = FlowDirection.LeftToRight;
         hostNumberBox.LostFocus += (_, _) => SaveHostNumber(hostNumberBox.Text);
         hostNumberBox.KeyDown += (_, e) =>
