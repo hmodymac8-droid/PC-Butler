@@ -31,26 +31,44 @@ public sealed class PortalDevice
 /// <summary>How Courier behaves, and the PCs it trusts.</summary>
 public sealed class PortalSettings
 {
-    public const string Host = "host", Client = "client";
-
     /// <summary>Where received files go; "" = "PC Butler Courier" inside Downloads.</summary>
     [JsonPropertyName("folder")] public string Folder { get; set; } = "";
-    /// <summary>A host: its clients. A client: its host.</summary>
+    /// <summary>The PCs this one was paired with: it trusts them, by their certificate.</summary>
     [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
-    /// <summary>"host" (the PC the others connect to), "client" (connects to a host by its ID), or "" until chosen.</summary>
-    [JsonPropertyName("role")] public string Role { get; set; } = "";
-    /// <summary>A client's host, by its ID (six digits; nine as typed for versions up to 1.21).</summary>
-    [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
-    /// <summary>Start Courier with PC Butler, so a client is connected and a host is reachable without a click.</summary>
+    /// <summary>True once Courier was switched on here: from then on it starts with PC Butler (when AutoStart is on).</summary>
+    [JsonPropertyName("used")] public bool Used { get; set; }
+    /// <summary>Start Courier with PC Butler, so this PC can be reached, and stays connected to its PCs, without a click.</summary>
     [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
     /// <summary>Show the small Courier window, for dropping files and watching transfers, while connected.</summary>
     [JsonPropertyName("widget")] public bool Widget { get; set; } = true;
+    /// <summary>The list of PCs: the ones added by their ID and the ones paired with, kept to connect again later.</summary>
+    [JsonPropertyName("saved")] public List<PortalSaved> Saved { get; set; } = [];
+    /// <summary>What happens when a new PC asks to connect: "ask" (the user allows or refuses it) or "password".</summary>
+    [JsonPropertyName("incoming")] public string Incoming { get; set; } = Ask;
+    /// <summary>The password new PCs must give, as Portal.HashPassword made it; "" = none set.</summary>
+    [JsonPropertyName("password")] public string Password { get; set; } = "";
+
+    /// <summary>Before 1.22 a PC was the host or a client ("host", "client"); read once, to bring its settings over.</summary>
+    [JsonPropertyName("role")] public string Role { get; set; } = "";
+    /// <summary>Before 1.22: the host a client connected to.</summary>
+    [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
+
+    public const string Ask = "ask", WithPassword = "password";
 }
 
-/// <summary>Another client of the same host, as the host lists it. Files reach it through the host.</summary>
-public sealed record PortalClient(string Id, string Name, bool Online);
+/// <summary>A PC on the list, by its ID, under the name the user gave it.</summary>
+public sealed class PortalSaved
+{
+    /// <summary>Its ID, the six digits.</summary>
+    [JsonPropertyName("number")] public string Number { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    /// <summary>Kept connected: looked for whenever Courier runs, and found again when the link drops, until Disconnect.</summary>
+    [JsonPropertyName("stay")] public bool Stay { get; set; }
+    /// <summary>Before 1.22: connected to when Courier started. Read once, it becomes Stay.</summary>
+    [JsonPropertyName("favorite")] public bool Favorite { get; set; }
+}
 
-/// <summary>Another PC running Courier, as this one sees it right now: the host (on a client), or a client (on the host).</summary>
+/// <summary>Another PC running Courier, as this one sees it right now.</summary>
 public sealed class PortalPeer
 {
     public required string Id { get; init; }
@@ -85,6 +103,8 @@ public sealed class PortalTransfer
     /// <summary>True: the other PC is sending it here.</summary>
     public required bool Incoming { get; init; }
     public required string Peer { get; init; }
+    /// <summary>The other PC's id.</summary>
+    internal string PeerId { get; init; } = "";
     public DateTime Started { get; } = DateTime.Now;
     /// <summary>"waiting" (for the other PC to accept), "active", "done", "failed", "refused" or "cancelled".</summary>
     public string State
@@ -230,15 +250,16 @@ public sealed record PortalLogEntry(
 /// <summary>
 /// Courier: files between PCs running PC Butler on different networks, across the internet.
 ///
-/// One PC is the host; the others are its clients and connect to it by its ID. Files go
-/// between the host and each client, and from one client to another through the host
-/// (which passes them on and keeps nothing). Every connection is encrypted, and each PC
-/// proves who it is with its own certificate; a PC's id is that certificate's fingerprint.
+/// Every PC is the same: it has its own ID, can be reached by it, and connects to the PCs on
+/// its list by theirs, as many as it likes at once. Files go straight between two connected
+/// PCs. Every connection is encrypted, and each PC proves who it is with its own
+/// certificate; a PC's id is that certificate's fingerprint.
 ///
-/// A client must be paired with the host before anything can be sent. Pairing shows the
-/// same six-digit code on both screens, made in a way nobody in between can steer (each
-/// side commits to its random part before seeing the other's), and each user confirms on
-/// their own PC. After that the two recognise each other by certificate.
+/// Two PCs must be paired before anything can be sent. The PC that connects (its user typed
+/// the other's ID) trusts the other at once; the other PC's user allows it, or a password
+/// lets it in. Pairing shows the same six-digit code on both screens, made in a way nobody
+/// in between can steer (each side commits to its random part before seeing the other's).
+/// After that the two recognise each other by certificate.
 ///
 /// Nothing is open to the local network: the encrypted connection is only ever carried
 /// over the paths across the internet, and nothing listens while Courier is off.
@@ -262,10 +283,8 @@ public sealed partial class PortalNode
         public readonly Dictionary<string, string> Tops = new(StringComparer.OrdinalIgnoreCase);
         public readonly HashSet<int> Finished = [];
         public readonly SemaphoreSlim Gate = new(1, 1);
-        /// <summary>Where it is written: the receive folder, or (passed on to another client) a folder of its own that is removed afterwards.</summary>
+        /// <summary>Where it is written: the receive folder.</summary>
         public required string Root { get; init; }
-        /// <summary>On the host: the client it is for, when one client sends to another.</summary>
-        public string RelayTo { get; init; } = "";
     }
 
     private readonly X509Certificate2 certificate;
@@ -283,42 +302,38 @@ public sealed partial class PortalNode
     public string Id { get; }
     public string Name { get; } = Portal.DeviceName;
     public string Folder { get; }
-    public bool IsHost { get; }
     /// <summary>Something changed: devices, pairings, requests or transfers. Raised on a background thread.</summary>
     public event Action? Changed;
     /// <summary>Another PC is asking for something the user must answer (a pairing, or files to accept).</summary>
     public event Action<string>? Attention;
+    /// <summary>Files from another PC arrived, all of them: the transfer says what and where. Raised on a background thread.</summary>
+    public event Action<PortalTransfer>? Received;
 
     private PortalNode(X509Certificate2 certificate, PortalSettings settings, Action save)
     {
         (this.certificate, this.settings, this.save) = (certificate, settings, save);
         Id = Portal.Fingerprint(certificate);
         Folder = Portal.ReceiveFolder(settings);
-        IsHost = settings.Role == PortalSettings.Host;
-        // IDs were twelve digits before 1.16: a client paired with its host knows the host's new one from its certificate.
-        if (!IsHost && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 1)
-            settings.HostNumber = Portal.NumberOf(settings.Devices[0].Id);
+        PortalSavedList.Start(settings);
         foreach (var device in settings.Devices)
             peers[device.Id] = new PortalPeer { Id = device.Id, Name = device.Name, Trusted = true, AutoAccept = device.AutoAccept };
     }
 
     /// <summary>
-    /// Start as a host or a client (settings.Role). "save" is called when the trusted PCs
-    /// change, to store the settings. local: true keeps the paths on this PC's loopback
-    /// address and leaves out the public directory and the router (the tests do).
+    /// Start Courier. "save" is called when the trusted PCs or the list change, to store the
+    /// settings. local: true keeps the paths on this PC's loopback address and leaves out the
+    /// public directory and the router (the tests do).
     /// </summary>
-    public static async Task<PortalNode> Start(PortalSettings settings, Action? save = null, X509Certificate2? certificate = null, bool local = false)
+    public static Task<PortalNode> Start(PortalSettings settings, Action? save = null, X509Certificate2? certificate = null, bool local = false)
     {
-        if (settings.Role is not (PortalSettings.Host or PortalSettings.Client))
-            throw new IOException("Choose whether this PC is the host or a client first.");
         certificate ??= Portal.Certificate();
         Directory.CreateDirectory(Portal.ReceiveFolder(settings));
         // Nothing listens on a network port: requests arrive over the paths across the internet, and are answered right there.
         var node = new PortalNode(certificate, settings, save ?? (() => { }));
         node.StartInternet(local);
         _ = Task.Run(node.Housekeeping);
-        Log.Info($"Courier started as {(node.IsHost ? "host" : "client")}, ID {node.Number}");
-        return node;
+        Log.Info($"Courier started, ID {node.Number}");
+        return Task.FromResult(node);
     }
 
     public bool Stopped => stopped;
@@ -466,6 +481,7 @@ public sealed partial class PortalNode
         var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
         if (peer.Tunnel is not { } via)
             return null;
+        var attempt = AttemptFor(peer.Number);
         try
         {
             using var client = Client(via, expectedId: null, out var seen);
@@ -473,7 +489,7 @@ public sealed partial class PortalNode
             limit.CancelAfter(TimeSpan.FromSeconds(15));
             using var started = await client.PostAsJsonAsync($"{Api}/pair/start", new { name = Name, commit = HashOf(nonce) }, limit.Token);
             var id = seen();
-            if (!started.IsSuccessStatusCode || id is null || id == Id)
+            if (!started.IsSuccessStatusCode || id is null || id == Id || !string.Equals(id, peer.Id, StringComparison.OrdinalIgnoreCase))
                 return null;
             var answer = await started.Content.ReadFromJsonAsync<JsonElement>(limit.Token);
             var theirs = answer.GetProperty("nonce").GetString() ?? "";
@@ -485,14 +501,30 @@ public sealed partial class PortalNode
                 Code = PairingCode(Id, id, nonce, theirs), Via = via,
             };
             // Only now is this side's random part given away: the other side's is already fixed.
-            using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce }, limit.Token);
+            // The password goes with it when the other PC wants one (the connection is already encrypted, and its certificate checked).
+            using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce, password = attempt.Password }, limit.Token);
+            if (revealed.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                attempt.PasswordAsk = attempt.Password.Length == 0 ? PortalPasswordAsk.Needed : PortalPasswordAsk.Wrong;
+                attempt.Password = "";
+                Raise();
+                Attention?.Invoke(Tr.T("{0} asks for a password.", peer.Name));
+                return null;
+            }
             if (!revealed.IsSuccessStatusCode)
                 return null;
+            attempt.PasswordAsk = PortalPasswordAsk.None;
+            attempt.Password = "";
             lock (gate)
             {
                 pairings.RemoveAll(old => old.PeerId == id);
                 pairings.Add(pairing);
             }
+            // This side asked for it, by the other PC's own ID (which its certificate proves), so it trusts that PC at once.
+            // The other PC decides on its side: its user allows it, or the password let it in already.
+            Confirm(pairing);
+            var reply = await revealed.Content.ReadAsStringAsync(limit.Token);
+            attempt.Waiting = !reply.Contains("\"paired\":true", StringComparison.Ordinal);
             Raise();
             return pairing;
         }
@@ -516,9 +548,10 @@ public sealed partial class PortalNode
             (peer.Trusted, peer.Name, peer.AutoAccept) = (true, pairing.PeerName, true);
             if (pairing.Via is not null)
                 (peer.Tunnel, peer.LastSeen) = (pairing.Via, DateTime.UtcNow);
-            // A client has one host: pairing with another replaces it.
-            settings.Devices.RemoveAll(device => !IsHost || device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
+            // Every PC paired with is on the list, whichever side asked, so it can be connected to again later.
+            settings.Devices.RemoveAll(device => device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
             settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, AutoAccept = true, Address = peer.Tunnel?.Address.ToString() ?? "", Port = peer.Tunnel?.Port ?? 0 });
+            peer.Name = settings.Devices[^1].Name = PortalSavedList.Remember(settings, peer.Number, pairing.PeerName);
         }
         save();
         Log.Info($"Courier: paired with {pairing.PeerName}");
@@ -529,19 +562,6 @@ public sealed partial class PortalNode
     {
         if (pairing.State == "waiting")
             pairing.State = "refused";
-        Raise();
-    }
-
-    /// <summary>Stop trusting a PC. It has to be paired again before it can send anything.</summary>
-    public void Forget(string id)
-    {
-        lock (gate)
-        {
-            if (peers.TryGetValue(id, out var peer))
-                (peer.Trusted, peer.AutoAccept) = (false, false);
-            settings.Devices.RemoveAll(device => device.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
-        }
-        save();
         Raise();
     }
 
@@ -564,12 +584,8 @@ public sealed partial class PortalNode
     /// <summary>
     /// Send files and whole folders to a paired PC. Returns at once with the transfer to
     /// watch; the work happens in the background. Null if nothing in "paths" exists.
-    /// A client sends to another client through the host: "peer" is then the host, and
-    /// "to" the other client (its id and name).
     /// </summary>
-    public PortalTransfer? Send(PortalPeer peer, IEnumerable<string> paths, PortalClient? to = null) => Send(peer, paths, to, from: "");
-
-    private PortalTransfer? Send(PortalPeer peer, IEnumerable<string> paths, PortalClient? to, string from)
+    public PortalTransfer? Send(PortalPeer peer, IEnumerable<string> paths)
     {
         var files = new List<(string Source, string Path, long Size)>();
         var tops = new List<string>();
@@ -600,17 +616,16 @@ public sealed partial class PortalNode
         var transfer = new PortalTransfer
         {
             Id = NewId(), Name = tops.Count == 1 ? tops[0] : $"{tops[0]} +{tops.Count - 1}", Size = files.Sum(file => file.Size), Files = files.Count,
-            Incoming = false, State = "waiting",
-            Peer = to is not null ? Tr.T("{0} (through {1})", to.Name, peer.Name) : from.Length > 0 ? Tr.T("{0} (from {1})", peer.Name, from) : peer.Name,
+            Incoming = false, State = "waiting", Peer = peer.Name, PeerId = peer.Id,
         };
         lock (gate)
             transfers.Add(transfer);
         Raise();
-        _ = Task.Run(() => RunSend(peer, transfer, files, to?.Id ?? "", from));
+        _ = Task.Run(() => RunSend(peer, transfer, files));
         return transfer;
     }
 
-    private async Task RunSend(PortalPeer peer, PortalTransfer transfer, List<(string Source, string Path, long Size)> files, string to, string from)
+    private async Task RunSend(PortalPeer peer, PortalTransfer transfer, List<(string Source, string Path, long Size)> files)
     {
         void Fail(string note)
         {
@@ -628,14 +643,9 @@ public sealed partial class PortalNode
         var stop = stopping.Token;
         try
         {
-            var offer = new { id = transfer.Id, name = transfer.Name, to, from, files = files.Select(file => new { path = file.Path, size = file.Size }) };
+            var offer = new { id = transfer.Id, name = transfer.Name, files = files.Select(file => new { path = file.Path, size = file.Size }) };
             using (var asked = await client.PostAsJsonAsync($"{Api}/send/offer", offer, stop))
             {
-                if (asked.StatusCode == HttpStatusCode.NotFound && to.Length > 0)
-                {
-                    Fail(Tr.T("that PC is not connected to the host right now"));
-                    return;
-                }
                 if (asked.StatusCode == HttpStatusCode.Forbidden)
                 {
                     Fail(Tr.T("the other PC no longer trusts this one; pair them again"));
@@ -819,7 +829,7 @@ public sealed partial class PortalNode
             switch (parts)
             {
                 case ["who"] when method == "GET":
-                    await Json(context, 200, new { id = Id, name = Name, role = settings.Role });
+                    await Json(context, 200, new { id = Id, name = Name });
                     return;
                 case ["pair", "start"] when method == "POST":
                     await PairStart(context, caller);
@@ -845,13 +855,13 @@ public sealed partial class PortalNode
             }
             switch (parts)
             {
-                case ["clients"] when method == "GET" && IsHost:
-                    // The host's other clients, for a client to send to through the host.
-                    List<PortalClient> others;
-                    lock (gate)
-                        others = peers.Values.Where(other => other.Trusted && other.Id != peer.Id)
-                                     .Select(other => new PortalClient(other.Id, other.Name, other.Online)).ToList();
-                    await Json(context, 200, others.Select(other => new { id = other.Id, name = other.Name, online = other.Online }));
+                case ["ping"] when method == "GET":
+                    // A PC that connected here asks now and then: the answer says it is let in, and keeps it shown as connected.
+                    await Json(context, 200, new { });
+                    break;
+                case ["disconnect"] when method == "POST":
+                    Disconnected(peer, context.Via, forget: context.Query("forget") == "1");
+                    await Json(context, 200, new { });
                     break;
                 case ["send", "offer"] when method == "POST":
                     await Offer(context, peer);
@@ -901,12 +911,6 @@ public sealed partial class PortalNode
     {
         var body = await context.ReadJson();
         var commit = body.TryGetProperty("commit", out var value) ? value.GetString() ?? "" : "";
-        // Clients pair with the host; a client is never asked by anyone.
-        if (!IsHost)
-        {
-            await Json(context, 403, new { });
-            return;
-        }
         if (!IdPattern().IsMatch(commit) || caller == Id)
         {
             await Json(context, 400, new { });
@@ -946,10 +950,29 @@ public sealed partial class PortalNode
             await Json(context, 400, new { });
             return;
         }
+        if (settings.Incoming == PortalSettings.WithPassword)
+        {
+            // With a password, the right one lets the PC in at once, and anything else turns it away.
+            var given = body.TryGetProperty("password", out var typed) && typed.ValueKind == JsonValueKind.String ? typed.GetString() ?? "" : "";
+            if (!PasswordTries.Allow(caller) || !Portal.CheckPassword(given, settings.Password))
+            {
+                pairing.State = "failed";
+                if (given.Length > 0)
+                    PasswordTries.Failed(caller);
+                Log.Info($"Courier: {pairing.PeerName} gave {(given.Length == 0 ? "no" : "a wrong")} password");
+                await Json(context, 401, new { password = given.Length == 0 ? "needed" : "wrong" });
+                Raise();
+                return;
+            }
+            pairing.Code = PairingCode(caller, Id, nonce, pairing.NonceMine);
+            Confirm(pairing);
+            await Json(context, 200, new { paired = true });
+            return;
+        }
         pairing.Code = PairingCode(caller, Id, nonce, pairing.NonceMine);
         await Json(context, 200, new { });
         Raise();
-        Attention?.Invoke(Tr.T("{0} wants to pair with this PC.", pairing.PeerName));
+        Attention?.Invoke(Tr.T("{0} wants to connect to this PC.", pairing.PeerName));
     }
 
     /// <summary>A paired PC says what it wants to send. It waits until the user accepts, unless that PC is accepted automatically.</summary>
@@ -973,22 +996,7 @@ public sealed partial class PortalNode
             await Json(context, 400, new { });
             return;
         }
-        // For another client: the host takes it into a folder of its own and passes it on.
-        var to = body.TryGetProperty("to", out var target) ? target.GetString() ?? "" : "";
-        PortalPeer? relayTo = null;
-        if (to.Length > 0)
-        {
-            lock (gate)
-                peers.TryGetValue(to, out relayTo);
-            if (!IsHost || relayTo is not { Trusted: true, Online: true } || relayTo.Id == peer.Id)
-            {
-                await Json(context, 404, new { online = false });
-                return;
-            }
-        }
-        // On a client, files the host passes on from another client say whose they are.
-        var from = !IsHost && body.TryGetProperty("from", out var sender) ? Portal.CleanLabel(sender.GetString() ?? "") : "";
-        var root = relayTo is null ? Folder : System.IO.Path.Combine(Portal.RelayFolder, id);
+        var root = Folder;
         var total = files.Sum(file => file.Item2);
         Directory.CreateDirectory(root);
         if (Portal.FreeSpace(root) < total + (64L << 20))
@@ -999,10 +1007,9 @@ public sealed partial class PortalNode
         var transfer = new PortalTransfer
         {
             Id = id, Name = Portal.CleanLabel(body.TryGetProperty("name", out var name) ? name.GetString() ?? "" : files[0].Item1), Size = total,
-            Files = files.Count, Incoming = true, State = "waiting",
-            Peer = relayTo is not null ? Tr.T("{0} to {1}", peer.Name, relayTo.Name) : from.Length > 0 ? Tr.T("{0} (through {1})", from, peer.Name) : peer.Name,
+            Files = files.Count, Incoming = true, State = "waiting", Peer = peer.Name, PeerId = peer.Id,
         };
-        var job = new IncomingJob { Id = id, PeerId = peer.Id, Files = files, Transfer = transfer, Root = root, RelayTo = relayTo?.Id ?? "" };
+        var job = new IncomingJob { Id = id, PeerId = peer.Id, Files = files, Transfer = transfer, Root = root };
         if (!jobs.TryAdd(id, job))
         {
             await Json(context, 409, new { });
@@ -1010,8 +1017,7 @@ public sealed partial class PortalNode
         }
         lock (gate)
             transfers.Add(transfer);
-        // Passing on needs no answer from the host's user: the client it is for decides.
-        if (peer.AutoAccept || relayTo is not null)
+        if (peer.AutoAccept)
             Accept(id);
         else
             Attention?.Invoke(Tr.T("{0} wants to send {1} file(s).", peer.Name, files.Count));
@@ -1045,8 +1051,6 @@ public sealed partial class PortalNode
             if (!job.Finished.Contains(index))
                 Portal.TryDelete(PartFile(job, index));
         }
-        if (job.RelayTo.Length > 0)
-            Portal.TryDeleteFolder(job.Root);
     }
 
     /// <summary>
@@ -1142,14 +1146,10 @@ public sealed partial class PortalNode
                 {
                     job.Transfer.State = "done";
                     job.Transfer.Path = job.Tops.Count == 1 ? job.Tops.Values.First() : job.Root;
-                    if (job.RelayTo.Length > 0)
-                        PassOn(job);
-                    else
-                    {
-                        Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), job.Transfer.Name, job.Transfer.Size, true, job.Transfer.Peer, job.Transfer.Path));
-                        Log.Info($"Courier received {job.Transfer.Name} from {job.Transfer.Peer}");
-                    }
+                    Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), job.Transfer.Name, job.Transfer.Size, true, job.Transfer.Peer, job.Transfer.Path));
+                    Log.Info($"Courier received {job.Transfer.Name} from {job.Transfer.Peer}");
                     Raise();
+                    Received?.Invoke(job.Transfer);
                 }
             }
             await Json(context, 200, new { received = length, done = length == size });
@@ -1158,33 +1158,6 @@ public sealed partial class PortalNode
         {
             job.Gate.Release();
         }
-    }
-
-    /// <summary>
-    /// The host has all of what one client sent for another: offer it to that client (who
-    /// accepts or refuses as usual), and remove the host's copy once that is settled.
-    /// </summary>
-    private void PassOn(IncomingJob job)
-    {
-        PortalPeer? target, source;
-        lock (gate)
-        {
-            peers.TryGetValue(job.RelayTo, out target);
-            peers.TryGetValue(job.PeerId, out source);
-        }
-        var forward = target is null ? null : Send(target, job.Tops.Values.ToList(), to: null, from: source?.Name ?? job.Transfer.Peer);
-        if (forward is null)
-        {
-            Portal.TryDeleteFolder(job.Root);
-            return;
-        }
-        _ = Task.Run(async () =>
-        {
-            while (forward.Running && !stopping.IsCancellationRequested)
-                await Task.Delay(1000);
-            Portal.TryDeleteFolder(job.Root);
-            Log.Info($"Courier passed {job.Transfer.Name} on: {forward.State}");
-        });
     }
 
     /// <summary>
@@ -1317,11 +1290,8 @@ public static partial class Portal
 #endif
     }
 
-    /// <summary>Where the host keeps, for a moment, files one client sends to another.</summary>
-    public static string RelayFolder => System.IO.Path.Combine(AppInfo.DataDir, "courier-relay");
-
-    /// <summary>Files the host was passing on when it last stopped: never finished, so removed when it starts again.</summary>
-    public static void ClearRelay() => TryDeleteFolder(RelayFolder);
+    /// <summary>Before 1.22 a host kept here, for a moment, files one client sent to another; whatever was left is removed.</summary>
+    public static void ClearRelay() => TryDeleteFolder(System.IO.Path.Combine(AppInfo.DataDir, "courier-relay"));
 
     internal static void TryDeleteFolder(string path)
     {

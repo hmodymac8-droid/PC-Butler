@@ -264,13 +264,16 @@ public sealed class BackgroundService
 
     private void SortPass(Config config)
     {
-        var (count, _) = Sorter.MoveFiles(Sorter.PlanMoves(config), review: true);
+        var sorted = Sorter.MoveFiles(Sorter.PlanMoves(config), review: true);
+        var count = sorted.Count;
         var cleaned = Sorter.CleanupExpired(config);
         if (count > 0)
         {
-            Log.Info($"Moved {count} file(s)");
-            if (config.AfterRun == "window")
+            Log.Info($"Sorted {count} file(s), {sorted.Deleted} of them deleted as their category asks");
+            if (config.AfterRun == "window" && count > sorted.Deleted)
                 ReportWanted?.Invoke();
+            else if (sorted.Deleted > 0)
+                Notify?.Invoke("Moved {0} file(s) and sent {1} to the Recycle Bin. Open History to review or undo.", [count - sorted.Deleted, sorted.Deleted]);
             else
                 Notify?.Invoke("Moved {0} file(s). Open History to review or undo.", [count]);
         }

@@ -7,7 +7,7 @@ namespace PCButler;
 
 /// <summary>
 /// What the items of File Explorer's "PC Butler" submenu do with the selected files and
-/// folders. Sorting is logged in History and can be undone there; shredding
+/// folders. Sharing hands them to Courier's send list in the running program. Sorting is logged in History and can be undone there; shredding
 /// is asked about first, because nothing brings it back.
 /// </summary>
 public static class MenuActions
@@ -27,6 +27,9 @@ public static class MenuActions
                 break;
             case "vault":
                 Vault(paths);
+                break;
+            case "courier":
+                Share(paths);
                 break;
             case "shred":
                 Shred(paths);
@@ -59,6 +62,16 @@ public static class MenuActions
             return;
         }
         VaultInbox.Add(files);
+        Shell.Open(Environment.ProcessPath!);
+    }
+
+    /// <summary>
+    /// The running program holds Courier's connections, so the paths are handed over to it:
+    /// its window opens on the Courier page with them ready to send (see MainWindow.TakeCourierInbox).
+    /// </summary>
+    private static void Share(List<string> paths)
+    {
+        CourierInbox.Add(paths);
         Shell.Open(Environment.ProcessPath!);
     }
 

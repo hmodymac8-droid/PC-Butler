@@ -6,7 +6,7 @@ using PCButler.Core;
 namespace PCButler.Android;
 
 /// <summary>
-/// A check of Courier on this very phone, for development: a host and a client inside the
+/// A check of Courier on this very phone, for development: two Courier nodes inside the
 /// app, joined over the phone's own loopback address, pair and pass a file, through the same
 /// encrypted connection (with a certificate on each side) that PCs use. Started with
 /// "adb shell am start -n com.hmodymac8droid.pcbutler/crc...MainActivity --ez selftest true";
@@ -29,9 +29,8 @@ public static class SelfTest
                 Directory.Delete(root, recursive: true);
             X509Certificate2 Identity() => X509CertificateLoader.LoadPkcs12(Portal.NewCertificate(), null);
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            var host = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(root, "host"), Role = PortalSettings.Host }, certificate: Identity(), local: true);
-            var client = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(root, "client"), Role = PortalSettings.Client, HostNumber = host.Number },
-                                                certificate: Identity(), local: true);
+            var host = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(root, "host") }, certificate: Identity(), local: true);
+            var client = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(root, "client") }, certificate: Identity(), local: true);
             Say($"SELFTEST: two nodes started in {clock.ElapsedMilliseconds} ms");
             var hostPeer = await client.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, host.LinkPort), host.Number);
             Say($"SELFTEST: connect {(hostPeer is null ? "FAILED" : "ok")}");

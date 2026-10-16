@@ -42,6 +42,18 @@ public abstract class Page : DockPanel
         Children.Add(header.Dock(Dock.Top));
     }
 
+    /// <summary>Something was switched on or off outside the page (the tray panel, a hotkey): show the saved state.</summary>
+    public virtual void ShowSwitches()
+    {
+    }
+
+    /// <summary>Tick or untick a switch to match what is saved. Its handler sees a value that is already applied.</summary>
+    protected static void Match(CheckBox box, bool on)
+    {
+        if (box.IsChecked != on)
+            box.IsChecked = on;
+    }
+
     /// <summary>The Home page shows the version in a pill where other pages have their headline.</summary>
     protected void ShowVersionInsteadOfHeading()
     {

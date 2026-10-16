@@ -6,8 +6,8 @@ namespace PCButler.Core;
 public static class AppInfo
 {
     public const string Name = "PC Butler";
-    /// <summary>Must match the tag of the GitHub release this is published as (v1.21.4).</summary>
-    public const string Version = "1.21.4";
+    /// <summary>Must match the tag of the GitHub release this is published as (v1.22.0).</summary>
+    public const string Version = "1.22.0";
     /// <summary>Where updates are looked for.</summary>
     public const string Repo = "hmodymac8-droid/PC-Butler";
     public const string ExeName = "PCButler.exe";
@@ -70,14 +70,37 @@ public static class AppInfo
     }
 }
 
-/// <summary>A plain text log in the data folder.</summary>
+/// <summary>
+/// A plain text log in the data folder. It never grows past about a megabyte: then it
+/// becomes pcbutler.old.log (replacing the one before) and a new one starts.
+/// </summary>
 public static class Log
 {
+    public const long MaxBytes = 1024 * 1024;
     private static readonly object Gate = new();
+    private static readonly Dictionary<string, DateTime> LastSaid = [];
+    private static long size = -1;
+
+    public static string OldFile => Path.ChangeExtension(AppInfo.LogFile, ".old.log");
 
     public static void Info(string message) => Write(message);
     public static void Warning(string message) => Write("WARNING " + message);
     public static void Error(string message) => Write("ERROR " + message);
+
+    /// <summary>Like Info, but a message under the same key is written at most once in "every", so what repeats doesn't fill the log.</summary>
+    public static void Seldom(string key, TimeSpan every, string message)
+    {
+        lock (Gate)
+        {
+            var now = DateTime.UtcNow;
+            if (LastSaid.TryGetValue(key, out var said) && now - said < every)
+                return;
+            if (LastSaid.Count > 500)
+                LastSaid.Clear();
+            LastSaid[key] = now;
+        }
+        Write(message);
+    }
 
     private static void Write(string message)
     {
@@ -86,7 +109,17 @@ public static class Log
             lock (Gate)
             {
                 Directory.CreateDirectory(AppInfo.DataDir);
-                File.AppendAllText(AppInfo.LogFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss,fff} {message}{Environment.NewLine}");
+                var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss,fff} {message}{Environment.NewLine}";
+                if (size < 0)
+                    size = File.Exists(AppInfo.LogFile) ? new FileInfo(AppInfo.LogFile).Length : 0;
+                if (size + line.Length > MaxBytes)
+                {
+                    if (File.Exists(AppInfo.LogFile))
+                        File.Move(AppInfo.LogFile, OldFile, overwrite: true);
+                    size = 0;
+                }
+                File.AppendAllText(AppInfo.LogFile, line);
+                size += System.Text.Encoding.UTF8.GetByteCount(line);
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
