@@ -232,13 +232,13 @@ public sealed partial class SettingsPage : Page
             var pressed = e.Key == Key.System ? e.SystemKey : e.Key;
             if (pressed is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.Tab)
                 return;
-            if (Keyboard.Modifiers == ModifierKeys.None)
+            if (Shortcut.Held() == ModifierKeys.None)
             {
                 if (pressed is Key.Back or Key.Delete)
                     set("");
                 return; // a key alone would take it from every program
             }
-            set(Shortcut.Format(Keyboard.Modifiers, pressed));
+            set(Shortcut.Format(Shortcut.Held(), pressed));
         };
         var first = true;
         string Current(string action) => Hotkeys.Effective(Main.Config.Hotkeys).GetValueOrDefault(action, "");
