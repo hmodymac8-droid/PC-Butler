@@ -145,9 +145,13 @@ public sealed class Config
     [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
 #if WINDOWS
     [JsonPropertyName("overlay")] public OverlaySettings Overlay { get; set; } = new();
+    /// <summary>File search: what is indexed and how names are matched.</summary>
+    [JsonPropertyName("search")] public global::PCButler.Core.Search.SearchSettings Search { get; set; } = new();
 #endif
     /// <summary>Keyboard shortcuts that work in any program: action -> keys ("Ctrl+Alt+B"). An action without one is not listed.</summary>
     [JsonPropertyName("hotkeys")] public Dictionary<string, string> Hotkeys { get; set; } = [];
+    /// <summary>Letters PC Butler asked File Explorer to give up as Win + letter shortcuts (when its keyboard hook could not be used), to give back later.</summary>
+    [JsonPropertyName("hotkeys_from_explorer")] public string HotkeysFromExplorer { get; set; } = "";
     [JsonPropertyName("portal")] public PortalSettings Portal { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
@@ -256,6 +260,11 @@ public static class ConfigStore
         config.Cleaner ??= new CleanerSettings();
         config.Schedule ??= new ScheduleSettings();
         config.Clipboard ??= new ClipboardSettings();
+#if WINDOWS
+        config.Search ??= new global::PCButler.Core.Search.SearchSettings();
+        config.Search.Folders ??= [];
+        config.Search.Exclude ??= global::PCButler.Core.Search.SearchSettings.DefaultExclusions();
+#endif
         if (saved?["clipboard"] is JsonObject clipboard && !clipboard.ContainsKey("shortcut_version"))
         {
             if (config.Clipboard.Shortcut == "Ctrl+Alt+V")
