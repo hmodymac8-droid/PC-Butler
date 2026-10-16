@@ -18,7 +18,15 @@ public sealed class ClipboardPage : Page
     private readonly CheckBox enabled;
 
     /// <summary>The shortcut can also be changed on the Settings page's Hotkeys tab: show it as it is now.</summary>
-    public override void Shown() => shortcut.Text = Main.Config.Clipboard.Shortcut;
+    public override void Shown()
+    {
+        shortcut.Text = Main.Config.Clipboard.Shortcut;
+        Match(replace, ClipboardManager.IsWindowsHistory(Main.Config.Clipboard.Shortcut));
+    }
+
+    private readonly CheckBox replace;
+    /// <summary>The shortcut when Win+V is left to Windows.</summary>
+    private const string OtherShortcut = "Ctrl+Alt+V";
 
     public override void ShowSwitches() => Match(enabled, Main.Config.Clipboard.Enabled);
     private readonly TextBox limit;
@@ -42,6 +50,16 @@ public sealed class ClipboardPage : Page
         rows.Children.Add(Ui.SettingRow(Ui.T("Shortcut to open the list"),
                                         Ui.T("Press it in any program to pick an item and paste it there. Click the box, then press the new keys."),
                                         Ui.Row(6, shortcut, Ui.Button(Ui.T("Default"), () => SetShortcut(ClipboardSettings.DefaultShortcut)))));
+        // Win+V is Windows' own clipboard history: this switch hands it to PC Butler, or back to Windows.
+        replace = Ui.Switch("", ClipboardManager.IsWindowsHistory(settings.Shortcut), on =>
+        {
+            if (on != ClipboardManager.IsWindowsHistory(Main.Config.Clipboard.Shortcut))
+                SetShortcut(on ? ClipboardSettings.DefaultShortcut : OtherShortcut);
+        });
+        rows.Children.Add(Ui.SettingRow(Ui.T("Replace Windows' clipboard history"),
+                                        Ui.T("On: Win+V opens PC Butler's list instead of Windows' own, while PC Butler runs. Off: Win+V goes back to Windows, "
+                                             + "and PC Butler's list opens with {0}.", OtherShortcut),
+                                        replace));
 
         limit = Ui.Field(settings.Limit.ToString(), 90);
         limit.LostFocus += (_, _) => SaveLimit();
@@ -164,6 +182,7 @@ public sealed class ClipboardPage : Page
             Main.UpdateConfig(config => config.Clipboard.Shortcut = before);
             App.Current.Clips.Apply(Main.Config.Clipboard);
         }
+        Match(replace, ClipboardManager.IsWindowsHistory(Main.Config.Clipboard.Shortcut));
     }
 
     private void SaveLimit()

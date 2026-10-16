@@ -57,10 +57,21 @@ public sealed class ClipboardManager : IDisposable
             return Ui.T("“{0}” is not a shortcut PC Butler can use.", wanted.Shortcut);
         hotkey = RegisterHotKey(source.Handle, HotkeyId, (uint)modifiers | MOD_NOREPEAT, (uint)KeyInterop.VirtualKeyFromKey(key));
         // Windows keeps Win+V (its own clipboard history) and other Win shortcuts for itself: those are taken over with a keyboard hook.
-        if (!hotkey && modifiers.HasFlag(ModifierKeys.Windows) && hook.Set(modifiers, key, ShowPicker))
-            return null;
-        return hotkey ? null : Ui.T("{0} is already used by another program. Choose another shortcut.", wanted.Shortcut);
+        if (!hotkey && modifiers.HasFlag(ModifierKeys.Windows))
+        {
+            if (hook.Set(modifiers, key, ShowPicker))
+                return null;
+            return IsWindowsHistory(wanted.Shortcut)
+                ? Ui.T("Win+V belongs to Windows' own clipboard history, and PC Butler could not take it over. Choose another shortcut.")
+                : Ui.T("Windows keeps {0} for itself, and PC Butler could not take it over.", wanted.Shortcut);
+        }
+        return hotkey ? null : Ui.T("Another program already uses {0}, and Windows does not say which one. Choose another shortcut, or close that program and try again.",
+                                    wanted.Shortcut);
     }
+
+    /// <summary>True for Win+V, the shortcut of Windows' own clipboard history.</summary>
+    public static bool IsWindowsHistory(string keys) =>
+        Shortcut.TryParse(keys, out var modifiers, out var key) && modifiers == ModifierKeys.Windows && key == System.Windows.Input.Key.V;
 
     private IntPtr WndProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
