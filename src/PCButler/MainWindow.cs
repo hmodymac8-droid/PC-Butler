@@ -203,6 +203,15 @@ public sealed partial class MainWindow : Window
         Config = config;
     }
 
+    /// <summary>Something was switched outside the window (the tray panel, a hotkey): show it on the pages built so far.</summary>
+    public void ShowSwitches()
+    {
+        Config = ConfigStore.Load();
+        RefreshBackgroundStatus();
+        foreach (var page in Built)
+            page.ShowSwitches();
+    }
+
     /// <summary>Plan the Sorter list again, and History with it, after anything that moves files.</summary>
     public void RefreshPreview()
     {
@@ -370,7 +379,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Automatic sorting only; starting with Windows is a switch of its own.</summary>
-    private void SetAutoSort(bool on)
+    public void SetAutoSort(bool on)
     {
         if (on == Config.AutoSortOn)
         {

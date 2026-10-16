@@ -24,6 +24,7 @@ public sealed class HomePage : Page
     private readonly TextBlock cpuTemperature = Ui.Text("—", 13);
     private readonly TextBlock sensorsText = Ui.Muted("", 12.5, wrap: true);
     private readonly Button sensorsButton;
+    private readonly CheckBox alerts;
     private readonly TextBlock score = new() { FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Primary"), FontFamily = Ui.DisplayFont, Text = "—" };
     private readonly MeterBar scoreBar = new();
     private readonly TextBlock scoreNote = Ui.Muted("", 12.5, wrap: true);
@@ -88,7 +89,7 @@ public sealed class HomePage : Page
         neat.Children.Add(ends);
         neat.Children.Add(scoreNote.Margin(0, 9, 0, 4));
         neat.Children.Add(notes);
-        var alerts = Ui.Switch(Ui.T("Warn me when the processor or memory stays nearly full"), main.Config.UsageAlerts,
+        alerts = Ui.Switch(Ui.T("Warn me when the processor or memory stays nearly full"), main.Config.UsageAlerts,
                                on => Main.UpdateConfig(config => config.UsageAlerts = on));
         alerts.HorizontalAlignment = HorizontalAlignment.Left;
         neat.Children.Add(Line(alerts, 9));
@@ -132,6 +133,8 @@ public sealed class HomePage : Page
     /// <summary>The element under a hairline, as the design separates the parts of a panel.</summary>
     private static Border Line(UIElement child, double space) =>
         new() { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Margin = new Thickness(0, space, 0, 0), Child = child };
+
+    public override void ShowSwitches() => Match(alerts, Main.Config.UsageAlerts);
 
     public override void Shown()
     {
