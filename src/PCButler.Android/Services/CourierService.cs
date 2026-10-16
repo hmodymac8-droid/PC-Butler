@@ -64,7 +64,10 @@ public sealed class CourierService : Service
             StopSelf();
             return;
         }
+        var before = shown;
         var notification = Make();
+        if (shown == before)
+            return; // the same words and progress: no need to wake the notification shade every second
         var manager = (NotificationManager)GetSystemService(NotificationService)!;
         manager.Notify(NotificationId, notification);
     }
@@ -88,9 +91,10 @@ public sealed class CourierService : Service
         var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, Channel) : new Notification.Builder(this);
         builder.SetContentTitle(Tr.T("Courier")).SetContentText(text).SetSmallIcon(Resource.Drawable.notification_icon).SetOngoing(true).SetContentIntent(open)
                .SetOnlyAlertOnce(true);
-        if (moving is not null && moving.Size > 0)
-            builder.SetProgress(1000, (int)(moving.Done * 1000 / moving.Size), false);
-        shown = text;
+        var progress = moving is not null && moving.Size > 0 ? (int)(moving.Done * 1000 / moving.Size) : -1;
+        if (progress >= 0)
+            builder.SetProgress(1000, progress, false);
+        shown = $"{text}|{progress}";
         return builder.Build()!;
     }
 }

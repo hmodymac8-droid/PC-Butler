@@ -157,10 +157,9 @@ public sealed class VaultPage : AppPage
         if (vault is null)
             return;
         var picked = await Folders.PickFiles();
-        if (picked.Count == 0)
+        if (picked.Count == 0 || vault is not { } opened)
             return;
         count.Text = Tr.T("Encrypting {0} file(s)…", picked.Count);
-        var opened = vault;
         var (added, errors) = await Task.Run(() => MoveIn(opened, picked));
         if (errors.Count > 0)
             await Say(Tr.T("{0} file(s) added. {1} could not be:\n{2}", added, errors.Count, string.Join("\n", errors.Take(5))));
@@ -211,6 +210,7 @@ public sealed class VaultPage : AppPage
         if (vault is not { } current)
             return;
         var copy = await Task.Run(() => current.OpenCopy(item));
+        App.LeavingOnPurpose();
         await Launcher.Default.OpenAsync(new OpenFileRequest(item.Name, new ReadOnlyFile(copy)));
     }
 

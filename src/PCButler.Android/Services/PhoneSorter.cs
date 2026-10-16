@@ -105,6 +105,20 @@ public static class PhoneSorter
                     errors.Add($"{moved.Name}: {error.Message}");
                 }
             }
+            // The category folders the run filled, left empty by putting their files back, go too.
+            foreach (var (tree, folder) in log[index].Moves.Select(moved => (moved.Tree, moved.From)).Distinct())
+            {
+                try
+                {
+                    var made = Folders.ById(AUri.Parse(tree)!, folder, "");
+                    if (Folders.IsEmpty(made))
+                        Folders.Delete(made.Uri);
+                }
+                catch (Exception error) when (error is IOException or Java.Lang.Exception)
+                {
+                    Log.Warning($"An emptied folder could not be removed: {error.Message}");
+                }
+            }
             log[index] = log[index] with { Undone = true };
             Save(log);
             return (count, errors);

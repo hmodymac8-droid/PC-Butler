@@ -280,7 +280,8 @@ public sealed class StoragePage : AppPage
     {
         try
         {
-            RecycleBin.Restore(item.Original);
+            // Off the screen's thread: putting back a big video copies all of it.
+            await Task.Run(() => RecycleBin.Restore(item.Original));
         }
         catch (IOException error)
         {
@@ -291,18 +292,22 @@ public sealed class StoragePage : AppPage
 
     private async Task RestoreAll()
     {
-        var errors = new List<string>();
-        foreach (var item in RecycleBin.Items())
+        var errors = await Task.Run(() =>
         {
-            try
+            var problems = new List<string>();
+            foreach (var item in RecycleBin.Items())
             {
-                RecycleBin.Restore(item.Original);
+                try
+                {
+                    RecycleBin.Restore(item.Original);
+                }
+                catch (IOException error)
+                {
+                    problems.Add($"{Path.GetFileName(item.Original)}: {error.Message}");
+                }
             }
-            catch (IOException error)
-            {
-                errors.Add($"{Path.GetFileName(item.Original)}: {error.Message}");
-            }
-        }
+            return problems;
+        });
         if (errors.Count > 0)
             await Say(string.Join("\n", errors.Take(8)));
         ShowBin();
