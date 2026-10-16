@@ -83,7 +83,8 @@ public sealed class SorterPage : Page
             rows.Add(new Row
             {
                 Name = move.Name, Tag = move,
-                Cells = [Ui.T("{0} days", move.Age.ToString("0")), Ui.FormatSize(move.Size), destination, Path.GetFileName(move.Root.TrimEnd('\\'))],
+                Cells = [Ui.T("{0} days", move.Age.ToString("0")), Ui.FormatSize(move.Size), move.Delete ? Ui.T("Recycle Bin (deleted)") : destination,
+                         Path.GetFileName(move.Root.TrimEnd('\\'))],
             }.WithTile(Path.GetExtension(move.Name), Path.GetFileName(move.Folder)));
         }
         list.ItemsSource = rows;
@@ -109,9 +110,20 @@ public sealed class SorterPage : Page
         var parts = Ui.FormatSize(size).Split(' ');
         stats[0].Set(count.ToString(), Ui.T("files"), showAll.IsChecked == true ? Ui.T("Any age") : Ui.T("Older than {0} days", Main.Config.MinAgeDays));
         stats[1].Set(parts[0], parts[1], Ui.T("A cleaner Downloads folder"));
-        stats[2].Set(moves.Select(move => move.Folder).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(), "",
+        stats[2].Set(moves.Where(move => !move.Delete).Select(move => move.Folder).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString(), "",
                      Ui.T("Everything in the right place"));
     }
+
+    /// <summary>A question about sorting, with a word on the files that will be deleted rather than moved.</summary>
+    private static string WithDeletes(string question, IReadOnlyCollection<PlannedMove> moves) =>
+        moves.Count(move => move.Delete) is var deleting and > 0
+            ? question + "\n\n" + Ui.T("{0} of them go to the Recycle Bin instead, as their category deletes them. History can bring them back.", deleting)
+            : question;
+
+    /// <summary>What a run did, in words.</summary>
+    private static string Done(SortResult result) =>
+        result.Deleted > 0 ? Ui.T("Moved {0} file(s) and sent {1} to the Recycle Bin.", result.Count - result.Deleted, result.Deleted)
+                           : Ui.T("Moved {0} file(s).", result.Count);
 
     private void ExcludeSelected()
     {
@@ -130,11 +142,11 @@ public sealed class SorterPage : Page
     private void Move()
     {
         var moves = ListedMoves();
-        if (!Ui.Ask("Move files", Ui.T("Move the {0} listed file(s)?", moves.Count)))
+        if (!Ui.Ask("Move files", WithDeletes(Ui.T("Move the {0} listed file(s)?", moves.Count), moves)))
             return;
-        var (count, errors) = Sorter.MoveFiles(moves);
+        var result = Sorter.MoveFiles(moves);
         Main.RefreshPreview();
-        Ui.ReportResult(Ui.T("Moved {0} file(s).", count), errors);
+        Ui.ReportResult(Done(result), result.Errors);
     }
 
     /// <summary>Move just the highlighted rows and leave the rest for later.</summary>
@@ -146,11 +158,11 @@ public sealed class SorterPage : Page
             Ui.Info("Move selected", Ui.T("Select one or more files in the list first (Ctrl or Shift for several)."));
             return;
         }
-        if (!Ui.Ask("Move files", Ui.T("Move only the {0} selected file(s)?", moves.Count)))
+        if (!Ui.Ask("Move files", WithDeletes(Ui.T("Move only the {0} selected file(s)?", moves.Count), moves)))
             return;
-        var (count, errors) = Sorter.MoveFiles(moves);
+        var result = Sorter.MoveFiles(moves);
         Main.RefreshPreview();
-        Ui.ReportResult(Ui.T("Moved {0} file(s).", count), errors);
+        Ui.ReportResult(Done(result), result.Errors);
     }
 
     /// <summary>Sort one of the folders from Settings right away, by the usual rules.</summary>
@@ -163,11 +175,11 @@ public sealed class SorterPage : Page
             Ui.Info("Sort folder", Ui.T("Nothing to sort in\n{0}\n\nNo files there are old enough yet.", name));
             return;
         }
-        if (!Ui.Ask("Sort folder", Ui.T("Move {0} file(s) in\n{1}\ninto their category folders?", moves.Count, name)))
+        if (!Ui.Ask("Sort folder", WithDeletes(Ui.T("Move {0} file(s) in\n{1}\ninto their category folders?", moves.Count, name), moves)))
             return;
-        var (count, errors) = Sorter.MoveFiles(moves);
+        var result = Sorter.MoveFiles(moves);
         Main.RefreshPreview();
-        Ui.ReportResult(Ui.T("Moved {0} file(s).", count), errors);
+        Ui.ReportResult(Done(result), result.Errors);
     }
 
     /// <summary>Move every file that has a destination, however new it is.</summary>
@@ -179,12 +191,12 @@ public sealed class SorterPage : Page
             Ui.Info("Sort all", Ui.T("There are no files to sort."));
             return;
         }
-        if (!Ui.Ask("Sort all", Ui.T("Move all {0} file(s) now, including new ones and ones you put back with Undo?\n\n"
-                                     + "Files on the never-move list stay. You can undo this from History.", moves.Count)))
+        if (!Ui.Ask("Sort all", WithDeletes(Ui.T("Move all {0} file(s) now, including new ones and ones you put back with Undo?\n\n"
+                                                 + "Files on the never-move list stay. You can undo this from History.", moves.Count), moves)))
             return;
-        var (count, errors) = Sorter.MoveFiles(moves);
+        var result = Sorter.MoveFiles(moves);
         Main.RefreshPreview();
-        Ui.ReportResult(Ui.T("Moved {0} file(s).", count), errors);
+        Ui.ReportResult(Done(result), result.Errors);
     }
 
     private void Undo()
