@@ -104,6 +104,33 @@ public static class RecycleBin
             return Read().Where(entry => File.Exists(entry.Kept)).OrderByDescending(entry => entry.At).ToList();
     }
 
+    /// <summary>How long a file waits in the bin before it goes for good, by itself.</summary>
+    public const int KeepDays = 30;
+
+    /// <summary>The files binned longer ago than that go for good: the space they hold is given back.</summary>
+    public static void EmptyOlderThan(TimeSpan age)
+    {
+        lock (Gate)
+        {
+            var index = Read();
+            var old = index.Where(entry => DateTime.Now - entry.At > age).ToList();
+            if (old.Count == 0)
+                return;
+            foreach (var entry in old)
+            {
+                try
+                {
+                    File.Delete(entry.Kept);
+                    index.Remove(entry);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+            File.WriteAllText(Index, JsonSerializer.Serialize(index));
+        }
+    }
+
     /// <summary>Delete everything in the bin for good. Returns how many files went.</summary>
     public static int Empty()
     {

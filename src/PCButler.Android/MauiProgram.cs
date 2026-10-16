@@ -12,6 +12,10 @@ public static class MauiProgram
         builder.UseMauiApp<App>();
         Tr.Language = ConfigStore.Load().EffectiveLanguage();
         SharedFiles.ClearOld();
+        RecycleBin.EmptyOlderThan(TimeSpan.FromDays(RecycleBin.KeepDays));
+        // Entries sit in their own rounded boxes: no Android underline under the text.
+        Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping("NoUnderline", (handler, _) =>
+            handler.PlatformView.BackgroundTintList = global::Android.Content.Res.ColorStateList.ValueOf(global::Android.Graphics.Color.Transparent));
         return builder.Build();
     }
 }
@@ -356,6 +360,8 @@ public sealed class Shell : Microsoft.Maui.Controls.Shell
     public Shell()
     {
         BackgroundColor = Theme.Background;
+        // Arabic reads from the right: the whole app is laid out that way, the tabs too.
+        FlowDirection = Tr.IsArabic ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
         SetTabBarBackgroundColor(this, Theme.Card);
         SetTabBarForegroundColor(this, Theme.Primary);
         SetTabBarUnselectedColor(this, Theme.Muted);

@@ -1467,5 +1467,8 @@
  "encrypted": "مشفّر",
  "Take out": "إخراج",
  "Waiting for a PC…": "بانتظار حاسوب…",
- "It stays on in the background.": "يبقى يعمل في الخلفية."
+ "It stays on in the background.": "يبقى يعمل في الخلفية.",
+ "Duplicates and Storage use the same folders.": "صفحتا «الملفات المكررة» و«المساحة» تستخدمان المجلدات نفسها.",
+ "The space is freed when the Recycle Bin is emptied; it empties itself after {0} days.": "تتوفر المساحة عند إفراغ سلة المحذوفات، وهي تُفرغ نفسها بعد {0} يومًا.",
+ "Emptying it frees that space.": "إفراغها يوفّر هذه المساحة."
 }
