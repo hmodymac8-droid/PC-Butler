@@ -354,14 +354,18 @@ Check(ExplorerMenu.InstalledCommand() is null, "no menu to begin with");
 Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", english => english) is null
       && ExplorerMenu.InstalledCommand("sort") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort")
       && ExplorerMenu.InstalledCommand("shred") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "shred")
+      && ExplorerMenu.InstalledCommand("courier") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "courier")
       && ExplorerMenu.CommandFor("P.exe", "sort") == "\"P.exe\" --act sort \"%1\"", "each submenu item runs the program with its action");
 using (var fileMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\*\shell\PCButler"))
     Check(fileMenu?.GetValue("MUIVerb") as string == "PC Butler" && fileMenu.GetValue("SubCommands") as string == ""
-          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3shred"]),
+          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3courier", "4shred"]),
           "files get the submenu, in order");
 using (var folderMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell"))
-    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3shred"]),
+    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3courier", "4shred"]),
           "folders get it too, without the Vault");
+using (var share = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell\3courier"))
+    Check(share?.GetValue("MUIVerb") as string == "Share with Courier" && share.GetValue("MultiSelectModel") as string == "Player",
+          "files and folders can be shared with Courier, several at once");
 using (var real = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\*\shell\PCButler\shellsort\command"))
     Check(real?.GetValue("") as string != ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort"), "the real menu is left alone");
 Check(ExplorerMenu.Sync(false, "x", english => english) is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
@@ -423,6 +427,10 @@ VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "gone.pd
 VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]);
 Check(VaultInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]) && VaultInbox.Take().Count == 0,
       "files waiting for the vault are handed over once");
+CourierInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "gone.pdf"), Path.Combine(dropFrom, "Folder")]);
+CourierInbox.Add([Path.Combine(dropFrom, "a.pdf")]);
+Check(CourierInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "Folder")]) && CourierInbox.Take().Count == 0,
+      "files and folders shared with Courier are handed over once");
 
 // ---------------------------------------------------------------- courier: names, codes, routers
 Section("courier");
@@ -618,6 +626,22 @@ Section("courier host and clients");
     host.Forget(bob.Id);
     var afterForget = bob.Send(bobToHost, [note])!;
     Check(await Until(() => afterForget.State == "failed") && hostSettings.Devices.Count == 1, "a forgotten client must pair again");
+
+    // A host that asks for a password: none, or a wrong one, is turned away; the right one lets the PC in without a click.
+    host.UseIncoming(PortalSettings.WithPassword, Portal.HashPassword("open sesame"));
+    var asksBefore = hostAsked;
+    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Needed && !host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted),
+          "a host with a password turns away a PC that gives none, and the PC is told a password is needed");
+    stranger.GivePassword("open says me");
+    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Wrong, "a wrong password is turned away, and said so");
+    stranger.GivePassword("open sesame");
+    var letIn = await stranger.Pair(strangerHost!);
+    Check(letIn is not null && stranger.PasswordWanted == PortalPasswordAsk.None && !stranger.WaitingForHost
+          && host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted) && stranger.HostPeer is { Trusted: true } && hostAsked == asksBefore,
+          "the right password lets the PC in at once, on both sides, without asking the host's user");
+    var withPassword = stranger.Send(strangerHost!, [note])!;
+    Check(await Until(() => !withPassword.Running, 30) && withPassword.State == "done", $"and it can send at once ({withPassword.State} {withPassword.Note})");
+    host.UseIncoming(PortalSettings.Ask, "");
 
     await host.Stop();
     await alice.Stop();
@@ -842,13 +866,37 @@ Section("courier IDs");
           && GameDetector.LooksLikeGame(Front("chrome.exe", true), ["chrome.exe"]), "a browser, a player or the desktop in full screen is not a game, unless listed");
     Check(GameDetector.Foreground() is null or { Name.Length: > 4, Right: > 0 }, "the window in front can be read");
     Check(FpsMeter.Choose(144, 300) == 144 && FpsMeter.Choose(0, 60) == 60 && FpsMeter.Choose(0, 0) == 0, "a program's own frame count is used before the graphics kernel's");
-    var fpsDir = Path.Combine(temp, "fps");
-    Directory.CreateDirectory(fpsDir);
-    Check(FpsMeter.Latest(fpsDir) is null, "no frame counts while nobody is counting");
-    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow, Fps = { [4242] = 143, [77] = 60 } }));
-    Check(FpsMeter.Latest(fpsDir) is { Count: 2 } counts && counts[4242] == 143, "the helper's counts are read by program");
-    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow.AddSeconds(-30), Fps = { [4242] = 143 } }));
-    Check(FpsMeter.Latest(fpsDir) is null, "counts the helper stopped refreshing are not shown as if they were live");
+    var fpsSlot = $"PCButler-test-fps-{Guid.NewGuid():N}";
+    Check(FpsMeter.Latest(fpsSlot) is null, "no frame counts while nobody is counting");
+    var countingStarted = FpsMeter.Start(fpsSlot);
+    FpsMeter.Stop();
+    Check(true, $"asking Windows to count frames without administrator rights is refused quietly, not with a crash (started: {countingStarted})");
+    LiveSlot.Write(fpsSlot, System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow, Fps = { [4242] = 143, [77] = 60 } }));
+    Check(FpsMeter.Latest(fpsSlot) is { Count: 2 } counts && counts[4242] == 143, "the helper's counts are read by program");
+    LiveSlot.Write(fpsSlot, System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow.AddSeconds(-30), Fps = { [4242] = 143 } }));
+    Check(FpsMeter.Latest(fpsSlot) is null, "counts the helper stopped refreshing are not shown as if they were live");
+    var sensorSlot = $"PCButler-test-sensors-{Guid.NewGuid():N}";
+    Check(Sensors.Latest(sensorSlot) is null, "no temperatures while the helper is not running");
+    LiveSlot.Write(sensorSlot, System.Text.Json.JsonSerializer.Serialize(new SensorReading { Time = DateTime.Now, CpuTemperature = 55.5, Fans = [900] }));
+    Check(Sensors.Latest(sensorSlot) is { CpuTemperature: 55.5, Fans: [900] }, "the helper's temperatures reach the main program through memory");
+    var longText = new string('x', 5000);
+    LiveSlot.Write(sensorSlot, longText);
+    LiveSlot.Write(sensorSlot, "short");
+    Check(LiveSlot.Read(sensorSlot) == "short" && !LiveSlot.Write(sensorSlot, new string('x', 70_000)), "a shorter reading replaces a longer one whole, and one too big is refused");
+    var logLines = File.Exists(AppInfo.LogFile) ? File.ReadAllLines(AppInfo.LogFile).Length : 0;
+    for (var knock = 0; knock < 5; knock++)
+        Log.Seldom("test knock", TimeSpan.FromHours(1), "Courier: a PC keeps knocking");
+    Check(File.ReadAllLines(AppInfo.LogFile).Length == logLines + 1, "a message that repeats is logged once, not every time");
+    for (var line = 0; line < 12_000; line++)
+        Log.Info("filler line for the size limit, " + new string('x', 80));
+    Check(new FileInfo(AppInfo.LogFile).Length <= Log.MaxBytes && File.Exists(Log.OldFile) && new FileInfo(Log.OldFile).Length <= Log.MaxBytes,
+          "the log never grows past its limit: the old part moves aside, replacing the one before");
+    var savedConfig = ConfigStore.Load();
+    ConfigStore.Save(savedConfig);
+    var savedAt = File.GetLastWriteTimeUtc(AppInfo.ConfigFile);
+    Thread.Sleep(50);
+    ConfigStore.Save(savedConfig);
+    Check(File.GetLastWriteTimeUtc(AppInfo.ConfigFile) == savedAt, "saving unchanged settings leaves the file alone");
     File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"f1","action":"fps","services":["off"]}""");
     AdminHelper.Poll(helperDir, []);
     Check(File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"off\""), "the helper takes the request to stop counting frames");
@@ -1067,6 +1115,20 @@ Check(Math.Abs(boxes[0].Width * boxes[0].Height / (600.0 * 400) - 6.0 / 24) < 0.
 Check(Storage.Treemap([], 100, 100).Count == 0 && Storage.Treemap([5], 100, 50) is [(0, 0, 100, 50)], "treemap edge cases");
 
 Section("clipboard history");
+var configBefore = File.Exists(AppInfo.ConfigFile) ? File.ReadAllText(AppInfo.ConfigFile) : null;
+Check(new ClipboardSettings().Shortcut == "Win+V", "Win+V is the default shortcut");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"enabled": true, "shortcut": "Ctrl+Alt+V"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Win+V", "the old default shortcut moves to Win+V");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"shortcut": "Ctrl+Shift+B"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Shift+B", "a shortcut the user chose stays");
+var chosen = ConfigStore.Load();
+chosen.Clipboard.Shortcut = "Ctrl+Alt+V";
+ConfigStore.Save(chosen);
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Alt+V", "Ctrl+Alt+V chosen after the change stays");
+if (configBefore is null)
+    File.Delete(AppInfo.ConfigFile);
+else
+    File.WriteAllText(AppInfo.ConfigFile, configBefore);
 ClipboardHistory.Clear(keepPinned: false);
 ClipboardHistory.Add(new ClipEntry { Text = "first" }, 3);
 ClipboardHistory.Add(new ClipEntry { Text = "second" }, 3);
@@ -1099,6 +1161,32 @@ Check(WebSearch.Google("  what   is" + Environment.NewLine + "PC Butler ") == "h
       && WebSearch.IsPicture(Path.Combine(temp, "b.JPG")) && !WebSearch.IsPicture("notes.txt"), "a text is searched on Google as one line; pictures are told apart");
 Check(new ClipEntry { Kind = "files", Files = [Path.Combine(temp, "a.txt"), Path.Combine(temp, "b.txt")] }.Preview == "a.txt (+1)"
       && new ClipEntry { Text = "one" + Environment.NewLine + "two" }.Preview == "one two", "list previews");
+
+Section("courier saved PCs and passwords");
+{
+    var kept = Portal.HashPassword("correct horse");
+    Check(Portal.CheckPassword("correct horse", kept) && !Portal.CheckPassword("Correct horse", kept) && !Portal.CheckPassword("", kept)
+          && !Portal.CheckPassword("correct horse", "") && !kept.Contains("correct") && kept != Portal.HashPassword("correct horse"),
+          "a password is kept salted and stretched, and only the same one matches");
+    var saved = new PortalSettings { Role = PortalSettings.Client, HostNumber = "111222333",
+                                     Devices = [new PortalDevice { Id = "AA", Name = "Old host" }] };
+    PortalSavedList.Start(saved);
+    Check(saved.Saved is [{ Number: "111222333" }], "the host of before is on the list");
+    Check(PortalSavedList.Add(saved, "444 555 666", "Office") && !PortalSavedList.Add(saved, "12", "") && saved.Saved.Count == 2
+          && PortalSavedList.Add(saved, "444555666", "") && PortalSavedList.Find(saved, "444555666")!.Name == "Office", "PCs are added by their ID, once each");
+    PortalSavedList.Rename(saved, "444555666", "  Work PC ");
+    Check(PortalSavedList.Find(saved, "444555666")!.Name == "Work PC" && PortalSavedList.Remember(saved, "444555666", "DESKTOP-1") == "Work PC"
+          && PortalSavedList.Remember(saved, "777888999", "Laptop") == "Laptop" && saved.Saved.Count == 3, "a name given stays; a PC connected to is added under its own");
+    PortalSavedList.ToggleFavorite(saved, "444555666");
+    PortalSavedList.ToggleFavorite(saved, "777888999");
+    Check(saved.Saved.Count(item => item.Favorite) == 1 && PortalSavedList.Find(saved, "777888999")!.Favorite, "one favourite at most");
+    PortalSavedList.Start(saved);
+    Check(saved.HostNumber == "777888999", "the favourite is the PC connected to at start");
+    PortalSavedList.ToggleFavorite(saved, "777888999");
+    Check(!saved.Saved.Any(item => item.Favorite), "the same one again is no longer the favourite");
+    PortalSavedList.Remove(saved, "777888999");
+    Check(PortalSavedList.Find(saved, "777888999") is null && saved.HostNumber.Length == 9 && saved.HostNumber != "777888999", "removed, and the PC connected to moves to another");
+}
 
 Section("translations, updates");
 Tr.Language = "ar";

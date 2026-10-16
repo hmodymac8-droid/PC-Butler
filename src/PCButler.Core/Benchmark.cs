@@ -15,6 +15,8 @@ namespace PCButler.Core;
 public sealed class OverlaySettings
 {
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
+    /// <summary>Start the administrator helper by itself when a game is detected, so frames are counted without a visit to the page.</summary>
+    [JsonPropertyName("auto_helper")] public bool AutoHelper { get; set; }
     /// <summary>Show it all the time, not only while a game is in front.</summary>
     [JsonPropertyName("always")] public bool Always { get; set; }
     /// <summary>0 top left, 1 top right, 2 bottom left, 3 bottom right.</summary>
@@ -174,25 +176,25 @@ public static class GameDetector
 /// <summary>
 /// Frames per second of other programs. Windows only tells an administrator when a program
 /// shows a frame, so the counting is done by the helper: it listens to the graphics
-/// system's "frame shown" events and writes each program's count to fps.json once a second.
+/// system's "frame shown" events and hands each program's count over once a second, in
+/// shared memory (see LiveSlot), never through the disk.
 /// Nothing is added to the game itself, so anti-cheat systems have nothing to object to.
 /// </summary>
 public static class FpsMeter
 {
     private static FpsSession? session;
 
-    public static string FileIn(string directory) => Path.Combine(directory, "fps.json");
+    public static string Slot => LiveSlot.Name("fps");
 
     /// <summary>The helper's side: start counting. False when Windows refuses (not an administrator).</summary>
-    public static bool Start(string directory)
+    public static bool Start(string? slot = null)
     {
         try
         {
-            session ??= new FpsSession(FileIn(directory));
+            session ??= new FpsSession(slot ?? Slot);
             return true;
         }
-        catch (Exception error) when (error is UnauthorizedAccessException or COMException or InvalidOperationException or IOException
-                                          or System.ComponentModel.Win32Exception or DllNotFoundException or FileNotFoundException)
+        catch (Exception error) when (error is not OutOfMemoryException)
         {
             Log.Warning($"Frame counting could not start: {error.Message}");
             return false;
@@ -206,14 +208,14 @@ public static class FpsMeter
     }
 
     /// <summary>The newest counts (process id -> frames a second), or null when nobody is counting.</summary>
-    public static Dictionary<int, int>? Latest(string? directory = null)
+    public static Dictionary<int, int>? Latest(string? slot = null)
     {
         try
         {
-            var reading = JsonSerializer.Deserialize<FpsReading>(File.ReadAllText(FileIn(directory ?? AppInfo.DataDir)));
+            var reading = LiveSlot.Read(slot ?? Slot) is { } text ? JsonSerializer.Deserialize<FpsReading>(text) : null;
             return reading is not null && (DateTime.UtcNow - reading.Time).TotalSeconds < 4 ? reading.Fps : null;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException)
         {
             return null;
         }
@@ -242,11 +244,11 @@ public static class FpsMeter
         private readonly ConcurrentDictionary<int, int> own = new(), kernel = new();
         private readonly Timer timer;
         private readonly Stopwatch clock = Stopwatch.StartNew();
-        private readonly string file;
+        private readonly string slot;
 
-        public FpsSession(string file)
+        public FpsSession(string slot)
         {
-            this.file = file;
+            this.slot = slot;
             // One name, so a session a crashed helper left behind is taken over instead of piling up.
             trace = new TraceEventSession("PCButlerFps") { StopOnDispose = true };
             trace.EnableProvider(Dxgi, TraceEventLevel.Verbose);
@@ -259,11 +261,21 @@ public static class FpsMeter
                 {
                     trace.Source.Process();
                 }
-                catch (Exception error) when (error is COMException or InvalidOperationException or ObjectDisposedException)
+                catch (Exception error) when (error is not OutOfMemoryException) // whatever ending the session mid-read throws must not take the program down
                 {
                 }
             }) { IsBackground = true, Name = "PC Butler frame counter" }.Start();
-            timer = new Timer(_ => Write(), null, 1000, 1000);
+            timer = new Timer(_ =>
+            {
+                try
+                {
+                    Write();
+                }
+                catch (Exception error) when (error is not OutOfMemoryException)
+                {
+                    // A tick that lands while the session is being closed has nothing left to write.
+                }
+            }, null, 1000, 1000);
         }
 
         private void Count(TraceEvent data)
@@ -289,26 +301,17 @@ public static class FpsMeter
                 if (fps > 0 && pid > 0)
                     reading.Fps[pid] = fps;
             }
-            try
-            {
-                var temp = file + ".new";
-                File.WriteAllText(temp, JsonSerializer.Serialize(reading));
-                File.Move(temp, file, overwrite: true);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-            }
+            LiveSlot.Write(slot, JsonSerializer.Serialize(reading));
         }
 
         public void Dispose()
         {
             timer.Dispose();
-            trace.Dispose();
             try
             {
-                File.Delete(file);
+                trace.Dispose();
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            catch (Exception error) when (error is not OutOfMemoryException)
             {
             }
         }

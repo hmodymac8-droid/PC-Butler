@@ -27,6 +27,8 @@ public sealed class StoragePage : AppPage
     private readonly Button upButton;
     private readonly VerticalStackLayout bigList = new() { Spacing = 6 };
     private readonly Button bigDelete;
+    private readonly Label bigNote;
+    private readonly Grid binButtons;
     private readonly VerticalStackLayout binList = new() { Spacing = 6 };
     private readonly Label binText = Theme.Faint("");
     private readonly List<(BigFile File, CheckBox Box)> bigBoxes = [];
@@ -40,36 +42,37 @@ public sealed class StoragePage : AppPage
         var free = new HorizontalStackLayout { Spacing = 8, Children = { phoneFree, phoneTotal } };
         Body.Children.Add(Theme.CardOf(new VerticalStackLayout { Spacing = 10, Children = { free, phoneBar, phoneUsed } }));
         Body.Children.Add(FoldersCard("storage", "These folders, and all the folders inside them, are measured.", () => { }));
-        upButton = Theme.Plain(Tr.T("Up"), () =>
+        // Back up one folder: an arrow before the folder's name, there only inside a folder.
+        upButton = Theme.Plain(Tr.IsArabic ? "→" : "←", () =>
         {
             if (shown?.Parent is { } parent)
                 ShowNode(parent);
         });
-        var scanRow = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 10, Margin = new Thickness(0, 0, 0, 14) };
-        scanRow.Add(Theme.Accent(Tr.T("Scan"), () => _ = Scan()), 0);
-        scanRow.Add(upButton, 1);
-        Body.Children.Add(scanRow);
-        var head = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star) }, ColumnSpacing = 10 };
-        head.Add(folderTitle, 0);
-        head.Add(scanStatus, 1);
+        (upButton.Padding, upButton.FontSize, upButton.BackgroundColor, upButton.VerticalOptions) = (new Thickness(12, 4), 18, Theme.SurfaceRaised, LayoutOptions.Center);
+        upButton.IsVisible = false;
+        Body.Children.Add(Theme.Accent(Tr.T("Scan"), () => _ = Scan()).Margin(0, 0, 0, 14));
+        var head = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star) }, ColumnSpacing = 10 };
+        head.Add(upButton, 0);
+        head.Add(folderTitle, 1);
+        head.Add(scanStatus, 2);
         // The results and the large files show once something has been scanned.
         resultsCard = Theme.CardOf(new VerticalStackLayout { Spacing = 4, Children = { head, folderList } }, 16);
         resultsCard.IsVisible = false;
         Body.Children.Add(resultsCard);
         bigDelete = Theme.Danger(Tr.T("Tick a file first"), () => _ = DeleteBig());
         bigDelete.IsEnabled = false;
+        bigNote = new Label { Text = Tr.T("Deleted files go to the Recycle Bin first."), FontSize = 12, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center };
         bigCard = Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 10,
             Children =
             {
-                Theme.Header(Tr.T("Large & old files"), null, 16), Theme.Faint(Tr.T("Bigger than 50 MB and not changed for 3 months or more."), 12.5), bigList, bigDelete,
-                new Label { Text = Tr.T("Deleted files go to the Recycle Bin first."), FontSize = 12, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center },
+                Theme.Header(Tr.T("Large & old files"), null, 16), Theme.Faint(Tr.T("Bigger than 50 MB and not changed for 3 months or more."), 12.5), bigList, bigDelete, bigNote,
             },
         }, 16);
         bigCard.IsVisible = false;
         Body.Children.Add(bigCard);
-        var bins = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
+        var bins = binButtons = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
         bins.Add(Theme.Plain(Tr.T("Put all back"), () => _ = RestoreAll()), 0);
         bins.Add(Theme.DangerGhost(Tr.T("Empty"), () => _ = EmptyBin()), 1);
         Body.Children.Add(Theme.CardOf(new VerticalStackLayout
@@ -81,7 +84,6 @@ public sealed class StoragePage : AppPage
                 binList, bins,
             },
         }, 16));
-        upButton.IsEnabled = false;
     }
 
     protected override void Shown()
@@ -198,7 +200,7 @@ public sealed class StoragePage : AppPage
     private void ShowNode(StorageNode node)
     {
         shown = node;
-        upButton.IsEnabled = node.Parent is not null;
+        upButton.IsVisible = node.Parent is not null;
         folderTitle.Text = node.Parent is null ? Tr.T("Your folders") : node.Path;
         folderList.Children.Clear();
         var index = 0;
@@ -228,6 +230,7 @@ public sealed class StoragePage : AppPage
         var files = result is null ? [] : Storage.LargeAndOld(result, Storage.BigFileMinimum, 3);
         if (files.Count == 0)
             bigList.Children.Add(Theme.Faint(Tr.T("No files match.")));
+        bigDelete.IsVisible = bigNote.IsVisible = files.Count > 0; // nothing to tick, nothing to delete
         bigDelete.Text = Tr.T("Tick a file first");
         bigDelete.IsEnabled = false;
         foreach (var file in files.Take(40))
@@ -247,7 +250,7 @@ public sealed class StoragePage : AppPage
     private async Task DeleteBig()
     {
         var chosen = bigBoxes.Where(item => item.Box.IsChecked).Select(item => item.File).ToList();
-        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, below.", chosen.Count), Tr.T("Delete")))
+        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, below.", chosen.Count) + "\n\n" + DuplicatesPage.SpaceNote, Tr.T("Delete")))
             return;
         var (count, errors) = await Task.Run(() => DuplicatesPage.Bin(chosen.Select(file => docs[file.Path])));
         var gone = chosen.Select(file => file.Path).ToHashSet();
@@ -264,8 +267,8 @@ public sealed class StoragePage : AppPage
     {
         var items = RecycleBin.Items();
         binText.Text = items.Count == 0 ? Tr.T("Empty. Files deleted in Duplicates or here wait in it until put back.")
-            : Tr.T("{0} file(s), {1}. Tap one to put it back where it was.", items.Count, Size(items.Sum(item => item.Size)));
-        binPill.IsVisible = items.Count > 0;
+            : Tr.T("{0} file(s), {1}. Tap one to put it back where it was.", items.Count, Size(items.Sum(item => item.Size))) + " " + Tr.T("Emptying it frees that space.");
+        binPill.IsVisible = binButtons.IsVisible = items.Count > 0;
         Theme.SetPill(binPill, items.Count.ToString(), Theme.Amber, Theme.AmberSoft);
         binList.Children.Clear();
         foreach (var item in items.Take(30))
@@ -280,7 +283,8 @@ public sealed class StoragePage : AppPage
     {
         try
         {
-            RecycleBin.Restore(item.Original);
+            // Off the screen's thread: putting back a big video copies all of it.
+            await Task.Run(() => RecycleBin.Restore(item.Original));
         }
         catch (IOException error)
         {
@@ -291,18 +295,22 @@ public sealed class StoragePage : AppPage
 
     private async Task RestoreAll()
     {
-        var errors = new List<string>();
-        foreach (var item in RecycleBin.Items())
+        var errors = await Task.Run(() =>
         {
-            try
+            var problems = new List<string>();
+            foreach (var item in RecycleBin.Items())
             {
-                RecycleBin.Restore(item.Original);
+                try
+                {
+                    RecycleBin.Restore(item.Original);
+                }
+                catch (IOException error)
+                {
+                    problems.Add($"{Path.GetFileName(item.Original)}: {error.Message}");
+                }
             }
-            catch (IOException error)
-            {
-                errors.Add($"{Path.GetFileName(item.Original)}: {error.Message}");
-            }
-        }
+            return problems;
+        });
         if (errors.Count > 0)
             await Say(string.Join("\n", errors.Take(8)));
         ShowBin();

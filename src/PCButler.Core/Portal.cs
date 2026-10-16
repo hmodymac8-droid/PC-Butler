@@ -45,6 +45,24 @@ public sealed class PortalSettings
     [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
     /// <summary>Show the small Courier window, for dropping files and watching transfers, while connected.</summary>
     [JsonPropertyName("widget")] public bool Widget { get; set; } = true;
+    /// <summary>A client: the PCs it can connect to, kept to connect again later. One of them can be the favourite.</summary>
+    [JsonPropertyName("saved")] public List<PortalSaved> Saved { get; set; } = [];
+    /// <summary>A host: what happens when a new PC asks to connect: "ask" (the user allows or refuses it) or "password".</summary>
+    [JsonPropertyName("incoming")] public string Incoming { get; set; } = Ask;
+    /// <summary>A host: the password new PCs must give, as Portal.HashPassword made it; "" = none set.</summary>
+    [JsonPropertyName("password")] public string Password { get; set; } = "";
+
+    public const string Ask = "ask", WithPassword = "password";
+}
+
+/// <summary>A PC a client can connect to, by its ID, under the name the user gave it.</summary>
+public sealed class PortalSaved
+{
+    /// <summary>Its ID, the nine digits.</summary>
+    [JsonPropertyName("number")] public string Number { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    /// <summary>Connected to by itself when Courier starts.</summary>
+    [JsonPropertyName("favorite")] public bool Favorite { get; set; }
 }
 
 /// <summary>Another client of the same host, as the host lists it. Files reach it through the host.</summary>
@@ -298,6 +316,8 @@ public sealed partial class PortalNode
         // IDs were twelve digits before 1.16: a client paired with its host knows the host's new one from its certificate.
         if (!IsHost && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 1)
             settings.HostNumber = Portal.NumberOf(settings.Devices[0].Id);
+        if (!IsHost)
+            PortalSavedList.Start(settings);
         foreach (var device in settings.Devices)
             peers[device.Id] = new PortalPeer { Id = device.Id, Name = device.Name, Trusted = true, AutoAccept = device.AutoAccept };
     }
@@ -473,7 +493,7 @@ public sealed partial class PortalNode
             limit.CancelAfter(TimeSpan.FromSeconds(15));
             using var started = await client.PostAsJsonAsync($"{Api}/pair/start", new { name = Name, commit = HashOf(nonce) }, limit.Token);
             var id = seen();
-            if (!started.IsSuccessStatusCode || id is null || id == Id)
+            if (!started.IsSuccessStatusCode || id is null || id == Id || !string.Equals(id, peer.Id, StringComparison.OrdinalIgnoreCase))
                 return null;
             var answer = await started.Content.ReadFromJsonAsync<JsonElement>(limit.Token);
             var theirs = answer.GetProperty("nonce").GetString() ?? "";
@@ -485,14 +505,30 @@ public sealed partial class PortalNode
                 Code = PairingCode(Id, id, nonce, theirs), Via = via,
             };
             // Only now is this side's random part given away: the other side's is already fixed.
-            using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce }, limit.Token);
+            // The password goes with it when the host wants one (the connection is already encrypted, and the host's certificate checked).
+            using var revealed = await client.PostAsJsonAsync($"{Api}/pair/reveal", new { nonce, password = HostPassword }, limit.Token);
+            if (revealed.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                PasswordWanted = HostPassword.Length == 0 ? PortalPasswordAsk.Needed : PortalPasswordAsk.Wrong;
+                HostPassword = "";
+                Raise();
+                Attention?.Invoke(Tr.T("{0} asks for a password.", peer.Name));
+                return null;
+            }
             if (!revealed.IsSuccessStatusCode)
                 return null;
+            PasswordWanted = PortalPasswordAsk.None;
+            HostPassword = "";
             lock (gate)
             {
                 pairings.RemoveAll(old => old.PeerId == id);
                 pairings.Add(pairing);
             }
+            // This side asked for it, by the host's own ID (which its certificate proves), so it trusts the host at once.
+            // The host decides on its side: its user allows it, or the password let it in already.
+            Confirm(pairing);
+            var reply = await revealed.Content.ReadAsStringAsync(limit.Token);
+            WaitingForHost = !reply.Contains("\"paired\":true", StringComparison.Ordinal);
             Raise();
             return pairing;
         }
@@ -516,9 +552,11 @@ public sealed partial class PortalNode
             (peer.Trusted, peer.Name, peer.AutoAccept) = (true, pairing.PeerName, true);
             if (pairing.Via is not null)
                 (peer.Tunnel, peer.LastSeen) = (pairing.Via, DateTime.UtcNow);
-            // A client has one host: pairing with another replaces it.
-            settings.Devices.RemoveAll(device => !IsHost || device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
+            // A client keeps every host it was paired with, so it can connect to any of them again later.
+            settings.Devices.RemoveAll(device => device.Id.Equals(pairing.PeerId, StringComparison.OrdinalIgnoreCase));
             settings.Devices.Add(new PortalDevice { Id = peer.Id, Name = peer.Name, AutoAccept = true, Address = peer.Tunnel?.Address.ToString() ?? "", Port = peer.Tunnel?.Port ?? 0 });
+            if (!IsHost)
+                peer.Name = settings.Devices[^1].Name = PortalSavedList.Remember(settings, peer.Number, pairing.PeerName);
         }
         save();
         Log.Info($"Courier: paired with {pairing.PeerName}");
@@ -946,10 +984,29 @@ public sealed partial class PortalNode
             await Json(context, 400, new { });
             return;
         }
+        if (settings.Incoming == PortalSettings.WithPassword)
+        {
+            // With a password, the right one lets the PC in at once, and anything else turns it away.
+            var given = body.TryGetProperty("password", out var typed) && typed.ValueKind == JsonValueKind.String ? typed.GetString() ?? "" : "";
+            if (!PasswordTries.Allow(caller) || !Portal.CheckPassword(given, settings.Password))
+            {
+                pairing.State = "failed";
+                if (given.Length > 0)
+                    PasswordTries.Failed(caller);
+                Log.Info($"Courier: {pairing.PeerName} gave {(given.Length == 0 ? "no" : "a wrong")} password");
+                await Json(context, 401, new { password = given.Length == 0 ? "needed" : "wrong" });
+                Raise();
+                return;
+            }
+            pairing.Code = PairingCode(caller, Id, nonce, pairing.NonceMine);
+            Confirm(pairing);
+            await Json(context, 200, new { paired = true });
+            return;
+        }
         pairing.Code = PairingCode(caller, Id, nonce, pairing.NonceMine);
         await Json(context, 200, new { });
         Raise();
-        Attention?.Invoke(Tr.T("{0} wants to pair with this PC.", pairing.PeerName));
+        Attention?.Invoke(Tr.T("{0} wants to connect to this PC.", pairing.PeerName));
     }
 
     /// <summary>A paired PC says what it wants to send. It waits until the user accepts, unless that PC is accepted automatically.</summary>
