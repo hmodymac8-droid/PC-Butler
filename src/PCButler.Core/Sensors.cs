@@ -124,6 +124,7 @@ public static class Sensors
             // Made here, before the helper exists: what a program with administrator rights makes, this one could not open.
             LiveSlot.Prepare(Slot);
             LiveSlot.Prepare(FpsMeter.Slot);
+            LiveSlot.Prepare(NetMeter.Slot);
             var start = new ProcessStartInfo(Environment.ProcessPath!)
             {
                 UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden,
@@ -173,6 +174,7 @@ public static class Sensors
         AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
         CpuSensor.Close();
         FpsMeter.Stop();
+        NetMeter.Stop();
     }
 
     private static bool ParentAlive(int parentId)

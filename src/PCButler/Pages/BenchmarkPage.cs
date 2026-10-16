@@ -7,7 +7,11 @@ using PCButler.Core;
 
 namespace PCButler;
 
-/// <summary>The performance overlay's switches, the live numbers, and the list of game sessions it measured.</summary>
+/// <summary>
+/// The performance overlay's switches, the live numbers, the list of game sessions it
+/// measured, and the record of what each app used (processor, graphics card, memory, disk and
+/// internet), as a report for a period that can be saved as a spreadsheet.
+/// </summary>
 public sealed class BenchmarkPage : Page
 {
     private readonly StatCard[] stats;
@@ -19,6 +23,12 @@ public sealed class BenchmarkPage : Page
     private readonly TextBox games;
     private readonly ListView sessions;
     private int sessionsShown;
+    private readonly ListView usage;
+    private readonly ComboBox period = new() { Width = 170, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock usageNote = Ui.Muted("", 12);
+    private readonly Button netButton;
+    private List<AppUseRow> usageRows = [];
+    private DateTime usageShown;
 
     public BenchmarkPage(MainWindow main) : base(main, "Benchmark", "See how your PC is really doing, while you play.")
     {
@@ -57,6 +67,33 @@ public sealed class BenchmarkPage : Page
         log.SetBody(sessions);
         log.Margin = new Thickness(0, 16, 0, 0);
 
+        // --- what each app used, for a report ---
+        var apps = new CardPanel("App usage", "") { Margin = new Thickness(0, 16, 0, 0) };
+        foreach (var choice in new[] { "Today", "Yesterday", "Last 7 days", "Last 30 days", "Last 90 days" })
+            period.Items.Add(new ComboBoxItem { Content = Ui.T(choice), Tag = choice });
+        period.SelectedIndex = 0;
+        period.SelectionChanged += (_, _) => ShowUsage();
+        apps.Controls.Children.Add(period);
+        apps.Controls.Children.Add(Ui.Button(Ui.T("Save as a spreadsheet…"), ExportUsage).Margin(6));
+        apps.Controls.Children.Add(Ui.Button(Ui.T("Clear"), ClearUsage).Margin(6));
+        var usageBody = new StackPanel();
+        usageBody.Children.Add(Ui.SettingRow(Ui.T("Record what each app uses"),
+                                             Ui.T("Every few seconds, how much of the processor, the graphics card, the memory and the disk each running app takes. "
+                                                  + "Kept on this PC for 90 days, for the report below."),
+                                             Ui.Switch("", main.Config.Usage.Record, on =>
+                                             {
+                                                 Main.UpdateConfig(config => config.Usage.Record = on);
+                                                 App.Current.RecordUsage(on);
+                                                 ShowUsage();
+                                             }), first: true));
+        netButton = Ui.Button(Ui.T("Start the helper"), StartNetHelper);
+        usageBody.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Internet use per app"), 13, weight: FontWeights.Bold), usageNote, netButton));
+        usage = Ui.List(("App", 200, "PlainCell"), ("Running", 100), ("Processor", 150), ("Graphics card", 150), ("Memory (average, peak)", 170),
+                        ("Disk read", 100), ("Disk written", 110), ("Internet sent", 110), ("Internet received", 130));
+        usage.MinHeight = 220;
+        usageBody.Children.Add(usage);
+        apps.SetBody(usageBody);
+
         var all = new StackPanel();
         all.Children.Add(card);
         // Arranging the overlay yourself: what it shows and in what order, and how it looks.
@@ -67,9 +104,11 @@ public sealed class BenchmarkPage : Page
         look.Margin = new Thickness(0, 16, 0, 0);
         all.Children.Add(look);
         all.Children.Add(log);
+        all.Children.Add(apps);
         Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
 
         ShowSessions();
+        ShowUsage();
         var watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         watch.Tick += (_, _) => ShowLive();
         watch.Start();
@@ -117,6 +156,9 @@ public sealed class BenchmarkPage : Page
     {
         if (!IsVisible)
             return;
+        // The record grows every few seconds; the report follows it now and then.
+        if (DateTime.Now - usageShown > TimeSpan.FromSeconds(30))
+            ShowUsage();
         var overlay = App.Current.Overlay;
         if (overlay.SessionsSaved != sessionsShown)
             ShowSessions();
@@ -162,6 +204,90 @@ public sealed class BenchmarkPage : Page
                 string.Join("  ·  ", new[] { session.CpuHottest is { } cpu ? $"CPU {cpu}°C" : null, session.GpuHottest is { } gpu ? $"GPU {gpu}°C" : null }.OfType<string>()),
             ],
         }).ToList();
+    }
+
+    // --- what each app used ---
+
+    /// <summary>The first and last day of the chosen period.</summary>
+    private (DateTime First, DateTime Last) Period() => ((period.SelectedItem as ComboBoxItem)?.Tag as string) switch
+    {
+        "Yesterday" => (DateTime.Today.AddDays(-1), DateTime.Today.AddDays(-1)),
+        "Last 7 days" => (DateTime.Today.AddDays(-6), DateTime.Today),
+        "Last 30 days" => (DateTime.Today.AddDays(-29), DateTime.Today),
+        "Last 90 days" => (DateTime.Today.AddDays(-89), DateTime.Today),
+        _ => (DateTime.Today, DateTime.Today),
+    };
+
+    private void ShowUsage()
+    {
+        usageShown = DateTime.Now;
+        var cores = Environment.ProcessorCount;
+        var (first, last) = Period();
+        usageRows = AppUsageLog.Report(first, last);
+        // Internet use is only known for the time the helper counted it; the rest shows as unknown, not as nothing.
+        string Traffic(AppUse use, long bytes) => use.NetSeconds > 0 ? Ui.FormatSize(bytes) : "—";
+        usage.ItemsSource = usageRows.Select(row => new Row
+        {
+            Name = row.App,
+            Cells =
+            [
+                Courier.Time(TimeSpan.FromSeconds(row.Use.Seconds)),
+                $"{row.Use.CpuPercent(cores):0.#}%  ·  {Courier.Time(TimeSpan.FromSeconds(row.Use.CpuSeconds))}",
+                row.Use.GpuSeconds > 0 ? $"{row.Use.GpuPercent:0.#}%  ·  {Courier.Time(TimeSpan.FromSeconds(row.Use.GpuSeconds))}" : "—",
+                $"{Ui.FormatSize(row.Use.AverageMemory)}, {Ui.FormatSize(row.Use.MemoryPeak)}",
+                Ui.FormatSize(row.Use.Read), Ui.FormatSize(row.Use.Written), Traffic(row.Use, row.Use.Sent), Traffic(row.Use, row.Use.Received),
+            ],
+        }).ToList();
+        var helper = AdminHelper.Running;
+        usageNote.Text = Ui.T(!Main.Config.Usage.Record ? "Recording is off."
+                              : helper ? "The helper is counting each app's internet traffic. It stops when PC Butler closes."
+                              : "Windows only tells an administrator which app sends what, so internet use is counted while the helper runs. Without it, those columns show —.");
+        netButton.Visibility = helper || !Main.Config.Usage.Record ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void StartNetHelper()
+    {
+        netButton.IsEnabled = false;
+        if (await Admin.Ensure("Benchmark", Ui.T("Windows only tells an administrator how much each app sends and receives over the internet, so counting it "
+                                                 + "needs administrator rights. Only the amounts are counted, never what is sent.")))
+            await Task.Run(() => AdminHelper.Send("net", ["on"], 10));
+        netButton.IsEnabled = true;
+        ShowUsage();
+    }
+
+    private void ExportUsage()
+    {
+        if (usageRows.Count == 0)
+        {
+            Ui.Info("Benchmark", Ui.T("Nothing has been recorded for this period yet."));
+            return;
+        }
+        var (first, last) = Period();
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = Ui.T("Save the report"), Filter = Ui.T("Spreadsheet (CSV)") + "|*.csv",
+            FileName = first == last ? $"App usage {first:yyyy-MM-dd}.csv" : $"App usage {first:yyyy-MM-dd} to {last:yyyy-MM-dd}.csv",
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+            return;
+        try
+        {
+            // With a byte-order mark, so Excel reads app names in any language correctly.
+            System.IO.File.WriteAllText(dialog.FileName, AppUsageLog.Csv(usageRows, Environment.ProcessorCount), new System.Text.UTF8Encoding(true));
+            Shell.Reveal(dialog.FileName);
+        }
+        catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException)
+        {
+            Ui.Warn("Benchmark", Ui.T("The report could not be saved: {0}", error.Message));
+        }
+    }
+
+    private void ClearUsage()
+    {
+        if (AppUsageLog.FirstDay is null || !Ui.Ask("Clear", Ui.T("Forget everything recorded about what each app used?")))
+            return;
+        AppUsageLog.Clear();
+        ShowUsage();
     }
 
     private void ClearSessions()

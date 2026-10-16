@@ -10,7 +10,7 @@ namespace PCButler;
 /// <summary>
 /// The right-click menu of a clipboard item, the same in the list the shortcut opens and on
 /// the Clipboard page: paste or copy it, search Google for it (a picture too, through Google
-/// Lens), open its link or its file's folder, tag it, pin it, delete it.
+/// Lens), open its link or its file's folder, lock it with a password, tag it, pin it, delete it.
 /// </summary>
 public static class ClipboardMenu
 {
@@ -26,10 +26,21 @@ public static class ClipboardMenu
             menu.Items.Add(Bold(Item("Paste", "\uE77F", paste)));
         menu.Items.Add(Item("Copy", "\uE8C8", () =>
         {
-            if (!App.Current.Clips.Copy(entry))
+            if (Content(entry, owner, hold) is { } content && !App.Current.Clips.Copy(entry, content))
                 Ui.Warn("Clipboard", Ui.T("The clipboard is busy. Try again in a moment."));
         }));
         menu.Items.Add(new Separator());
+        if (entry.Hidden)
+        {
+            // Locked: nothing of it shows, so nothing of it can be searched or opened; only the password opens it.
+            menu.Items.Add(Item("Unlock (until you lock it again)…", "\uE785", () => Unlock(entry, owner, hold)));
+            menu.Items.Add(Item("Remove the password…", "\uE8D7", () => RemoveLock(entry, owner, hold)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(Tags(entry, owner, newTag));
+            menu.Items.Add(Item(entry.Pinned ? "Unpin" : "Pin", entry.Pinned ? "\uE77A" : "\uE718", () => ClipboardHistory.SetPinned(entry, !entry.Pinned)));
+            menu.Items.Add(Item("Delete", "\uE74D", () => Delete([entry], hold)));
+            return menu;
+        }
 
         var picture = entry.Kind == "image" || entry.Files.Count > 0 && WebSearch.IsPicture(entry.Files[0]);
         menu.Items.Add(Item(picture ? "Search Google for this picture" : "Search with Google", picture ? "\uE8B3" : "\uE721", () => SearchGoogle(entry)));
@@ -39,11 +50,66 @@ public static class ClipboardMenu
             menu.Items.Add(Item("Show in File Explorer", "\uE838", () => Shell.Reveal(entry.Files[0])));
         menu.Items.Add(new Separator());
 
+        menu.Items.Add(entry.Open ? Item("Lock again", "\uE72E", () => ClipboardHistory.Relock(entry))
+                                  : Item("Lock with a password…", "\uE72E", () => Lock(entry, owner, hold)));
         menu.Items.Add(Tags(entry, owner, newTag));
         menu.Items.Add(Item(entry.Pinned ? "Unpin" : "Pin", entry.Pinned ? "\uE77A" : "\uE718", () => ClipboardHistory.SetPinned(entry, !entry.Pinned)));
         menu.Items.Add(Item("Delete", "\uE74D", () => Delete([entry], hold)));
         return menu;
     }
+
+    // --- items with a password ---
+
+    /// <summary>A password dialog, while the list the shortcut opens (when that is where it came from) stays open behind it.</summary>
+    private static bool AskPassword(Window? owner, Action<bool>? hold, string intro, string[] labels, string accept, Func<string[], string?> check)
+    {
+        hold?.Invoke(true);
+        try
+        {
+            return PasswordsDialog.Show(owner!, Ui.T("Locked item"), intro, labels, accept, check);
+        }
+        finally
+        {
+            hold?.Invoke(false);
+        }
+    }
+
+    /// <summary>
+    /// What to paste or copy for an item: the item itself, or (locked) its content for this
+    /// once, after its password. Null when the password was not given.
+    /// </summary>
+    public static ClipEntry? Content(ClipEntry entry, Window? owner, Action<bool>? hold = null)
+    {
+        if (!entry.Hidden)
+            return entry;
+        ClipEntry? opened = null;
+        AskPassword(owner, hold, Ui.T("This item is locked. Type its password to use it this once. To use it again and again without the password, unlock it."),
+                    ["Password"], Ui.T("OK"), typed => (opened = ClipboardHistory.Peek(entry, typed[0])) is null ? Ui.T("That password is not right.") : null);
+        return opened;
+    }
+
+    private static void Lock(ClipEntry entry, Window owner, Action<bool>? hold)
+    {
+        var done = false;
+        AskPassword(owner, hold, Ui.T("Its content is hidden in the list and kept encrypted. Pasting it asks for this password. A forgotten password can't be recovered."),
+                    ["Password", "Type it again"], Ui.T("Lock"), typed =>
+                    {
+                        if (typed[0].Length < 4)
+                            return Ui.T("Use at least 4 characters.");
+                        if (typed[0] != typed[1])
+                            return Ui.T("The two passwords are not the same.");
+                        done = ClipboardHistory.Lock(entry, typed[0]);
+                        return done ? null : Ui.T("This item could not be locked: its picture is no longer there.");
+                    });
+    }
+
+    private static void Unlock(ClipEntry entry, Window owner, Action<bool>? hold) =>
+        AskPassword(owner, hold, Ui.T("Unlocked, it can be pasted again and again without the password, until you lock it again (or PC Butler closes)."),
+                    ["Password"], Ui.T("Unlock"), typed => ClipboardHistory.Unlock(entry, typed[0]) ? null : Ui.T("That password is not right."));
+
+    private static void RemoveLock(ClipEntry entry, Window owner, Action<bool>? hold) =>
+        AskPassword(owner, hold, Ui.T("The item becomes an ordinary one again, shown in the list and pasted without a password."),
+                    ["Password"], Ui.T("Remove the password"), typed => ClipboardHistory.RemoveLock(entry, typed[0]) ? null : Ui.T("That password is not right."));
 
     /// <summary>A menu line with its icon.</summary>
     private static MenuItem Item(string label, string glyph, Action action)

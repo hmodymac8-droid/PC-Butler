@@ -11,12 +11,13 @@ public sealed record ProcessPlan(string Path, bool IsFolder, List<PlannedMove> M
     public string Destination => !IsFolder && Moves.Count == 1 ? Moves[0].Folder : "";
 }
 
-/// <summary>One item of the "PC Butler" submenu: what it does, its English label and its icon.</summary>
-public sealed record MenuAction(string Key, string Label, string Icon, bool ForFolders);
+/// <summary>One item of the "PC Butler" submenu: what it does, its English label and its icon. Divided: a line above it starts a group of its own.</summary>
+public sealed record MenuAction(string Key, string Label, string Icon, bool ForFolders, bool Divided = false);
 
 /// <summary>
-/// The "PC Butler" submenu in File Explorer's right-click menu, for files and folders: sort,
-/// lock in the Vault (files only), share with Courier, shred. Each item runs the program with
+/// The "PC Butler" submenu in File Explorer's right-click menu, for files and folders, in
+/// three groups with a line between them: sort and share with Courier; lock in the Vault
+/// (files only); shred, last and on its own, because it cannot be undone. Each item runs the program with
 /// "--act &lt;key&gt; &lt;path&gt;"; when several items are selected File Explorer starts it once per item,
 /// and the copies hand their paths to the first one (see App.RunMenuAction). It is written under
 /// HKEY_CURRENT_USER, so it needs no administrator rights and only affects this user. On
@@ -40,10 +41,13 @@ public static class ExplorerMenu
     public static readonly MenuAction[] Actions =
     [
         new("sort", "Sort into its category folder", "imageres.dll,-116", ForFolders: true),
-        new("vault", "Lock in the Vault", "imageres.dll,-59", ForFolders: false),
         new("courier", "Share with Courier", "imageres.dll,-171", ForFolders: true),
-        new("shred", "Shred (deep delete, cannot be undone)", "imageres.dll,-5305", ForFolders: true),
+        new("vault", "Lock in the Vault", "imageres.dll,-59", ForFolders: false, Divided: true),
+        new("shred", "Shred (deep delete, cannot be undone)", "imageres.dll,-5305", ForFolders: true, Divided: true),
     ];
+
+    /// <summary>File Explorer's flag for a line above a submenu item (ECF_SEPARATORBEFORE).</summary>
+    public const int SeparatorBefore = 0x20;
 
     public static string CommandFor(string program, string action) => $"\"{program}\" --act {action} \"%1\"";
 
@@ -90,6 +94,8 @@ public static class ExplorerMenu
                 item.SetValue("Icon", action.Icon);
                 // Offered for any number of selected items (by default File Explorer hides it above 15).
                 item.SetValue("MultiSelectModel", "Player");
+                if (action.Divided)
+                    item.SetValue("CommandFlags", SeparatorBefore, RegistryValueKind.DWord);
                 using var command = item.CreateSubKey("command");
                 command.SetValue("", CommandFor(program, action.Key));
             }

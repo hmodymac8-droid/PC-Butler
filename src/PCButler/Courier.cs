@@ -44,8 +44,27 @@ public static class Courier
     /// <summary>Courier started or stopped. Raised on the window's thread.</summary>
     public static event Action? StateChanged;
 
-    /// <summary>One PC files can go to: the host, a client of the host, or (through the host) another client.</summary>
-    public sealed record Target(string Name, object Tag, bool Ready);
+    /// <summary>One PC files can go to, and whether it is connected (and has let this PC in).</summary>
+    public sealed record Target(string Name, PortalPeer Tag, bool Ready);
+
+    /// <summary>This PC's own ID, whether Courier runs or not: it comes from this PC's certificate, made once and kept.</summary>
+    public static string OwnNumber => ownNumber ??= Node?.Number ?? Portal.NumberOf(Portal.Fingerprint(Portal.Certificate()));
+    private static string? ownNumber;
+
+    /// <summary>Where a PC on the list stands, in words.</summary>
+    public static string Describe(PortalState state, string name) => Ui.T(state switch
+    {
+        PortalState.Connected => "Connected",
+        PortalState.Connecting => "Connecting…",
+        PortalState.Asking => "Asking {0} to let this PC in…",
+        PortalState.WaitingForThem => "Waiting for {0} to allow this PC",
+        PortalState.NeedsPassword => "{0} asks for a password.",
+        PortalState.WrongPassword => "That password was not right. Type it again.",
+        PortalState.NoDirectory => "This network blocks the public directory that IDs are looked up in.",
+        PortalState.NotFound => "Not found: Courier is not running on {0}, or the ID is wrong. It tries again by itself.",
+        PortalState.NoPath => "{0} was found, but the two networks would not let a link through. It tries again by itself.",
+        _ => "Not connected",
+    }, name);
 
     /// <summary>A change to the saved settings, made through the window when it is open so it sees the change.</summary>
     public static void UpdateConfig(Action<Config> change)
@@ -65,12 +84,10 @@ public static class Courier
     {
         if (Node is not null || starting)
             return null;
-        var settings = ConfigStore.Load().Portal;
-        if (settings.Role is not (PortalSettings.Host or PortalSettings.Client))
-            return Ui.T("Choose first whether this PC shares (the host) or connects to another PC (a client).");
-        if (settings.Role == PortalSettings.Client && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 0)
-            return Ui.T("Type the ID of the PC to connect to first: the nine digits it shows in Courier.");
         starting = true;
+        // Switched on once, it starts with PC Butler from then on (unless that setting is off).
+        UpdateConfig(config => config.Portal.Used = true);
+        var settings = ConfigStore.Load().Portal;
         try
         {
             Portal.ClearParts(Portal.ReceiveFolder(settings));
@@ -78,8 +95,10 @@ public static class Courier
             // The test hook keeps Courier on this PC only, so trying the page never opens a port to the internet.
             var local = Environment.GetEnvironmentVariable("PCBUTLER_PORTAL_LOOPBACK") == "1";
             var node = await PortalNode.Start(settings, () => Application.Current.Dispatcher.BeginInvoke(() =>
-                UpdateConfig(config => { config.Portal.Devices = settings.Devices.ToList(); config.Portal.HostNumber = settings.HostNumber; config.Portal.Saved = settings.Saved.ToList(); })), local: local);
+                UpdateConfig(config => (config.Portal.Devices, config.Portal.Saved, config.Portal.Role, config.Portal.HostNumber)
+                                           = (settings.Devices.ToList(), settings.Saved.ToList(), "", ""))), local: local);
             node.Attention += App.Current.PortalNeedsAttention;
+            node.Received += App.Current.PortalReceived;
             Portal.Current = node;
             return null;
         }
@@ -102,30 +121,17 @@ public static class Courier
         StateChanged?.Invoke();
     }
 
-    /// <summary>Where files can go from this PC right now, and whether each is connected.</summary>
+    /// <summary>The paired PCs, and whether each can take files right now (connected, and it has let this PC in).</summary>
     public static List<Target> Targets(PortalNode? node)
     {
         if (node is null)
             return [];
-        if (node.IsHost)
-            return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, peer.Online)).ToList();
-        var host = node.HostPeer;
-        var list = new List<Target>();
-        // Paired on this side is not enough: the host has to have let this PC in too.
-        var allowed = host is { Online: true, Trusted: true } && !node.WaitingForHost;
-        if (host is not null)
-            list.Add(new Target(host.Name, host, allowed));
-        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && allowed)));
-        return list;
+        var ready = node.Ready;
+        return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, ready.Contains(peer))).ToList();
     }
 
-    /// <summary>Send to a target from Targets. Null when nothing could be read or it is no longer there.</summary>
-    public static PortalTransfer? Send(PortalNode node, object target, IReadOnlyList<string> paths) => target switch
-    {
-        PortalPeer peer => node.Send(peer, paths),
-        PortalClient client when node.HostPeer is { } host => node.Send(host, paths, client),
-        _ => null,
-    };
+    /// <summary>Send to a target from Targets. Null when nothing could be read.</summary>
+    public static PortalTransfer? Send(PortalNode node, PortalPeer target, IReadOnlyList<string> paths) => node.Send(target, paths);
 
     /// <summary>True while there is something to show in the widget: a PC connected, a transfer, or a question.</summary>
     public static bool Busy(PortalNode node) =>

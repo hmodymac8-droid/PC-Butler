@@ -19,7 +19,8 @@ namespace PCButler.Android;
 public sealed class CourierService : Service
 {
     private const int NotificationId = 7001;
-    private const string Channel = "courier";
+    private const string Channel = "courier", ReceivedChannel = "courier-received";
+    private static int receivedId = 7100;
     private const string PauseAction = "pcbutler.courier.pause", CancelAction = "pcbutler.courier.cancel", DisconnectAction = "pcbutler.courier.disconnect";
     private Timer? timer;
     private string shown = "";
@@ -36,6 +37,32 @@ public sealed class CourierService : Service
     }
 
     public static void End() => Context.StopService(new Intent(Context, typeof(CourierService)));
+
+    /// <summary>
+    /// Files from a PC arrived: a notification of its own says so, one that makes a sound and
+    /// stays until it is swiped away, so files that came while nobody watched are not missed.
+    /// Tapping it opens the app.
+    /// </summary>
+    public static void Received(PortalTransfer transfer)
+    {
+        try
+        {
+            var manager = (NotificationManager)Context.GetSystemService(NotificationService)!;
+            if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+                manager.CreateNotificationChannel(new NotificationChannel(ReceivedChannel, Tr.T("Files received"), NotificationImportance.Default));
+            var open = PendingIntent.GetActivity(Context, 0, new Intent(Context, typeof(MainActivity)).AddFlags(ActivityFlags.SingleTop | ActivityFlags.NewTask),
+                                                 PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
+            var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(Context, ReceivedChannel) : new Notification.Builder(Context);
+            builder.SetContentTitle(Tr.T(transfer.Files == 1 ? "Received {0}" : "Received {0} ({1} files)", transfer.Name, transfer.Files))
+                   .SetContentText(Tr.T("From {0}", transfer.Peer) + "  ·  " + CourierPage.Size(transfer.Size) + "  ·  Download/PC Butler Courier")
+                   .SetSmallIcon(Resource.Drawable.notification_icon).SetContentIntent(open).SetAutoCancel(true);
+            manager.Notify(Interlocked.Increment(ref receivedId), builder.Build());
+        }
+        catch (Java.Lang.Exception error)
+        {
+            Log.Warning($"The notification for a received file could not be shown: {error.Message}");
+        }
+    }
 
     public override IBinder? OnBind(Intent? intent) => null;
 
@@ -130,7 +157,7 @@ public sealed class CourierService : Service
             title = Tr.T("Courier");
             text = ready.Count switch
             {
-                0 => node?.IsHost == true ? Tr.T("Waiting for the other PCs to connect.") : Tr.T("Connecting…"),
+                0 => Tr.T("Reachable by its ID. No PC is connected yet."),
                 1 => Tr.T("Connected to {0}", ready[0].Name),
                 _ => Tr.T("{0} PCs connected", ready.Count),
             };
