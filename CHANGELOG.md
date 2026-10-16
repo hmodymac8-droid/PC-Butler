@@ -3,9 +3,15 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.22.0
+## 1.21.6
 
-- The tray icon's panel lists everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), each with a tick when it is on. Click one to switch it on or off; the same switch in the window follows.
+- PC Butler no longer writes to the disk every second. The helper's temperatures and frame counts reach the program through memory instead of the sensors.json and fps.json files, and settings are only written when they change.
+- The log (pcbutler.log) stays under a megabyte: the older part moves to pcbutler.old.log. Deleting files adds one line, not one per file, and Courier no longer notes every repeated knock and renewal.
+
+## 1.21.5
+
+- Clipboard: Win+V now opens PC Butler's clipboard history instead of Windows' own, and it is the default shortcut (if you kept the old Ctrl+Alt+V, it moves to Win+V). Any other shortcut can still be set on the Clipboard page or in Settings > Hotkeys.
+- Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
 
 ## 1.21.4
 
