@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 using System.Collections;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using PCButler.Core;
 using PCButler.Core.Search;
 
@@ -14,22 +16,59 @@ namespace PCButler;
 
 /// <summary>
 /// One line of the results, made only while it is on screen: it reads its name, folder, size and
-/// date from the index the moment the list draws it. Two lines are the same line when they show
-/// the same row of the same result, so selection survives scrolling.
+/// date from the index once, the first time the list draws it. Two lines are the same line when
+/// they show the same row of the same result, so selection survives scrolling.
+///
+/// Drawing never waits for the index: while it is being changed, saved or sorted, the line shows
+/// blank and fills in a moment later. Waiting there froze the window ("Not Responding").
 /// </summary>
-public sealed class SearchRow(SearchResult result, int position)
+public sealed class SearchRow(SearchResult result, int position) : INotifyPropertyChanged
 {
+    private sealed record Seen(string Name, string Folder, bool IsFolder, long Size, DateTime? Modified);
+
+    private static readonly HashSet<SearchRow> Waiting = new(ReferenceEqualityComparer.Instance);
+    private static DispatcherTimer? retry;
+    private Seen? seen;
+
     public SearchResult Result { get; } = result;
     public int Position { get; } = position;
     public int Row => Result.Rows[Position];
+    public event PropertyChangedEventHandler? PropertyChanged;
 
-    private T Read<T>(Func<SearchIndex, int, T> read)
+    /// <summary>What the list draws: read without waiting, or null for now.</summary>
+    private Seen? Shown
+    {
+        get
+        {
+            if (seen is null && !Load(wait: false))
+                Retry(this);
+            return seen;
+        }
+    }
+
+    /// <summary>What an action (open, copy, rename, delete) needs: waits for the index if it must.</summary>
+    private Seen Sure
+    {
+        get
+        {
+            if (seen is null)
+                Load(wait: true);
+            return seen!;
+        }
+    }
+
+    private bool Load(bool wait)
     {
         var index = Result.Index;
-        index.Gate.EnterReadLock();
+        if (wait)
+            index.Gate.EnterReadLock();
+        else if (!index.Gate.TryEnterReadLock(0))
+            return false;
         try
         {
-            return read(index, Row);
+            var row = Row;
+            seen = new Seen(index.Name(row), index.FolderOf(row), index.IsFolder(row), index.Size(row), index.Modified(row));
+            return true;
         }
         finally
         {
@@ -37,20 +76,48 @@ public sealed class SearchRow(SearchResult result, int position)
         }
     }
 
-    public string Name => Read((index, row) => index.Name(row));
-    public string Folder => Read((index, row) => index.FolderOf(row));
-    public string FullPath => Read((index, row) => index.FullPath(row));
-    public bool IsFolder => Read((index, row) => index.IsFolder(row));
-    public string Glyph => IsFolder ? "" : "";
-    public Brush GlyphBrush => Ui.Paint(IsFolder ? "Amber" : "Muted");
-    public string Size => Read((index, row) => index.Size(row)) is var bytes and >= 0 ? Ui.FormatSize(bytes) : "";
-    public string Modified => Read((index, row) => index.Modified(row))?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
+    /// <summary>Lines that could not be read are tried again a little later, and redrawn once read.</summary>
+    private static void Retry(SearchRow row)
+    {
+        Waiting.Add(row);
+        if (retry is null)
+        {
+            retry = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            retry.Tick += (_, _) =>
+            {
+                foreach (var waiting in Waiting.ToList())
+                {
+                    if (!waiting.Load(wait: false))
+                        break; // still busy; the others wait on the same lock
+                    Waiting.Remove(waiting);
+                    waiting.PropertyChanged?.Invoke(waiting, new PropertyChangedEventArgs(string.Empty));
+                }
+                if (Waiting.Count == 0)
+                    retry!.Stop();
+            };
+        }
+        retry.Start();
+    }
+
+    // Drawn in the list.
+    public string Title => Shown?.Name ?? "";
+    public string Place => Shown?.Folder ?? "";
+    public string Glyph => Shown is { } line ? line.IsFolder ? "" : "" : "";
+    public Brush GlyphBrush => Ui.Paint(Shown?.IsFolder == true ? "Amber" : "Muted");
+    public string Size => Shown is { Size: >= 0 } line ? Ui.FormatSize(line.Size) : "";
+    public string Modified => Shown?.Modified?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
     /// <summary>The list's row style asks every row whether to draw it faded.</summary>
     public bool Dim => false;
 
+    // Used by the actions.
+    public string Name => Sure.Name;
+    public string Folder => Sure.Folder;
+    public bool IsFolder => Sure.IsFolder;
+    public string FullPath => Sure.Folder.Length == 0 ? Sure.Name : SearchIndex.Join(Sure.Folder, Sure.Name);
+
     public override bool Equals(object? other) => other is SearchRow row && row.Result == Result && row.Position == Position;
     public override int GetHashCode() => HashCode.Combine(Result, Position);
-    public override string ToString() => Name;
+    public override string ToString() => Title;
 }
 
 /// <summary>
@@ -122,7 +189,7 @@ public sealed class SearchResults : ListView
         ScrollViewer.SetIsDeferredScrollingEnabled(this, false);
         View = view;
         view.Columns.Add(new GridViewColumn { Header = Ui.T("Name"), Width = compact ? 260 : 320, CellTemplate = NameCell() });
-        view.Columns.Add(new GridViewColumn { Header = Ui.T("Path"), Width = compact ? 330 : 440, CellTemplate = TextCell(nameof(SearchRow.Folder), muted: true) });
+        view.Columns.Add(new GridViewColumn { Header = Ui.T("Path"), Width = compact ? 330 : 440, CellTemplate = TextCell(nameof(SearchRow.Place), muted: true) });
         if (!compact)
         {
             view.Columns.Add(new GridViewColumn { Header = Ui.T("Size"), Width = 100, CellTemplate = TextCell(nameof(SearchRow.Size), right: true) });
@@ -144,7 +211,7 @@ public sealed class SearchResults : ListView
         SelectionChanged += (_, _) => ChoiceChanged?.Invoke();
         ContextMenuOpening += (_, e) =>
         {
-            if (Chosen().Count == 0)
+            if (SelectedItems.Count == 0)
             {
                 e.Handled = true;
                 return;
@@ -168,7 +235,7 @@ public sealed class SearchResults : ListView
         glyph.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         panel.AppendChild(glyph);
         var name = new FrameworkElementFactory(typeof(TextBlock));
-        name.SetBinding(TextBlock.TextProperty, new Binding(nameof(SearchRow.Name)));
+        name.SetBinding(TextBlock.TextProperty, new Binding(nameof(SearchRow.Title)));
         name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
         name.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
         panel.AppendChild(name);
@@ -218,7 +285,7 @@ public sealed class SearchResults : ListView
     {
         var scroller = FindScroller(this);
         var offset = scroller?.VerticalOffset ?? 0;
-        var chosen = keepPlace ? Chosen().Select(row => row.Row).ToHashSet() : [];
+        var chosen = keepPlace && SelectedItems.Count < 1000 ? SelectedItems.OfType<SearchRow>().Select(row => row.Row).ToHashSet() : [];
         ItemsSource = new ResultList(result);
         if (!keepPlace)
         {
@@ -317,7 +384,7 @@ public sealed class SearchResults : ListView
         menu.Items.Add(Ui.Item("Copy name", CopyNames));
         menu.Items.Add(new Separator());
         var rename = Ui.Item("Rename…", RenameChosen);
-        rename.IsEnabled = Chosen().Count == 1;
+        rename.IsEnabled = SelectedItems.Count == 1;
         menu.Items.Add(rename);
         menu.Items.Add(Ui.Item("Delete (to Recycle Bin)", DeleteChosen));
         return menu;
