@@ -294,7 +294,12 @@ public sealed partial class PortalNode
                             await Pair(host);
                         Raise();
                     }
-                    if (host is { Online: true, Trusted: true } && Environment.TickCount64 - lastAsked > 10_000)
+                    else if (host is { Online: true, Trusted: false } && HostPassword.Length > 0)
+                    {
+                        await Pair(host); // the user typed the password the host asked for
+                        Raise();
+                    }
+                    if (host is { Online: true, Trusted: true } && Environment.TickCount64 - lastAsked > (WaitingForHost ? 3000 : 10_000))
                     {
                         lastAsked = Environment.TickCount64;
                         await AskForClients(host);
@@ -336,11 +341,16 @@ public sealed partial class PortalNode
                 .Select(item => new PortalClient(item.GetProperty("id").GetString() ?? "", Portal.CleanLabel(item.GetProperty("name").GetString() ?? ""),
                                                  item.GetProperty("online").GetBoolean()))
                 .Where(item => IdPattern().IsMatch(item.Id) && item.Id != Id).ToList();
+            HostAllowed();
             if (!fresh.SequenceEqual(otherClients))
             {
                 otherClients = fresh;
                 Raise();
             }
+        }
+        catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden)
+        {
+            HostRefused();
         }
         catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or JsonException
                                           or KeyNotFoundException or InvalidOperationException)

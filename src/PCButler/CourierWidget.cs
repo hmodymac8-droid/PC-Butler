@@ -226,7 +226,8 @@ public sealed class CourierWidget : Window
     {
         var pairings = node.Pairings.Where(pairing => pairing.Code.Length > 0).ToList();
         var requests = node.Requests;
-        var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id));
+        var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id))
+                  + "#" + node.PasswordWanted;
         if (key == asksShown)
             return;
         asksShown = key;
@@ -238,10 +239,17 @@ public sealed class CourierWidget : Window
                 Text = pairing.Code, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 24, FontWeight = FontWeights.SemiBold,
                 Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight, Margin = new Thickness(0, 4, 0, 4),
             };
-            asks.Children.Add(Ask(Ui.T(pairing.Incoming ? "{0} wants to join" : "Pairing with {0}", pairing.PeerName),
-                                  Ui.T("Press “They match” only if the other PC shows this same code."), code,
-                                  Ui.Button(Ui.T("They match"), () => { node.Confirm(pairing); Refresh(); }, accent: true),
+            asks.Children.Add(Ask(Ui.T("{0} wants to connect to this PC", pairing.PeerName),
+                                  Ui.T("Allow it only if you know that PC. The other PC shows this same code, if you want to check."), code,
+                                  Ui.Button(Ui.T("Allow"), () => { node.Confirm(pairing); Refresh(); }, accent: true),
                                   Ui.Button(Ui.T("Refuse"), () => { node.Refuse(pairing); Refresh(); })));
+        }
+        if (!node.IsHost && node.PasswordWanted != PortalPasswordAsk.None)
+        {
+            // Typed on the Courier page, where it is asked for.
+            asks.Children.Add(Ask(Ui.T("{0} asks for a password", node.HostPeer?.Name ?? Portal.ShowNumber(node.HostNumber)),
+                                  Ui.T(node.PasswordWanted == PortalPasswordAsk.Wrong ? "That password was not right. Type it again." : "Type the password set on that PC for new PCs."), null,
+                                  Ui.Button(Ui.T("Type the password…"), () => App.Current.ShowPage("portal"), accent: true)));
         }
         foreach (var request in requests)
         {
