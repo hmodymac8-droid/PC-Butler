@@ -491,6 +491,7 @@ public partial class App : Application
     // --- Courier: started with the program, and its widget while PCs are connected ---
 
     private CourierWidget? courierWidget;
+    private CourierNotices? courierNotices;
     private bool widgetDismissed, widgetWasBusy;
     private readonly DispatcherTimer courierWatch = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -533,6 +534,9 @@ public partial class App : Application
         {
             courierWidget?.Hide();
         }
+        // A notification for each transfer while the widget, which shows the same, is not on screen.
+        courierNotices ??= new CourierNotices();
+        courierNotices.Update(node, allowed: courierWidget is not { IsVisible: true });
     }
 
     /// <summary>The widget was switched on or off on the Courier page.</summary>
