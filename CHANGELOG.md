@@ -10,7 +10,21 @@ Each version is a `## heading` followed by `- ` lines.
 - Win + F opens a search box over whatever program is in front: Enter opens, Ctrl+Enter opens the folder. The shortcut can be changed on the Hotkeys tab.
 - Results: sort by name, path, size or date modified; open, open the folder, copy the path or name, rename, or move files to the Recycle Bin (History can bring them back).
 - Settings > Search: which drives and folders are indexed, what is left out, and how much memory the index uses. The index is saved, so search is ready at once when PC Butler starts, and changes are followed while it runs.
+- Courier is one page and one way of working now: no more choosing between sharing and connecting. Every PC and phone has its own ID, always the same (it comes from the device's own key, made once and kept), and can be reached by it while Courier runs. Type another PC's ID to connect to it.
+- The list of your PCs is always there, also while Courier is off: every PC you connected to, and every PC that connected to you. Connect, disconnect, rename or remove each one there. A connected PC stays connected, after a restart too, until you disconnect it; you can be connected to several at once, and files go straight between two PCs.
+- Disconnect ends the connection on both PCs at once, and neither connects back by itself. Remove kicks a PC out: it is disconnected and no longer trusted, and has to ask, and be allowed, again. A PC or phone that stops Courier shows as disconnected on the others at once, not a minute later.
+- Files that arrive from another PC show a Windows notification, which stays in the notification centre so nothing that came while you were away is missed; a click on it shows the files. On the phone they get a notification of their own.
+- Courier: every file sent or received shows a notification in the corner of the screen with its progress bar, the time it has taken and the time left, and Pause (then Resume) and Cancel. It shows while the Courier widget is hidden or switched off, and says how the transfer ended for a few seconds.
+- PC Butler on the phone: Courier's notification shows the file on its way with its progress bar, time taken and time left, and has Pause or Resume, Cancel and Disconnect buttons. The Courier tab has a Pause button and the times under each transfer too. A pause on one side holds the transfer on both.
+- Each PC chooses what happens when a new PC connects to it: it asks you to allow it, or it lets in the PCs that give the password you set. The phone asks too, with Allow and Refuse.
+- Sorter: a category can delete its files instead of moving them (Settings, edit the category, "Delete these files instead of moving them"). They go to the Recycle Bin once they are old enough, the list says so before anything happens, and History can bring them back.
+- Clipboard: lock an item with a password of its own (right-click it). A locked item shows nothing of what it holds and is kept encrypted; pasting it asks for the password. Unlock it to paste it again and again without the password, and lock it again when you are done.
+- Benchmark: PC Butler records what each app uses of the processor, the graphics card, the memory and the disk, and its internet use while the helper runs, per day for 90 days. The report shows today, yesterday, or the last 7, 30 or 90 days, and can be saved as a spreadsheet.
+- Programs: AndroidDC installs, and updates, with Install: PC Butler downloads it from its own GitHub repository and sets it up, without opening its page.
+- Programs, Updates: an update is matched to the program of that very name, so its menu's Run, Open file location and Uninstall no longer pick another program whose name starts the same.
+- File Explorer's PC Butler menu comes in groups with a line between them: sorting and sharing, then the Vault, then Shred on its own.
 - The tray icon's panel has a tile for everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), lit when it is on. A click switches it on or off right there instead of opening the program, and the same switch in the window follows.
+- Install this version on every PC and phone that use Courier together.
 
 ## 1.21.6
 

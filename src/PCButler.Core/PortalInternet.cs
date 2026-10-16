@@ -10,7 +10,7 @@ using System.Text.Json;
 
 namespace PCButler.Core;
 
-/// <summary>Why connecting to the host by its ID did not work.</summary>
+/// <summary>Why connecting to a PC by its ID did not work.</summary>
 public enum PortalConnectProblem
 {
     None,
@@ -18,31 +18,61 @@ public enum PortalConnectProblem
     BadNumber,
     /// <summary>The public directory could not be reached from this network.</summary>
     NoDirectory,
-    /// <summary>Nobody is announced under that ID: wrong number, or the host is not running Courier right now.</summary>
+    /// <summary>Nobody is announced under that ID: wrong number, or that PC is not running Courier right now.</summary>
     NotFound,
-    /// <summary>The host was found, but the two networks would not let a direct link through.</summary>
+    /// <summary>The PC was found, but the two networks would not let a direct link through.</summary>
+    NoPath,
+}
+
+/// <summary>Where a PC on the list stands, as this PC sees it.</summary>
+public enum PortalState
+{
+    /// <summary>Not connected, and not being looked for (never connected, or Disconnect was pressed).</summary>
+    NotConnected,
+    Connecting,
+    Connected,
+    /// <summary>Found; asking it to let this PC in.</summary>
+    Asking,
+    /// <summary>Paired on this side; that PC's user has not allowed this one yet.</summary>
+    WaitingForThem,
+    NeedsPassword,
+    WrongPassword,
+    NoDirectory,
+    NotFound,
     NoPath,
 }
 
 /// <summary>
 /// How Courier's PCs reach each other across the internet. Each PC has an ID number made
-/// from its certificate. The host announces itself under its ID in the BitTorrent
-/// network's public directory, over IPv4 and IPv6, and asks its router to forward a port
-/// to it (UPnP or NAT-PMP) so clients can get straight through. A client looks the ID up,
+/// from its certificate, and announces itself under it in the BitTorrent network's public
+/// directory, over IPv4 and IPv6, and asks its router to forward a port to it (UPnP or
+/// NAT-PMP) so others can get straight through. To connect, a PC looks the other's ID up,
 /// both send to each other until a path through their routers opens (needed only when the
 /// router would not forward a port), and the same encrypted connection then runs over it.
-/// The client keeps that path open, and finds the host again whenever it closes.
+/// The PCs marked "stay" are kept connected: found again whenever the path closes.
 ///
 /// The ID is only a way to find a PC. Who it really is, is still settled by its
 /// certificate and the code compared when pairing.
 /// </summary>
 public sealed partial class PortalNode
 {
+    /// <summary>Connecting to one PC on the list: how far it got, and what the user typed for it.</summary>
+    private sealed class Attempt
+    {
+        public bool Busy, Connecting, Waiting;
+        public PortalConnectProblem Problem;
+        public PortalPasswordAsk PasswordAsk;
+        /// <summary>The password the user typed for that PC, kept in memory only until the next pairing gives it.</summary>
+        public string Password = "";
+        public long NextTry, LastAsked;
+        public CancellationTokenSource Cancel = new();
+    }
+
     private PortalLink? link4, link6;
     private PortalDht? dht4, dht6;
     private PortalMapping? mapping;
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
-    private List<PortalClient> otherClients = [];
+    private readonly Dictionary<string, Attempt> attempts = [];
 
     /// <summary>This PC's ID: nine digits, like 418 205 937.</summary>
     public string Number => Portal.NumberOf(Id);
@@ -54,28 +84,12 @@ public sealed partial class PortalNode
         mapping is { External: { } outside } ? new IPEndPoint(outside, mapping.ExternalPort) : dht4?.PublicAddress;
     /// <summary>This PC's IPv6 address as the internet sees it; null when this connection has no IPv6.</summary>
     public IPEndPoint? PublicAddress6 => dht6?.PublicAddress;
-    /// <summary>The port the router forwards to this PC (host only); null when it would not, or was not asked.</summary>
+    /// <summary>The port the router forwards to this PC; null when it would not, or was not asked.</summary>
     public PortalMapping? Mapping => mapping;
     /// <summary>True once the router has been asked (whatever it said).</summary>
     public bool MappingTried { get; private set; }
     /// <summary>True when this network gives every connection a new address, which usually defeats direct links.</summary>
     public bool AddressKeepsChanging => dht4?.AddressKeepsChanging ?? false;
-    /// <summary>A client: why the host could not be reached the last time it was tried; None while connected or not tried yet.</summary>
-    public PortalConnectProblem HostProblem { get; private set; }
-    /// <summary>A client: true while it is looking for the host.</summary>
-    public bool Connecting { get; private set; }
-    /// <summary>A client: the host's other clients, which files can be sent to through the host.</summary>
-    public IReadOnlyList<PortalClient> OtherClients => otherClients;
-    /// <summary>A client: its host, once paired or found.</summary>
-    public PortalPeer? HostPeer
-    {
-        get
-        {
-            lock (gate)
-                return peers.Values.FirstOrDefault(peer => peer.Number == settings.HostNumber && peer.Trusted)
-                       ?? peers.Values.FirstOrDefault(peer => peer.Number == settings.HostNumber);
-        }
-    }
 
     private PortalLink? LinkFor(IPEndPoint endpoint) => endpoint.AddressFamily == AddressFamily.InterNetworkV6 ? link6 : link4;
 
@@ -87,12 +101,64 @@ public sealed partial class PortalNode
             yield return (link6, dht6);
     }
 
+    /// <summary>The PC with that ID as this one knows it right now (the trusted one first), or null.</summary>
+    public PortalPeer? PeerOf(string number)
+    {
+        number = Portal.NormalizeNumber(number);
+        lock (gate)
+            return peers.Values.FirstOrDefault(peer => peer.Number == number && peer.Trusted) ?? peers.Values.FirstOrDefault(peer => peer.Number == number);
+    }
+
+    private Attempt AttemptFor(string number)
+    {
+        lock (gate)
+        {
+            if (!attempts.TryGetValue(number, out var attempt))
+                attempts[number] = attempt = new Attempt();
+            return attempt;
+        }
+    }
+
+    /// <summary>Where a PC on the list stands.</summary>
+    public PortalState StateOf(string number)
+    {
+        number = Portal.NormalizeNumber(number);
+        var peer = PeerOf(number);
+        Attempt? attempt;
+        bool stay;
+        lock (gate)
+        {
+            attempts.TryGetValue(number, out attempt);
+            stay = PortalSavedList.Find(settings, number) is { Stay: true };
+        }
+        if (peer is { Online: true, Trusted: true })
+            return attempt is { Waiting: true } ? PortalState.WaitingForThem : PortalState.Connected;
+        if (attempt?.PasswordAsk is PortalPasswordAsk.Needed)
+            return PortalState.NeedsPassword;
+        if (attempt?.PasswordAsk is PortalPasswordAsk.Wrong)
+            return PortalState.WrongPassword;
+        if (peer is { Online: true })
+            return PortalState.Asking;
+        if (!stay)
+            return PortalState.NotConnected;
+        return attempt is null || attempt.Connecting ? PortalState.Connecting : attempt.Problem switch
+        {
+            PortalConnectProblem.NoDirectory => PortalState.NoDirectory,
+            PortalConnectProblem.NotFound => PortalState.NotFound,
+            PortalConnectProblem.NoPath => PortalState.NoPath,
+            _ => PortalState.Connecting,
+        };
+    }
+
+    /// <summary>The PCs files can go to right now: paired, connected, and (when this PC asked to connect) let in by the other side.</summary>
+    public IReadOnlyList<PortalPeer> Ready => Peers.Where(peer => peer is { Trusted: true, Online: true } && StateOf(peer.Number) == PortalState.Connected).ToList();
+
     private void StartInternet(bool local)
     {
         PortalLink Open(IPAddress address) => new(address)
         {
-            // A host takes paths from any PC that knocks; a client only keeps the ones it opened.
-            AllowPath = _ => IsHost, Accepted = PumpIn, MaxPaths = IsHost ? 64 : 12,
+            // Every PC can be reached by its ID, so a path from any PC that knocks is taken; what comes over it is still checked.
+            AllowPath = _ => true, Accepted = PumpIn, MaxPaths = 64, Closed = _ => RefreshPaths(),
         };
         try
         {
@@ -128,21 +194,14 @@ public sealed partial class PortalNode
                 {
                 }
             }
-        }
-        if (IsHost)
-        {
             foreach (var (_, dht) in Links())
             {
                 if (dht is not null)
                     _ = Task.Run(() => KeepAnnounced(dht));
             }
-            if (!local)
-                _ = Task.Run(KeepMapped);
+            _ = Task.Run(KeepMapped);
         }
-        else
-        {
-            _ = Task.Run(() => KeepConnected(local));
-        }
+        _ = Task.Run(() => KeepConnected(local));
     }
 
     private static string NodesFile(int version) => Path.Combine(AppInfo.DataDir, $"courier-directory-{version}.txt");
@@ -162,6 +221,7 @@ public sealed partial class PortalNode
         }
         if (mapping is { } given)
             await PortalNat.Unmap(given);
+        // Disposing tells every PC with a path open that this one is gone, so none of them goes on showing it connected.
         link4?.Dispose();
         link6?.Dispose();
     }
@@ -184,9 +244,9 @@ public sealed partial class PortalNode
         }
     }
 
-    // --- the host ---
+    // --- being reachable ---
 
-    /// <summary>Ask the router to forward the host's port, and keep asking before the lease runs out.</summary>
+    /// <summary>Ask the router to forward this PC's port, and keep asking before the lease runs out.</summary>
     private async Task KeepMapped()
     {
         while (!stopping.IsCancellationRequested)
@@ -198,7 +258,7 @@ public sealed partial class PortalNode
                 (mapping, MappingTried) = (given, true);
                 if (changed)
                 {
-                    Log.Info(given is null ? "Courier: the router did not forward a port (no UPnP or NAT-PMP); clients will open a path instead"
+                    Log.Info(given is null ? "Courier: the router did not forward a port (no UPnP or NAT-PMP); other PCs will open a path instead"
                                            : $"Courier: the router forwards {given.External}:{given.ExternalPort} to this PC ({given.Method})");
                     Raise();
                 }
@@ -215,7 +275,7 @@ public sealed partial class PortalNode
         }
     }
 
-    /// <summary>Keep the host announced under its ID, and open a path towards each client that knocks.</summary>
+    /// <summary>Keep this PC announced under its ID, and open a path towards each PC that knocks.</summary>
     private async Task KeepAnnounced(PortalDht dht)
     {
         long announced = 0;
@@ -238,8 +298,8 @@ public sealed partial class PortalNode
                                    $"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
                         Raise();
                     }
-                    // A client that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
-                    // routers. Asked every few seconds, of the few computers that hold that key, so a client waits seconds, not minutes.
+                    // A PC that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
+                    // routers. Asked every few seconds, of the few computers that hold that key, so the other PC waits seconds, not minutes.
                     foreach (var knocker in (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token)).Take(16))
                     {
                         var (at, times) = knocked.GetValueOrDefault(knocker);
@@ -266,113 +326,241 @@ public sealed partial class PortalNode
         }
     }
 
-    // --- the client ---
+    // --- staying connected ---
 
     /// <summary>
-    /// The client's side: stay connected to the host. When the path is closed, try the
-    /// host's last address first, then look its ID up again. A host found for the first time
-    /// is asked to pair. While connected, the list of the host's other clients is kept fresh.
+    /// Keep the PCs marked "stay" connected, each on its own: when its path is closed, try its
+    /// last address first, then look its ID up again. A PC found for the first time is asked
+    /// to pair. While connected, it is asked now and then whether it has let this PC in.
     /// </summary>
     private async Task KeepConnected(bool local)
     {
-        var lastAsked = 0L;
         while (!stopping.IsCancellationRequested)
         {
+            List<string> wanted;
+            lock (gate)
+                wanted = settings.Saved.Where(saved => saved.Stay && Portal.IsNumber(saved.Number) && saved.Number != Number).Select(saved => saved.Number).ToList();
+            var now = Environment.TickCount64;
+            foreach (var number in wanted)
+            {
+                var attempt = AttemptFor(number);
+                if (attempt.Busy || now < attempt.NextTry)
+                    continue;
+                attempt.Busy = true;
+                _ = Task.Run(() => Reach(number, attempt, local));
+            }
             try
             {
-                var number = settings.HostNumber;
-                if (Portal.IsNumber(number) && number != Number)
-                {
-                    var host = HostPeer;
-                    if (host is not { Online: true })
-                    {
-                        Connecting = true;
-                        Raise();
-                        var clock = System.Diagnostics.Stopwatch.StartNew();
-                        var (found, problem) = await FindHost(number, local);
-                        (Connecting, HostProblem) = (false, problem);
-                        Log.Info(found is { Tunnel: { } path } ? $"Courier: connected to {Portal.ShowNumber(number)} over {path} in {clock.Elapsed.TotalSeconds:0.0} s"
-                                                               : $"Courier: {Portal.ShowNumber(number)} not reached in {clock.Elapsed.TotalSeconds:0} s ({problem})");
-                        host = found;
-                        if (host is { Trusted: false } && !Pairings.Any(pairing => pairing.PeerId == host.Id))
-                            await Pair(host);
-                        Raise();
-                    }
-                    else if (host is { Online: true, Trusted: false } && HostPassword.Length > 0)
-                    {
-                        await Pair(host); // the user typed the password the host asked for
-                        Raise();
-                    }
-                    if (host is { Online: true, Trusted: true } && Environment.TickCount64 - lastAsked > (WaitingForHost ? 3000 : 10_000))
-                    {
-                        lastAsked = Environment.TickCount64;
-                        await AskForClients(host);
-                    }
-                }
-                await Task.Delay(HostPeer is { Online: true } ? 3000 : HostProblem == PortalConnectProblem.None ? 1000 : 15_000, stopping.Token);
+                await Task.Delay(1000, stopping.Token);
             }
             catch (OperationCanceledException)
             {
                 return;
             }
-            catch (Exception error) when (error is SocketException or IOException or ObjectDisposedException)
-            {
-                Connecting = false;
-                await Task.Delay(5000);
-            }
         }
     }
 
-    private async Task<(PortalPeer? Host, PortalConnectProblem Problem)> FindHost(string number, bool local)
+    private bool Stays(string number)
     {
-        // Where the host was last time: often still there, and found in a second instead of through the directory.
-        var paired = settings.Devices.FirstOrDefault(device => Portal.NumberOf(device.Id) == number);
+        lock (gate)
+            return PortalSavedList.Find(settings, number) is { Stay: true };
+    }
+
+    private async Task Reach(string number, Attempt attempt, bool local)
+    {
+        var wait = 3000;
+        try
+        {
+            var peer = PeerOf(number);
+            if (peer is not { Online: true })
+            {
+                attempt.Connecting = true;
+                Raise();
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var (found, problem) = await FindPeer(number, local, attempt.Cancel.Token);
+                (attempt.Connecting, attempt.Problem) = (false, problem);
+                Log.Info(found is { Tunnel: { } path } ? $"Courier: connected to {Portal.ShowNumber(number)} over {path} in {clock.Elapsed.TotalSeconds:0.0} s"
+                                                       : $"Courier: {Portal.ShowNumber(number)} not reached in {clock.Elapsed.TotalSeconds:0} s ({problem})");
+                if (found is { Tunnel: { } opened } && !Stays(number))
+                {
+                    // Disconnect was pressed while it was being looked for.
+                    LinkFor(opened)?.Close(opened);
+                    return;
+                }
+                peer = found;
+                if (peer is { Trusted: false } && !Pairings.Any(pairing => pairing.PeerId == peer.Id))
+                    await Pair(peer);
+                Raise();
+                if (peer is null)
+                {
+                    wait = problem == PortalConnectProblem.None ? 1000 : 15_000;
+                    return;
+                }
+            }
+            else if (peer is { Trusted: false } && attempt.Password.Length > 0)
+            {
+                await Pair(peer); // the user typed the password the other PC asked for
+                Raise();
+            }
+            if (peer is { Online: true, Trusted: true } && Environment.TickCount64 - attempt.LastAsked > (attempt.Waiting ? 3000 : 10_000))
+            {
+                attempt.LastAsked = Environment.TickCount64;
+                await Ping(peer, attempt);
+            }
+        }
+        catch (Exception error) when (error is SocketException or IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            attempt.Connecting = false;
+            wait = 5000;
+        }
+        finally
+        {
+            attempt.NextTry = Environment.TickCount64 + wait;
+            attempt.Busy = false;
+        }
+    }
+
+    private async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> FindPeer(string number, bool local, CancellationToken cancel)
+    {
+        // Where it was last time: often still there, and found in a second instead of through the directory.
+        PortalDevice? paired;
+        lock (gate)
+            paired = settings.Devices.FirstOrDefault(device => Portal.NumberOf(device.Id) == number);
         if (paired is { Port: > 0 } && IPAddress.TryParse(paired.Address, out var address) && (!local || IPAddress.IsLoopback(address))
             && await ConnectDirect(new IPEndPoint(address, paired.Port), number, paired.Id) is { } known)
             return (known, PortalConnectProblem.None);
-        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, stopping.Token, paired?.Id);
+        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, cancel, paired?.Id);
     }
 
-    private async Task AskForClients(PortalPeer host)
+    /// <summary>Ask a PC this one connected to whether it has let this one in (403 until its user allows it).</summary>
+    private async Task Ping(PortalPeer peer, Attempt attempt)
     {
         try
         {
-            using var client = Client(host.Tunnel!, host.Id, out _);
+            using var client = Client(peer.Tunnel!, peer.Id, out _);
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
             limit.CancelAfter(TimeSpan.FromSeconds(15));
-            var listed = await client.GetFromJsonAsync<JsonElement>($"{Api}/clients", limit.Token);
-            var fresh = listed.EnumerateArray()
-                .Select(item => new PortalClient(item.GetProperty("id").GetString() ?? "", Portal.CleanLabel(item.GetProperty("name").GetString() ?? ""),
-                                                 item.GetProperty("online").GetBoolean()))
-                .Where(item => IdPattern().IsMatch(item.Id) && item.Id != Id).ToList();
-            HostAllowed();
-            if (!fresh.SequenceEqual(otherClients))
+            using var answer = await client.GetAsync($"{Api}/ping", limit.Token);
+            var waiting = answer.StatusCode == HttpStatusCode.Forbidden;
+            if (waiting != attempt.Waiting && (waiting || answer.IsSuccessStatusCode))
             {
-                otherClients = fresh;
+                attempt.Waiting = waiting;
                 Raise();
             }
         }
-        catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden)
-        {
-            HostRefused();
-        }
-        catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or JsonException
-                                          or KeyNotFoundException or InvalidOperationException)
+        catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
         {
         }
     }
 
-    /// <summary>The host to connect to, by its ID. Saved, and looked for at once.</summary>
-    public void SetHost(string number)
+    /// <summary>
+    /// Connect to a PC by its ID, and stay connected to it (also after PC Butler starts again)
+    /// until Disconnect. It joins the list if it is not on it yet.
+    /// </summary>
+    public void Connect(string number)
     {
         number = Portal.NormalizeNumber(number);
-        if (number == settings.HostNumber)
+        if (!Portal.IsNumber(number) || number == Number)
             return;
-        settings.HostNumber = number;
-        HostProblem = PortalConnectProblem.None;
-        otherClients = [];
+        lock (gate)
+        {
+            PortalSavedList.Add(settings, number, "");
+            PortalSavedList.Find(settings, number)!.Stay = true;
+            if (attempts.Remove(number, out var old))
+                old.Cancel.Cancel();
+        }
         save();
         Raise();
+    }
+
+    /// <summary>
+    /// Stop being connected to a PC, on both sides: the other PC is told, so it shows this one
+    /// gone at once and does not connect back by itself. Neither looks for the other until
+    /// Connect is pressed again. With forget, this PC is also taken off the list and no longer
+    /// trusted (it is kicked out: coming back means asking, and being allowed, again).
+    /// </summary>
+    public async Task Disconnect(string number, bool forget = false)
+    {
+        number = Portal.NormalizeNumber(number);
+        lock (gate)
+        {
+            if (PortalSavedList.Find(settings, number) is { } saved)
+                saved.Stay = false;
+            if (attempts.Remove(number, out var attempt))
+                attempt.Cancel.Cancel();
+        }
+        var peer = PeerOf(number);
+        if (peer is { Tunnel: { } via })
+        {
+            if (peer.Trusted)
+            {
+                try
+                {
+                    using var client = Client(via, peer.Id, out _);
+                    using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+                    limit.CancelAfter(TimeSpan.FromSeconds(6));
+                    using var told = await client.PostAsync($"{Api}/disconnect?forget={(forget ? 1 : 0)}", null, limit.Token);
+                }
+                catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
+                {
+                    // Not reached: closing the path below still tells it, without the details.
+                }
+            }
+            LinkFor(via)?.Close(via);
+        }
+        lock (gate)
+        {
+            foreach (var other in peers.Values.Where(other => other.Number == number))
+            {
+                other.Tunnel = null;
+                if (forget)
+                    (other.Trusted, other.AutoAccept) = (false, false);
+            }
+            if (forget)
+                PortalSavedList.Remove(settings, number);
+        }
+        CancelTransfersWith(peer?.Id);
+        Log.Info($"Courier: {(forget ? "removed" : "disconnected from")} {Portal.ShowNumber(number)}");
+        save();
+        Raise();
+    }
+
+    /// <summary>The other PC disconnected (forget: and removed this one): it is not looked for again until Connect.</summary>
+    private void Disconnected(PortalPeer peer, IPEndPoint via, bool forget)
+    {
+        lock (gate)
+        {
+            if (PortalSavedList.Find(settings, peer.Number) is { } saved)
+                saved.Stay = false;
+            if (attempts.Remove(peer.Number, out var attempt))
+                attempt.Cancel.Cancel();
+            if (forget)
+            {
+                // It no longer trusts this PC, so this one stops trusting it too; it stays on the list, to ask again later.
+                settings.Devices.RemoveAll(device => device.Id.Equals(peer.Id, StringComparison.OrdinalIgnoreCase));
+                (peer.Trusted, peer.AutoAccept) = (false, false);
+            }
+        }
+        CancelTransfersWith(peer.Id);
+        Log.Info($"Courier: {peer.Name} {(forget ? "removed this PC" : "disconnected")}");
+        save();
+        // The answer goes back on this path first; then it is closed, and the PC shows as gone.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(1500);
+            lock (gate)
+                peer.Tunnel = null;
+            LinkFor(via)?.Close(via);
+            Raise();
+        });
+    }
+
+    private void CancelTransfersWith(string? peerId)
+    {
+        if (peerId is null)
+            return;
+        foreach (var transfer in Transfers.Where(transfer => transfer.Running && transfer.PeerId.Equals(peerId, StringComparison.OrdinalIgnoreCase)))
+            transfer.Cancel();
     }
 
     /// <summary>
@@ -392,12 +580,12 @@ public sealed partial class PortalNode
         var until = Environment.TickCount64 + 75_000;
         while (Environment.TickCount64 < until && !cancel.IsCancellationRequested && !stopping.IsCancellationRequested)
         {
-            // Over IPv4 and IPv6 at once: leave this PC's address where the host looks for knocks, and look up where the host is.
+            // Over IPv4 and IPv6 at once: leave this PC's address where the other PC looks for knocks, and look up where it is.
             var rounds = directories.Select(async item =>
             {
                 var knock = item.Dht.Lookup(Portal.DirectoryKey(number, knock: true), announce: true, cancel);
                 var at = (await item.Dht.Lookup(Portal.DirectoryKey(number, knock: false), announce: false, cancel)).Where(place => !item.Dht.IsMe(place)).ToList();
-                // Start knocking on the host's door straight away. The knock left in the directory (for a host behind a router
+                // Start knocking on its door straight away. The knock left in the directory (for a PC behind a router
                 // that lets nothing in first) finishes in the background; nothing waits for it.
                 foreach (var place in at)
                     _ = LinkFor(place)?.PunchTo(place, TimeSpan.FromSeconds(30), cancel);
@@ -412,7 +600,7 @@ public sealed partial class PortalNode
             }
             found = true;
             Log.Info($"Courier: ID {number} is announced at {string.Join(", ", places.Take(8))}; trying to open a path");
-            // IPv6 first: it usually needs no path through a router at all. The host needs a moment to notice the knock; keep sending meanwhile.
+            // IPv6 first: it usually needs no path through a router at all. The other PC needs a moment to notice the knock; keep sending meanwhile.
             var tries = places.OrderByDescending(place => place.AddressFamily == AddressFamily.InterNetworkV6).Take(8)
                 .Select(async place => LinkFor(place) is { } link && await link.PunchTo(place, TimeSpan.FromSeconds(30), cancel) ? place : null).ToList();
             while (tries.Count > 0)
@@ -441,7 +629,7 @@ public sealed partial class PortalNode
             limit.CancelAfter(TimeSpan.FromSeconds(20));
             var who = await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
             var id = seen();
-            // A host this PC is paired with must show the very certificate it was paired with, not just any with the same ID.
+            // A PC this one is paired with must show the very certificate it was paired with, not just any with the same ID.
             if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && Portal.NumberOf(id) != expectedNumber)
                 || (expectedId is not null && !id.Equals(expectedId, StringComparison.OrdinalIgnoreCase)))
                 return null;
