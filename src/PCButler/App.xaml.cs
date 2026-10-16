@@ -548,7 +548,7 @@ public partial class App : Application
         {
             if (e.Button != Forms.MouseButtons.Left)
                 return;
-            flyout?.Close();
+            flyout?.Dismiss();
             ShowMainWindow();
         };
     }
@@ -562,7 +562,7 @@ public partial class App : Application
             return;
         if (flyout is not null)
         {
-            flyout.Close();
+            flyout.Dismiss();
             return;
         }
         // The click on the icon took the focus away, which already closed the panel: that click meant "close".
