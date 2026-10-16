@@ -13,7 +13,7 @@ public sealed class CourierPage : ContentPage
 {
     private readonly VerticalStackLayout welcome = new() { Spacing = 0 };
     private readonly VerticalStackLayout running = new() { Spacing = 0 };
-    private readonly Entry welcomeId = new() { Placeholder = "000 000 000", FontSize = 24, FontFamily = "monospace", Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
+    private readonly IdPad welcomeId = new();
     // The status card: a round badge (a pulsing dot while waiting, a monitor once connected), two lines, a pill.
     private readonly Border statusBadge = new() { WidthRequest = 42, HeightRequest = 42, StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), VerticalOptions = LayoutOptions.Center };
     private readonly BoxView statusDot = new() { WidthRequest = 11, HeightRequest = 11, CornerRadius = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
@@ -41,13 +41,18 @@ public sealed class CourierPage : ContentPage
     private readonly Button storageButton;
     private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, long Done, DateTime At, double Speed)> rows = [];
     private string asksShown = "", targetsShown = "", transfersShown = "\0";
-    private bool pulsing;
+    private bool pulsing, onScreen;
 
     public CourierPage()
     {
         Title = Tr.T("Courier");
         // --- the first time: connect to a PC, or share from this phone ---
         var connect = Theme.Accent(Tr.T("Connect"), () => _ = BecomeClient());
+        welcomeId.Submitted += () => _ = BecomeClient();
+        welcomeId.Changed += () => connect.IsEnabled = Portal.IsNumber(welcomeId.Digits);
+        connect.IsEnabled = false;
+        // A real keyboard types into the pad while this page shows it.
+        KeyInput.Handler = key => onScreen && welcome.IsVisible && welcomeId.Key(key);
         welcome.Children.Add(Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
@@ -55,7 +60,7 @@ public sealed class CourierPage : ContentPage
             {
                 Theme.Line3(Theme.Tile(("ic_monitor.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Connect to a PC"), 19).Centered()),
                 Theme.Faint(Tr.T("Type the ID the PC shows in its Courier, and connect. Files then go either way.")),
-                Theme.BoxOf(welcomeId, 4), connect,
+                welcomeId, connect,
             },
         }));
         welcome.Children.Add(Theme.CardOf(new VerticalStackLayout
@@ -148,9 +153,16 @@ public sealed class CourierPage : ContentPage
         Courier.Changed += () => MainThread.BeginInvokeOnMainThread(Refresh);
     }
 
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        onScreen = false;
+    }
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        onScreen = true;
         await Access.AskForNotifications();
         var settings = Courier.Settings;
         // Files shared from another app need Courier running to go anywhere, whatever the start setting says.
@@ -164,10 +176,10 @@ public sealed class CourierPage : ContentPage
 
     private async Task BecomeClient()
     {
-        var number = Portal.NormalizeNumber(welcomeId.Text ?? "");
+        var number = welcomeId.Digits;
         if (!Portal.IsNumber(number))
         {
-            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
+            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: six digits, like 205 937."), Tr.T("OK"));
             return;
         }
         Courier.Update(settings => { settings.Role = PortalSettings.Client; settings.HostNumber = number; settings.Devices = []; });

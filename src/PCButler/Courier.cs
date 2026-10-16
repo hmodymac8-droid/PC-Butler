@@ -69,7 +69,7 @@ public static class Courier
         if (settings.Role is not (PortalSettings.Host or PortalSettings.Client))
             return Ui.T("Choose first whether this PC shares (the host) or connects to another PC (a client).");
         if (settings.Role == PortalSettings.Client && !Portal.IsNumber(settings.HostNumber) && settings.Devices.Count == 0)
-            return Ui.T("Type the ID of the PC to connect to first: the nine digits it shows in Courier.");
+            return Ui.T("Type the ID of the PC to connect to first: the six digits it shows in Courier.");
         starting = true;
         try
         {

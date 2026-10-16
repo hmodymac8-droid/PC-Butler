@@ -4,6 +4,7 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using Android.Views;
 
 namespace PCButler.Android;
 
@@ -30,6 +31,14 @@ public class MainActivity : MauiAppCompatActivity
     {
         if (!Results.Done(requestCode, resultCode, data))
             base.OnActivityResult(requestCode, resultCode, data);
+    }
+
+    /// <summary>A real keyboard's keys go first to the ID pad, when it is on the screen.</summary>
+    public override bool DispatchKeyEvent(KeyEvent? e)
+    {
+        if (e is not null && Pages.KeyInput.Handler?.Invoke(e) == true)
+            return true;
+        return base.DispatchKeyEvent(e);
     }
 
     protected override void OnNewIntent(Intent? intent)

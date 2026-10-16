@@ -14,7 +14,7 @@ namespace PCButler.Core;
 public enum PortalConnectProblem
 {
     None,
-    /// <summary>Not an ID (nine digits), or this PC's own.</summary>
+    /// <summary>Not an ID (six digits, or nine as before), or this PC's own.</summary>
     BadNumber,
     /// <summary>The public directory could not be reached from this network.</summary>
     NoDirectory,
@@ -44,8 +44,10 @@ public sealed partial class PortalNode
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private List<PortalClient> otherClients = [];
 
-    /// <summary>This PC's ID: nine digits, like 418 205 937.</summary>
+    /// <summary>This PC's ID: six digits, like 205 937.</summary>
     public string Number => Portal.NumberOf(Id);
+    /// <summary>The nine-digit ID that versions up to 1.21 know this PC by.</summary>
+    public string LongNumber => Portal.LongNumberOf(Id);
     /// <summary>The port of the IPv4 socket used across the internet.</summary>
     public int LinkPort => link4?.Port ?? 0;
     public int LinkPort6 => link6?.Port ?? 0;
@@ -72,8 +74,8 @@ public sealed partial class PortalNode
         get
         {
             lock (gate)
-                return peers.Values.FirstOrDefault(peer => peer.Number == settings.HostNumber && peer.Trusted)
-                       ?? peers.Values.FirstOrDefault(peer => peer.Number == settings.HostNumber);
+                return peers.Values.FirstOrDefault(peer => Portal.HasNumber(peer.Id, settings.HostNumber) && peer.Trusted)
+                       ?? peers.Values.FirstOrDefault(peer => Portal.HasNumber(peer.Id, settings.HostNumber));
         }
     }
 
@@ -231,14 +233,18 @@ public sealed partial class PortalNode
                     {
                         // With a forwarded port, also announce that port itself: the router may show another one to the directory.
                         var forwarded = dht == dht4 && mapping is { } given && given.ExternalPort != link.Port ? given.ExternalPort : (int?)null;
+                        // Under the short ID, and the long one that versions up to 1.21 look for.
                         await dht.Lookup(Portal.DirectoryKey(Number, knock: false), announce: true, stopping.Token, forwarded);
+                        await dht.Lookup(Portal.DirectoryKey(LongNumber, knock: false), announce: true, stopping.Token, forwarded);
                         announced = now;
                         Log.Info($"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
                         Raise();
                     }
                     // A client that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
                     // routers. Asked every few seconds, of the few computers that hold that key, so a client waits seconds, not minutes.
-                    foreach (var knocker in (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token)).Take(16))
+                    var knockers = (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token))
+                        .Concat(await dht.Poll(Portal.DirectoryKey(LongNumber, knock: true), stopping.Token)).Distinct();
+                    foreach (var knocker in knockers.Take(16))
                     {
                         var (at, times) = knocked.GetValueOrDefault(knocker);
                         if (link.IsOpen(knocker) || dht.IsMe(knocker) || times >= 4 && now - at < 30 * 60_000 || now - at < 45_000)
@@ -277,7 +283,7 @@ public sealed partial class PortalNode
             try
             {
                 var number = settings.HostNumber;
-                if (Portal.IsNumber(number) && number != Number)
+                if (Portal.IsNumber(number) && !Portal.HasNumber(Id, number))
                 {
                     var host = HostPeer;
                     if (host is not { Online: true })
@@ -368,7 +374,7 @@ public sealed partial class PortalNode
     public async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> ConnectById(string number, CancellationToken cancel = default, string? expectedId = null)
     {
         number = Portal.NormalizeNumber(number);
-        if (!Portal.IsNumber(number) || number == Number)
+        if (!Portal.IsNumber(number) || Portal.HasNumber(Id, number))
             return (null, PortalConnectProblem.BadNumber);
         var joined = await Task.WhenAll(Links().Where(item => item.Dht is not null).Select(async item => (item.Link, Dht: item.Dht!, Ok: await item.Dht!.Join(cancel))));
         var directories = joined.Where(item => item.Ok).Select(item => (item.Link, item.Dht)).ToList();
@@ -428,7 +434,7 @@ public sealed partial class PortalNode
             var who = await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
             var id = seen();
             // A host this PC is paired with must show the very certificate it was paired with, not just any with the same ID.
-            if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && Portal.NumberOf(id) != expectedNumber)
+            if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && !Portal.HasNumber(id, expectedNumber))
                 || (expectedId is not null && !id.Equals(expectedId, StringComparison.OrdinalIgnoreCase)))
                 return null;
             PortalPeer peer;
@@ -476,18 +482,27 @@ public sealed partial class PortalNode
 public static partial class Portal
 {
     /// <summary>
-    /// A PC's ID: nine digits made from its certificate's fingerprint, like "418205937". It
-    /// finds the PC; it does not prove who it is: pairing does that.
+    /// A PC's ID: six digits made from its certificate's fingerprint, like "205937". It finds
+    /// the PC; it does not prove who it is: pairing does that. They are the last six of the
+    /// nine-digit ID that versions up to 1.21 show (<see cref="LongNumberOf"/>).
     /// </summary>
-    public static string NumberOf(string fingerprint) => (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000).ToString("D9");
+    public static string NumberOf(string fingerprint) => LongNumberOf(fingerprint)[3..];
+
+    /// <summary>The nine-digit ID of versions up to 1.21, like "418205937": still announced, so they find this PC, and still accepted when typed.</summary>
+    public static string LongNumberOf(string fingerprint) => (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000).ToString("D9");
+
+    /// <summary>True when the PC with this fingerprint has that ID, the short one or the long one.</summary>
+    public static bool HasNumber(string fingerprint, string number) =>
+        number.Length == 9 ? LongNumberOf(fingerprint) == number : NumberOf(fingerprint) == number;
 
     /// <summary>An ID as typed: only its digits count, so spaces and dashes do no harm.</summary>
     public static string NormalizeNumber(string typed) => new(typed.Where(char.IsAsciiDigit).ToArray());
 
-    public static bool IsNumber(string number) => number.Length == 9 && number.All(char.IsAsciiDigit);
+    public static bool IsNumber(string number) => number.Length is 6 or 9 && number.All(char.IsAsciiDigit);
 
-    /// <summary>"418205937" as "418 205 937".</summary>
-    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]} {number[3..6]} {number[6..]}" : number;
+    /// <summary>"205937" as "205 937", and "418205937" as "418 205 937".</summary>
+    public static string ShowNumber(string number) => !IsNumber(number) ? number
+        : number.Length == 6 ? $"{number[..3]} {number[3..]}" : $"{number[..3]} {number[3..6]} {number[6..]}";
 
     /// <summary>Where in the public directory a PC with this ID announces itself, or where others leave their address for it ("knock").</summary>
     public static byte[] DirectoryKey(string number, bool knock) =>

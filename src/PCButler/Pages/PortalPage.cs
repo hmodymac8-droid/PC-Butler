@@ -61,7 +61,7 @@ public sealed class PortalPage : Page
         var page = new StackPanel();
 
         // --- the first time: share from this PC, or connect to another one ---
-        welcomeId = Ui.Field(width: 170, hint: "418 205 937");
+        welcomeId = Ui.Field(width: 170, hint: "205 937");
         welcomeId.FlowDirection = FlowDirection.LeftToRight;
         welcomeId.FontSize = 16;
         welcomeId.KeyDown += (_, e) =>
@@ -78,7 +78,7 @@ public sealed class PortalPage : Page
         // --- this PC, beside its settings ---
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
         statusCard.SetBody(status);
-        hostNumberBox = Ui.Field(width: 150, hint: "418 205 937");
+        hostNumberBox = Ui.Field(width: 150, hint: "205 937");
         hostNumberBox.FlowDirection = FlowDirection.LeftToRight;
         hostNumberBox.LostFocus += (_, _) => SaveHostNumber(hostNumberBox.Text);
         hostNumberBox.KeyDown += (_, e) =>
@@ -98,7 +98,7 @@ public sealed class PortalPage : Page
         var rows = new StackPanel();
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Role"), 13, weight: FontWeights.Bold), roleText, Ui.Button(Ui.T("Change"), ChangeRole), first: true));
         hostNumberRow = Ui.SettingRow(Ui.Text(Ui.T("The other PC's ID"), 13, weight: FontWeights.Bold),
-                                      Ui.Muted(Ui.T("The nine digits the host shows. Change it to connect to another PC."), 12), hostNumberBox);
+                                      Ui.Muted(Ui.T("The six digits the host shows. Change it to connect to another PC."), 12), hostNumberBox);
         rows.Children.Add(hostNumberRow);
         rows.Children.Add(Ui.SettingRow(Ui.T("Start with PC Butler"), Ui.T("Connected (or reachable) as soon as PC Butler runs, without a click."), autoStartSwitch));
         rows.Children.Add(Ui.SettingRow(Ui.T("Show the Courier widget"), Ui.T("A small window while PCs are connected: drop files on it to send them, and watch them go."),
@@ -237,7 +237,7 @@ public sealed class PortalPage : Page
         var number = Portal.NormalizeNumber(welcomeId.Text);
         if (!Portal.IsNumber(number))
         {
-            Ui.Info("Courier", Ui.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."));
+            Ui.Info("Courier", Ui.T("Type the ID exactly as the other PC shows it: six digits, like 205 937."));
             welcomeId.Focus();
             return;
         }

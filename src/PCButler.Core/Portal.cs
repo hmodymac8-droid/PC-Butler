@@ -39,7 +39,7 @@ public sealed class PortalSettings
     [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
     /// <summary>"host" (the PC the others connect to), "client" (connects to a host by its ID), or "" until chosen.</summary>
     [JsonPropertyName("role")] public string Role { get; set; } = "";
-    /// <summary>A client's host, by its ID (nine digits).</summary>
+    /// <summary>A client's host, by its ID (six digits; nine as typed for versions up to 1.21).</summary>
     [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
     /// <summary>Start Courier with PC Butler, so a client is connected and a host is reachable without a click.</summary>
     [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
