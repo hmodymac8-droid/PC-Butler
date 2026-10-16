@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.5
+
+- Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
+
 ## 1.21.4
 
 - Settings > Hotkeys: the clipboard history's shortcut can be changed there too, like the others.

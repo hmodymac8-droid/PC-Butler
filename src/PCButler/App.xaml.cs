@@ -206,6 +206,7 @@ public partial class App : Application
             window.Show();
             window.Activate();
             window.TakeVaultInbox();
+            window.TakeCourierInbox();
             return;
         }
         // Building the window takes a moment, and some of it lets other clicks through (a tray icon
@@ -252,7 +253,10 @@ public partial class App : Application
         Dispatcher.BeginInvoke(() =>
         {
             if (IsOpen(opened))
+            {
                 opened.TakeVaultInbox();
+                opened.TakeCourierInbox();
+            }
         }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
