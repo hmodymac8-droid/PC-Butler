@@ -354,14 +354,18 @@ Check(ExplorerMenu.InstalledCommand() is null, "no menu to begin with");
 Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", english => english) is null
       && ExplorerMenu.InstalledCommand("sort") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort")
       && ExplorerMenu.InstalledCommand("shred") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "shred")
+      && ExplorerMenu.InstalledCommand("courier") == ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "courier")
       && ExplorerMenu.CommandFor("P.exe", "sort") == "\"P.exe\" --act sort \"%1\"", "each submenu item runs the program with its action");
 using (var fileMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\*\shell\PCButler"))
     Check(fileMenu?.GetValue("MUIVerb") as string == "PC Butler" && fileMenu.GetValue("SubCommands") as string == ""
-          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3shred"]),
+          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3courier", "4shred"]),
           "files get the submenu, in order");
 using (var folderMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell"))
-    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3shred"]),
+    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3courier", "4shred"]),
           "folders get it too, without the Vault");
+using (var share = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell\3courier"))
+    Check(share?.GetValue("MUIVerb") as string == "Share with Courier" && share.GetValue("MultiSelectModel") as string == "Player",
+          "files and folders can be shared with Courier, several at once");
 using (var real = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\*\shell\PCButler\shellsort\command"))
     Check(real?.GetValue("") as string != ExplorerMenu.CommandFor(@"C:\Apps\PC Butler\PCButler.exe", "sort"), "the real menu is left alone");
 Check(ExplorerMenu.Sync(false, "x", english => english) is null && ExplorerMenu.InstalledCommand() is null, "switching it off removes it");
@@ -423,6 +427,10 @@ VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "gone.pd
 VaultInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]);
 Check(VaultInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "b.mp3")]) && VaultInbox.Take().Count == 0,
       "files waiting for the vault are handed over once");
+CourierInbox.Add([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "gone.pdf"), Path.Combine(dropFrom, "Folder")]);
+CourierInbox.Add([Path.Combine(dropFrom, "a.pdf")]);
+Check(CourierInbox.Take().SequenceEqual([Path.Combine(dropFrom, "a.pdf"), Path.Combine(dropFrom, "Folder")]) && CourierInbox.Take().Count == 0,
+      "files and folders shared with Courier are handed over once");
 
 // ---------------------------------------------------------------- courier: names, codes, routers
 Section("courier");
