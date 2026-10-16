@@ -15,9 +15,12 @@ public sealed class ClipboardPage : Page
     private readonly TextBlock count = Ui.Muted("", 12);
     private readonly Button pinButton;
     private readonly TextBox shortcut;
+    private readonly CheckBox enabled;
 
     /// <summary>The shortcut can also be changed on the Settings page's Hotkeys tab: show it as it is now.</summary>
     public override void Shown() => shortcut.Text = Main.Config.Clipboard.Shortcut;
+
+    public override void ShowSwitches() => Match(enabled, Main.Config.Clipboard.Enabled);
     private readonly TextBox limit;
 
     public ClipboardPage(MainWindow main) : base(main, "Clipboard", "Everything you copy, ready to paste again.")
@@ -29,7 +32,7 @@ public sealed class ClipboardPage : Page
         var rows = new StackPanel();
         rows.Children.Add(Ui.SettingRow(Ui.T("Clipboard manager"),
                                          Ui.T("Keeps what you copy: text, files and pictures. Items that password managers mark as private are skipped."),
-                                         Ui.Switch("", settings.Enabled, on => Change(config => config.Enabled = on)), first: true));
+                                         enabled = Ui.Switch("", settings.Enabled, on => Change(config => config.Enabled = on)), first: true));
 
         shortcut = Ui.Field(settings.Shortcut, 160);
         shortcut.IsReadOnly = true;
@@ -38,7 +41,7 @@ public sealed class ClipboardPage : Page
         shortcut.PreviewKeyDown += RecordShortcut;
         rows.Children.Add(Ui.SettingRow(Ui.T("Shortcut to open the list"),
                                         Ui.T("Press it in any program to pick an item and paste it there. Click the box, then press the new keys."),
-                                        Ui.Row(6, shortcut, Ui.Button(Ui.T("Default"), () => SetShortcut("Ctrl+Alt+V")))));
+                                        Ui.Row(6, shortcut, Ui.Button(Ui.T("Default"), () => SetShortcut(ClipboardSettings.DefaultShortcut)))));
 
         limit = Ui.Field(settings.Limit.ToString(), 90);
         limit.LostFocus += (_, _) => SaveLimit();

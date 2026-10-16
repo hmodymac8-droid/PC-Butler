@@ -409,12 +409,14 @@ public static class Sorter
                 }
                 count++;
                 var status = permanent ? "erased" : "deleted";
-                Log.Info($"Deleted ({(permanent ? "permanently" : "Recycle Bin")}) {path}");
                 if (active.TryGetValue(Norm(path), out var logged))
                     logged.Add(status);
                 else
                     unlogged.Add([path, "", status]);
             }
+            // One line for the lot: each file is in the history already, and a line per file once grew the log to megabytes.
+            if (count > 0)
+                Log.Info($"Deleted {count} file(s) ({(permanent ? "permanently" : "Recycle Bin")}), {errors.Count} could not be");
             if (unlogged.Count > 0)
                 history.Add(new Run { Time = DateTime.Now.ToString(History.TimeFormat), Moves = unlogged, Review = false });
             History.Save(history);

@@ -121,7 +121,7 @@ public static class AdminHelper
         if (message.Action == "tune_restore")
             done.AddRange(TuneUp.HelperRestore(message.Services, untune));
         // Counting frames: on or off, nothing else to say.
-        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start(directory))
+        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start())
             done.Add("on");
         if (message.Action == "fps" && message.Services is ["off"])
         {
@@ -129,7 +129,7 @@ public static class AdminHelper
             done.Add("off");
         }
         // Counting internet use per program, for the record of app usage: on or off the same way.
-        if (message.Action == "net" && message.Services is ["on"] && NetMeter.Start(directory))
+        if (message.Action == "net" && message.Services is ["on"] && NetMeter.Start())
             done.Add("on");
         if (message.Action == "net" && message.Services is ["off"])
         {

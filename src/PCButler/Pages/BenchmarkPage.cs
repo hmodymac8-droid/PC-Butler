@@ -129,8 +129,8 @@ public sealed class BenchmarkPage : Page
         ShowLive();
     }
 
-    /// <summary>The overlay was switched by its hotkey: show that here too.</summary>
-    public void ShowEnabled() => enabled.IsChecked = Main.Config.Overlay.Enabled;
+    /// <summary>The overlay was switched by its hotkey or from the tray: show that here too.</summary>
+    public override void ShowSwitches() => Match(enabled, Main.Config.Overlay.Enabled);
 
     private void SaveGames()
     {

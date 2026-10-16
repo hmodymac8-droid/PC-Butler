@@ -3,8 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.21.6
+## 1.22.0
 
+- New Search page: every file and folder on your drives, found as you type. Space means and, | means or, ! means not, < > groups, quotes keep spaces, * and ? are wildcards, a \ searches the path, and path:, file:, folder:, ext:jpg;png, case: and diacritics: work as in other file search tools.
+- Arabic names are found without their tashkeel, and أ إ آ ا, ى ي and ة ه count as the same letter (both can be switched off).
+- Win + F opens a search box over whatever program is in front: Enter opens, Ctrl+Enter opens the folder. The shortcut can be changed on the Hotkeys tab.
+- Results: sort by name, path, size or date modified; open, open the folder, copy the path or name, rename, or move files to the Recycle Bin (History can bring them back).
+- Settings > Search: which drives and folders are indexed, what is left out, and how much memory the index uses. The index is saved, so search is ready at once when PC Butler starts, and changes are followed while it runs.
 - Courier is one page and one way of working now: no more choosing between sharing and connecting. Every PC and phone has its own ID, always the same (it comes from the device's own key, made once and kept), and can be reached by it while Courier runs. Type another PC's ID to connect to it.
 - The list of your PCs is always there, also while Courier is off: every PC you connected to, and every PC that connected to you. Connect, disconnect, rename or remove each one there. A connected PC stays connected, after a restart too, until you disconnect it; you can be connected to several at once, and files go straight between two PCs.
 - Disconnect ends the connection on both PCs at once, and neither connects back by itself. Remove kicks a PC out: it is disconnected and no longer trusted, and has to ask, and be allowed, again. A PC or phone that stops Courier shows as disconnected on the others at once, not a minute later.
@@ -20,8 +25,14 @@ Each version is a `## heading` followed by `- ` lines.
 - File Explorer's PC Butler menu comes in groups with a line between them: sorting and sharing, then the Vault, then Shred on its own.
 - Install this version on every PC and phone that use Courier together.
 
+## 1.21.6
+
+- PC Butler no longer writes to the disk every second. The helper's temperatures and frame counts reach the program through memory instead of the sensors.json and fps.json files, and settings are only written when they change.
+- The log (pcbutler.log) stays under a megabyte: the older part moves to pcbutler.old.log. Deleting files adds one line, not one per file, and Courier no longer notes every repeated knock and renewal.
+
 ## 1.21.5
 
+- Clipboard: Win+V now opens PC Butler's clipboard history instead of Windows' own, and it is the default shortcut (if you kept the old Ctrl+Alt+V, it moves to Win+V). Any other shortcut can still be set on the Clipboard page or in Settings > Hotkeys.
 - Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
 
 ## 1.21.4

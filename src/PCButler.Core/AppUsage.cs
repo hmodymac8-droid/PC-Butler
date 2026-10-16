@@ -315,7 +315,8 @@ public sealed class AppUsageRecorder : IDisposable
             }
             last = seen;
             AppUsageLog.Record(DateTime.Now, used);
-            if (Environment.TickCount64 - lastSave > 60_000)
+            // Kept in memory, and written every few minutes (and when PC Butler closes), not at every look.
+            if (Environment.TickCount64 - lastSave > 5 * 60_000)
             {
                 lastSave = Environment.TickCount64;
                 AppUsageLog.Save();
@@ -403,21 +404,22 @@ public sealed class AppUsageRecorder : IDisposable
 /// <summary>
 /// Internet traffic per program, counted by the administrator helper from Windows' own
 /// network events (Microsoft-Windows-Kernel-Network), the same way it counts frames: the
-/// helper writes net.json once a second with each process's bytes sent and received since
-/// it started counting. Only the sizes are read, never what was sent.
+/// helper hands over, once a second and in shared memory (see LiveSlot, never through the
+/// disk), each process's bytes sent and received since it started counting. Only the sizes
+/// are read, never what was sent.
 /// </summary>
 public static class NetMeter
 {
     private static NetSession? session;
 
-    public static string FileIn(string directory) => Path.Combine(directory, "net.json");
+    public static string Slot => LiveSlot.Name("net");
 
     /// <summary>The helper's side: start counting. False when Windows refuses (not an administrator).</summary>
-    public static bool Start(string directory)
+    public static bool Start(string? slot = null)
     {
         try
         {
-            session ??= new NetSession(FileIn(directory));
+            session ??= new NetSession(slot ?? Slot);
             return true;
         }
         catch (Exception error) when (error is not OutOfMemoryException)
@@ -434,16 +436,16 @@ public static class NetMeter
     }
 
     /// <summary>Bytes sent and received per process id since counting started, or null when nobody is counting.</summary>
-    public static Dictionary<int, (long Sent, long Received)>? Latest(string? directory = null)
+    public static Dictionary<int, (long Sent, long Received)>? Latest(string? slot = null)
     {
         try
         {
-            var reading = JsonSerializer.Deserialize<NetReading>(File.ReadAllText(FileIn(directory ?? AppInfo.DataDir)));
+            var reading = LiveSlot.Read(slot ?? Slot) is { } text ? JsonSerializer.Deserialize<NetReading>(text) : null;
             return reading is not null && (DateTime.UtcNow - reading.Time).TotalSeconds < 6
                 ? reading.Use.Where(item => item.Value is [_, _]).ToDictionary(item => item.Key, item => (item.Value[0], item.Value[1]))
                 : null;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException)
         {
             return null;
         }
@@ -467,11 +469,11 @@ public static class NetMeter
         private readonly TraceEventSession trace;
         private readonly ConcurrentDictionary<int, long[]> totals = new();
         private readonly Timer timer;
-        private readonly string file;
+        private readonly string slot;
 
-        public NetSession(string file)
+        public NetSession(string slot)
         {
-            this.file = file;
+            this.slot = slot;
             // One name, so a session a crashed helper left behind is taken over instead of piling up.
             trace = new TraceEventSession("PCButlerNet") { StopOnDispose = true };
             trace.EnableProvider(KernelNetwork, TraceEventLevel.Informational, 0x10 | 0x20); // its IPv4 and IPv6 events
@@ -517,17 +519,10 @@ public static class NetMeter
         private void Write()
         {
             var reading = new NetReading { Time = DateTime.UtcNow };
-            foreach (var (pid, counts) in totals)
+            // The busiest first: should there ever be more than the slot holds, the quiet ones are what is left out.
+            foreach (var (pid, counts) in totals.OrderByDescending(item => item.Value[0] + item.Value[1]).Take(1500))
                 reading.Use[pid] = [Interlocked.Read(ref counts[0]), Interlocked.Read(ref counts[1])];
-            try
-            {
-                var temp = file + ".new";
-                File.WriteAllText(temp, JsonSerializer.Serialize(reading));
-                File.Move(temp, file, overwrite: true);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-            }
+            LiveSlot.Write(slot, JsonSerializer.Serialize(reading));
         }
 
         public void Dispose()
@@ -538,13 +533,6 @@ public static class NetMeter
                 trace.Dispose();
             }
             catch (Exception error) when (error is not OutOfMemoryException)
-            {
-            }
-            try
-            {
-                File.Delete(file);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
             }
         }
