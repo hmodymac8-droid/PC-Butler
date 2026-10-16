@@ -367,7 +367,7 @@ public partial class App : Application
 
     // --- the background features, as the tray panel lists them ---
 
-    /// <summary>Something PC Butler does in the background, and whether it is on now.</summary>
+    /// <summary>Something PC Butler does in the background, its name on the tray tile, and whether it is on now.</summary>
     public sealed record Feature(string Key, string Name, string Glyph, bool On);
 
     /// <summary>Every background feature, each read from where it really lives (the settings, Windows, or the running part).</summary>
@@ -376,14 +376,14 @@ public partial class App : Application
         var config = ConfigStore.Load();
         return
         [
-            new("sort", "Automatic sorting", "", config.AutoSortOn),
-            new("clipboard", "Clipboard history", "", config.Clipboard.Enabled),
-            new("overlay", "Performance overlay", "", config.Overlay.Enabled),
-            new("courier", "Courier", "", Courier.Node is not null),
-            new("boost", "Boost", "", BoostMode.Active is not null),
-            new("dropzone", "Drop zone", "", config.DropZone),
-            new("alerts", "Usage alerts", "", config.UsageAlerts),
-            new("autostart", "Start with Windows", "", Autostart.IsEnabled()),
+            new("sort", "Automatic sorting", "\uE8FD", config.AutoSortOn),
+            new("clipboard", "Clipboard history", "\uE77F", config.Clipboard.Enabled),
+            new("overlay", "Performance overlay", "\uE7F4", config.Overlay.Enabled),
+            new("courier", "Courier", "\uE8AB", Courier.Node is not null),
+            new("boost", "Boost", "\uE945", BoostMode.Active is not null),
+            new("dropzone", "Drop zone", "\uE8B7", config.DropZone),
+            new("alerts", "Usage alerts", "\uE7BA", config.UsageAlerts),
+            new("autostart", "Start with Windows", "\uE7E8", Autostart.IsEnabled()),
         ];
     }
 

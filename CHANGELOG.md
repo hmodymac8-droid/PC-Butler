@@ -3,6 +3,18 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.1
+
+- Fixed: the overlay could say "helper is off" while the helper was running, and frames per second stayed empty.
+- The tray panel shows only the background features now, each tile with its full name. Sort now, Pause and Report are gone from it: sorting is on the Sorter page, Pause in the window's status bar.
+- Sorter: a Review moved files button opens the list of what automatic sorting moved, to approve it or undo it.
+- Courier IDs are six digits now, like 205 937: the last six of the nine digits shown before, so the same PC keeps the same ID. A nine-digit ID typed or saved earlier still works.
+- On the PC, the ID box takes digits only, typed or pasted (Arabic digits too), with Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A and Backspace as usual. On the phone, the ID is typed on a keypad of the app's own, with Paste; a keyboard plugged in or the PC's keyboard in the emulator types into it too (digits, Backspace, Enter, Esc, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A).
+- The Vault is a file manager now, on the PC and on the phone: it takes whole folders with what is in them, and keeps folders of its own that you open, make, rename, move and delete, with files moved between them. On the PC, files and folders can be dragged onto a folder, or dropped in from File Explorer, and the search finds files in every folder. A folder taken out comes back as a normal folder with the same shape.
+- Vault: choose how long it stays open without use before it locks (1 to 60 minutes, or never), and whether it locks when PC Butler is closed (on the phone, when the app leaves the screen).
+- PC Butler on the phone: Add files… in the Vault works again (the vault no longer locks while Android's file picker is open), and a file opened from the vault is no longer removed while it is being shown.
+- PC Butler on the phone: in Arabic the app reads from right to left; Duplicates and Storage share one list of folders; the Recycle Bin says when the space is freed and empties itself after 30 days; Sorter's Undo also removes the folders it left empty; putting a big file back no longer freezes the screen; buttons with nothing to act on are hidden.
+
 ## 1.22.0
 
 - New Search page: every file and folder on your drives, found as you type. Space means and, | means or, ! means not, < > groups, quotes keep spaces, * and ? are wildcards, a \ searches the path, and path:, file:, folder:, ext:jpg;png, case: and diacritics: work as in other file search tools.
@@ -23,12 +35,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Programs: AndroidDC installs, and updates, with Install: PC Butler downloads it from its own GitHub repository and sets it up, without opening its page.
 - Programs, Updates: an update is matched to the program of that very name, so its menu's Run, Open file location and Uninstall no longer pick another program whose name starts the same.
 - File Explorer's PC Butler menu comes in groups with a line between them: sorting and sharing, then the Vault, then Shred on its own.
-- Courier IDs are six digits now, like 205 937: the last six of the nine digits shown before, so the same PC keeps the same ID. A nine-digit ID typed or saved earlier still works.
-- On the PC, the ID box takes digits only, typed or pasted (Arabic digits too), with Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A and Backspace as usual. On the phone, the ID is typed on a keypad of the app's own, with Paste; a keyboard plugged in or the PC's keyboard in the emulator types into it too (digits, Backspace, Enter, Esc, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A).
-- The Vault is a file manager now, on the PC and on the phone: it takes whole folders with what is in them, and keeps folders of its own that you open, make, rename, move and delete, with files moved between them. On the PC, files and folders can be dragged onto a folder, or dropped in from File Explorer, and the search finds files in every folder. A folder taken out comes back as a normal folder with the same shape.
-- Vault: choose how long it stays open without use before it locks (1 to 60 minutes, or never), and whether it locks when PC Butler is closed (on the phone, when the app leaves the screen).
-- PC Butler on the phone: Add files… in the Vault works again (the vault no longer locks while Android's file picker is open), and a file opened from the vault is no longer removed while it is being shown.
-- PC Butler on the phone: in Arabic the app reads from right to left; Duplicates and Storage share one list of folders; the Recycle Bin says when the space is freed and empties itself after 30 days; Sorter's Undo also removes the folders it left empty; putting a big file back no longer freezes the screen; buttons with nothing to act on are hidden.
+- The tray icon's panel has a tile for everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), lit when it is on. A click switches it on or off right there instead of opening the program, and the same switch in the window follows.
 - Install this version on every PC and phone that use Courier together.
 
 ## 1.21.6
