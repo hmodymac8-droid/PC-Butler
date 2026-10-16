@@ -27,6 +27,8 @@ public sealed class SorterPage : Page
     public SorterPage(MainWindow main) : base(main, "Let’s tidy things up.", "A little organization. A lot more peace of mind.")
     {
         moveButton = AddAction("Organize files", Move, accent: true);
+        // What automatic sorting moved, to approve or undo.
+        AddAction("Review moved files", () => App.Current.ShowReport());
         stats = AddStats(("Ready to organize", "\uE8A5"), ("Space to sort", "\uEDA2"), ("Destination folders", "\uE8B7"));
 
         var note = Ui.Row(6, Ui.Glyph("\uE72E", 11), Ui.Muted(Ui.T("\uE72E  Your files stay on your device. Every move can be undone.").Replace("\uE72E", "").Trim(), 11));
