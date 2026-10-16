@@ -140,17 +140,20 @@ public sealed class ClipboardPicker : Window
     public static FrameworkElement ItemView(ClipEntry entry)
     {
         var row = new DockPanel();
-        var glyph = entry.Kind switch { "files" => "\uE8B7", "image" => "\uEB9F", _ => "\uE8C8" };
-        row.Children.Add(Ui.Glyph(entry.Pinned ? "\uE718" : glyph, 14, entry.Pinned ? "Primary" : "Muted")
+        var glyph = entry.Hidden ? "\uE72E" : entry.Open ? "\uE785" : entry.Kind switch { "files" => "\uE8B7", "image" => "\uEB9F", _ => "\uE8C8" };
+        row.Children.Add(Ui.Glyph(entry.Pinned && !entry.Locked ? "\uE718" : glyph, 14, entry.Pinned || entry.Locked ? "Primary" : "Muted")
                            .Margin(0, 2, 10, 0).Dock(Dock.Left));
         row.Children.Add(Ui.Muted(When(entry.Time), 11).Margin(10, 2, 0, 0).Dock(Dock.Right));
-        if (entry.Kind == "image" && System.IO.File.Exists(entry.ImageFile))
+        if (entry.Kind == "image" && !entry.Hidden && (entry.Picture is not null || System.IO.File.Exists(entry.ImageFile)))
         {
             var picture = new BitmapImage();
             picture.BeginInit();
             picture.CacheOption = BitmapCacheOption.OnLoad;
             picture.DecodePixelHeight = 120;
-            picture.UriSource = new Uri(entry.ImageFile);
+            if (entry.Picture is { } bytes)
+                picture.StreamSource = new System.IO.MemoryStream(bytes);
+            else
+                picture.UriSource = new Uri(entry.ImageFile);
             picture.EndInit();
             row.Children.Add(new StackPanel
             {
@@ -185,7 +188,8 @@ public sealed class ClipboardPicker : Window
             }
             row.Children.Add(new StackPanel { Children = { body, tags } });
         }
-        row.ToolTip = entry.Kind == "text" && entry.Text.Length > 0 ? entry.Text[..Math.Min(entry.Text.Length, 1500)] : null;
+        row.ToolTip = entry.Hidden ? Ui.T("Locked with a password. Right-click it to unlock it.")
+            : entry.Kind == "text" && entry.Text.Length > 0 ? entry.Text[..Math.Min(entry.Text.Length, 1500)] : null;
         return row;
     }
 
@@ -277,7 +281,9 @@ public sealed class ClipboardPicker : Window
         if (Selected is not { } entry)
             return;
         CloseOnce();
-        manager.Paste(entry, target);
+        // A locked item asks its password first (this list has closed by then; the paste still goes to the program it was opened over).
+        if (ClipboardMenu.Content(entry, null) is { } content)
+            manager.Paste(entry, target, content);
     }
 
     private void CloseOnce()

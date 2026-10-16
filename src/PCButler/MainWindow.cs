@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window
     public SettingsPage Settings => Get<SettingsPage>("settings");
     public BenchmarkPage Benchmark => Get<BenchmarkPage>("benchmark");
     public AboutPage About => Get<AboutPage>("about");
+    public SearchPage SearchPage => Get<SearchPage>("search");
 
     public MainWindow()
     {
@@ -91,6 +92,7 @@ public sealed partial class MainWindow : Window
         foreach (var (key, glyph, name, make, bottom) in new (string, string, string, Func<Page>, bool)[]
                  {
                      ("home", "\uE80F", "Home", () => new HomePage(this), false),
+                     ("search", "\uE721", "Search", () => new SearchPage(this), false),
                      ("preview", "\uE8FD", "Sorter", () => new SorterPage(this), false),
                      ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this), false),
                      ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this), false),
@@ -203,6 +205,15 @@ public sealed partial class MainWindow : Window
         Config = config;
     }
 
+    /// <summary>Something was switched outside the window (the tray panel, a hotkey): show it on the pages built so far.</summary>
+    public void ShowSwitches()
+    {
+        Config = ConfigStore.Load();
+        RefreshBackgroundStatus();
+        foreach (var page in Built)
+            page.ShowSwitches();
+    }
+
     /// <summary>Plan the Sorter list again, and History with it, after anything that moves files.</summary>
     public void RefreshPreview()
     {
@@ -218,6 +229,20 @@ public sealed partial class MainWindow : Window
             return;
         ShowPage("vault");
         Vault.AddFromOutside(waiting);
+    }
+
+    /// <summary>
+    /// Files and folders shared with Courier from File Explorer: open the Courier page with them
+    /// ready to send, starting Courier first when it is off.
+    /// </summary>
+    public void TakeCourierInbox()
+    {
+        var waiting = CourierInbox.Take();
+        if (waiting.Count == 0)
+            return;
+        if (Courier.Node is null)
+            _ = Courier.Start(); // the page explains what is missing when it can't start
+        SendWithPortal(waiting);
     }
 
     /// <summary>Send files to another PC through Portal (from the drop zone).</summary>
@@ -370,7 +395,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Automatic sorting only; starting with Windows is a switch of its own.</summary>
-    private void SetAutoSort(bool on)
+    public void SetAutoSort(bool on)
     {
         if (on == Config.AutoSortOn)
         {

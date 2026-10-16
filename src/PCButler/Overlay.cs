@@ -57,7 +57,7 @@ public sealed class OverlayWindow : Window
         (Color)ColorConverter.ConvertFromString(OverlaySettings.IsColour(hex) ? hex : fallback);
 
     /// <summary>Take the look from the settings: colours, size, a column or one line, and how far from the corner.</summary>
-    public void Style(OverlaySettings settings)
+    public new void Style(OverlaySettings settings)
     {
         var wanted = $"{settings.Accent}|{settings.Text}|{settings.Background}|{settings.Opacity}|{settings.Scale}|{settings.Horizontal}";
         offset = (Math.Max(0, settings.OffsetX), Math.Max(0, settings.OffsetY));
@@ -218,7 +218,7 @@ public sealed class OverlayController
         // First try to count frames here, with no helper: Windows lets some accounts do that. Only if it refuses is the helper needed.
         if (settings.Fps && countsItself is null)
         {
-            countsItself = FpsMeter.Start(AppInfo.DataDir);
+            countsItself = FpsMeter.Start();
             (itselfSince, itselfSawFrames) = (now, false);
             Log.Info(countsItself == true ? "Counting frames without the helper" : "Counting frames needs the helper on this account");
         }
@@ -316,7 +316,9 @@ public sealed class OverlayController
 
 /// <summary>
 /// Keyboard shortcuts that work whatever program is in front. Each action can have one;
-/// they are set on the Hotkeys tab of the Settings page.
+/// they are set on the Hotkeys tab of the Settings page. Shortcuts with the Win key go through
+/// a keyboard hook (WinKeyHook), since Windows keeps most of them for itself; the others are
+/// registered with Windows.
 /// </summary>
 public sealed class Hotkeys : IDisposable
 {
@@ -324,6 +326,8 @@ public sealed class Hotkeys : IDisposable
     public static readonly (string Key, string Label, string Detail)[] Actions =
     [
         ("open", "Open PC Butler", "Brings the window up from the tray."),
+        ("search", "Open the search box", "Finds any file or folder on your drives from whatever program is in front."),
+        ("searchpage", "Open the Search page", ""),
         ("sort", "Sort now", "Moves the files that are due, as the tray menu's Sort now does."),
         ("boost", "Start or stop Boost", "Boost speeds up the program that is in front when you press it."),
         ("overlay", "Show or hide the performance overlay", "Switches the overlay of the Benchmark page on or off."),
@@ -331,11 +335,27 @@ public sealed class Hotkeys : IDisposable
         ("courier", "Open Courier", ""),
     ];
 
+    /// <summary>Shortcuts an action has until the user changes them; cleared, they are saved as "" so the default does not come back.</summary>
+    public static readonly Dictionary<string, string> Defaults = new() { ["search"] = "Win+F" };
+
+    /// <summary>The saved shortcuts with the defaults filled in.</summary>
+    public static Dictionary<string, string> Effective(Dictionary<string, string> saved)
+    {
+        var all = new Dictionary<string, string>(saved);
+        foreach (var (action, keys) in Defaults)
+            all.TryAdd(action, keys);
+        return all;
+    }
+
+    /// <summary>Starts the message for a Win shortcut Windows would not give up: the Hotkeys tab then offers to take it from File Explorer.</summary>
+    public const string HeldByWindows = "held-by-windows:";
+
     private const int WM_HOTKEY = 0x0312, FirstId = 0xB100;
     private const uint MOD_NOREPEAT = 0x4000;
     private readonly HwndSource source;
     private readonly List<int> registered = [];
     private readonly Action<string> run;
+    private readonly WinKeyHook hook;
 
     [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
@@ -343,27 +363,43 @@ public sealed class Hotkeys : IDisposable
     public Hotkeys(Action<string> run)
     {
         this.run = run;
+        hook = new WinKeyHook(index => run(Actions[index].Key));
         source = new HwndSource(new HwndSourceParameters("PC Butler hotkeys") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
         source.AddHook(WndProc);
     }
 
-    /// <summary>Register the shortcuts in the settings. Returns, per action, why its shortcut could not be used.</summary>
-    public Dictionary<string, string> Apply(Dictionary<string, string> wanted)
+    /// <summary>Register the shortcuts in the settings (defaults filled in). Returns, per action, why its shortcut could not be used.</summary>
+    public Dictionary<string, string> Apply(Dictionary<string, string> saved)
     {
+        var wanted = Effective(saved);
         foreach (var id in registered)
             UnregisterHotKey(source.Handle, id);
         registered.Clear();
         var errors = new Dictionary<string, string>();
+        var withWin = new List<(System.Windows.Input.ModifierKeys Modifiers, int Key, int Index, string Keys)>();
         for (var index = 0; index < Actions.Length; index++)
         {
             if (!wanted.TryGetValue(Actions[index].Key, out var keys) || keys.Length == 0)
                 continue;
             if (!Shortcut.TryParse(keys, out var modifiers, out var key))
                 errors[Actions[index].Key] = Ui.T("“{0}” is not a shortcut PC Butler can use.", keys);
+            else if (modifiers.HasFlag(System.Windows.Input.ModifierKeys.Windows))
+                withWin.Add((modifiers, System.Windows.Input.KeyInterop.VirtualKeyFromKey(key), index, keys));
             else if (RegisterHotKey(source.Handle, FirstId + index, (uint)modifiers | MOD_NOREPEAT, (uint)System.Windows.Input.KeyInterop.VirtualKeyFromKey(key)))
                 registered.Add(FirstId + index);
             else
                 errors[Actions[index].Key] = Ui.T("{0} is already used by another program. Choose another shortcut.", keys);
+        }
+        if (!hook.Set(withWin.Select(item => (item.Modifiers, item.Key, item.Index)).ToList()))
+        {
+            // No hook: Windows' own registration takes a Win shortcut only once File Explorer has let go of it.
+            foreach (var (modifiers, key, index, keys) in withWin)
+            {
+                if (RegisterHotKey(source.Handle, FirstId + index, (uint)modifiers | MOD_NOREPEAT, (uint)key))
+                    registered.Add(FirstId + index);
+                else
+                    errors[Actions[index].Key] = HeldByWindows + Ui.T("Windows keeps {0} for itself, and PC Butler could not take it over.", keys);
+            }
         }
         return errors;
     }
@@ -383,6 +419,7 @@ public sealed class Hotkeys : IDisposable
     {
         foreach (var id in registered)
             UnregisterHotKey(source.Handle, id);
+        hook.Dispose();
         source.Dispose();
     }
 }

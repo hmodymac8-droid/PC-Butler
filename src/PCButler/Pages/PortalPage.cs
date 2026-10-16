@@ -11,40 +11,36 @@ using PCButler.Core;
 namespace PCButler;
 
 /// <summary>
-/// Courier: files between PCs on different networks, across the internet. The first time,
-/// this PC either shares (it becomes the host, with a short ID to give out) or connects to
-/// another PC by its ID (it becomes a client): one click either way. After that Courier
-/// starts with PC Butler, stays connected, and the widget takes dropped files.
+/// Courier: files between PCs on different networks, across the internet. One page, one way
+/// of working: this PC has its own ID (always the same), any other PC connects to it by that
+/// ID, and this PC connects to others by theirs. Every PC connected to or paired with is on
+/// the list, where it can be connected, disconnected (on both sides) or removed (kicked out).
 /// </summary>
 public sealed class PortalPage : Page
 {
     private readonly Button startButton;
     private readonly StackPanel asks = new();
-    private readonly Border welcome;
-    private readonly TextBox welcomeId;
-    private readonly Grid top;
-    private readonly StackPanel status = new() { Margin = new Thickness(24, 18, 24, 18) };
-    private readonly TextBox hostNumberBox;
-    private readonly Border hostNumberRow;
+    private readonly StackPanel status = new() { Margin = new Thickness(24, 18, 24, 0) };
+    private readonly TextBox connectBox;
     private readonly CheckBox autoStartSwitch;
     private readonly CheckBox widgetSwitch;
-    private readonly TextBlock roleText = Ui.Muted("", 12);
     private readonly TextBlock firewallText = Ui.Muted("", 12);
     private readonly Button firewallButton;
     private readonly Border firewallRow;
     private readonly TextBlock folderText = Ui.Muted("", 12);
-    private readonly CardPanel deviceCard;
-    private readonly ListView deviceList;
-    private readonly Button autoButton;
-    private readonly Button forgetButton;
-    private readonly Button pairButton;
+    private readonly ComboBox incomingBox = new() { Width = 200, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Button passwordButton;
+    private readonly CardPanel pcCard;
+    private readonly ListView pcList;
+    private readonly Button connectButton, disconnectButton, askAgainButton;
     private readonly TextBlock queuedText = Ui.Text("", 13, "Primary");
     private readonly CardPanel transferCard;
     private readonly ListView transferList;
     private readonly ObservableCollection<Row> transferRows = [];
     private readonly Dictionary<PortalTransfer, (Row Row, long Done, DateTime At, double Speed)> shown = [];
-    /// <summary>Files handed over from the drop zone, waiting for a PC to be chosen.</summary>
+    /// <summary>Files handed over from the drop zone or File Explorer, waiting for a PC to be chosen.</summary>
     private readonly List<string> queued = [];
+    private readonly Dictionary<string, PortalState> passwordsAsked = [];
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private PortalNode? watched;
     private bool showing;
@@ -52,40 +48,33 @@ public sealed class PortalPage : Page
     private bool askingFirewall;
 
     private PortalSettings Settings => Main.Config.Portal;
-    private bool IsHost => Settings.Role == PortalSettings.Host;
-    private bool HasRole => Settings.Role is PortalSettings.Host or PortalSettings.Client;
 
     public PortalPage(MainWindow main) : base(main, "Courier", "Files between your PCs, across the internet.")
     {
         startButton = AddAction("Start Courier", Toggle, accent: true);
         var page = new StackPanel();
 
-        // --- the first time: share from this PC, or connect to another one ---
-        welcomeId = Ui.DigitsOnly(Ui.Field(width: 170, hint: "205937"));
-        welcomeId.FlowDirection = FlowDirection.LeftToRight;
-        welcomeId.FontSize = 16;
-        welcomeId.KeyDown += (_, e) =>
-        {
-            if (e.Key == System.Windows.Input.Key.Enter)
-                BecomeClient();
-        };
-        welcome = Welcome();
-        page.Children.Add(welcome);
-
         // --- questions come first: they wait for an answer ---
         page.Children.Add(asks);
 
-        // --- this PC, beside its settings ---
+        // --- this PC: its ID, and connecting to another one ---
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
-        statusCard.SetBody(status);
-        hostNumberBox = Ui.DigitsOnly(Ui.Field(width: 150, hint: "205937"));
-        hostNumberBox.FlowDirection = FlowDirection.LeftToRight;
-        hostNumberBox.LostFocus += (_, _) => SaveHostNumber(hostNumberBox.Text);
-        hostNumberBox.KeyDown += (_, e) =>
+        connectBox = Ui.DigitsOnly(Ui.Field(width: 170, hint: "205937"));
+        connectBox.FlowDirection = FlowDirection.LeftToRight;
+        connectBox.FontSize = 16;
+        connectBox.KeyDown += (_, e) =>
         {
             if (e.Key == System.Windows.Input.Key.Enter)
-                SaveHostNumber(hostNumberBox.Text);
+                ConnectTyped();
         };
+        // The box to connect stays put while the lines above it change, so typing in it is never interrupted.
+        var connectPart = new StackPanel { Margin = new Thickness(24, 18, 24, 18) };
+        connectPart.Children.Add(Ui.Text(Ui.T("Connect to a PC"), 13, weight: FontWeights.Bold));
+        connectPart.Children.Add(Ui.Muted(Ui.T("Type the ID the other PC shows in its Courier. It joins your list and stays connected."), 12, wrap: true).Margin(0, 4, 0, 8));
+        connectPart.Children.Add(Ui.Row(8, connectBox, Ui.Button(Ui.T("Connect"), ConnectTyped, accent: true)));
+        statusCard.SetBody(new StackPanel { Children = { status, connectPart } });
+
+        // --- settings ---
         autoStartSwitch = Ui.Switch("", true, on => { if (!showing) Main.UpdateConfig(config => config.Portal.AutoStart = on); });
         widgetSwitch = Ui.Switch("", true, on =>
         {
@@ -96,11 +85,19 @@ public sealed class PortalPage : Page
             App.Current.CourierWidgetChanged();
         });
         var rows = new StackPanel();
-        rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Role"), 13, weight: FontWeights.Bold), roleText, Ui.Button(Ui.T("Change"), ChangeRole), first: true));
-        hostNumberRow = Ui.SettingRow(Ui.Text(Ui.T("The other PC's ID"), 13, weight: FontWeights.Bold),
-                                      Ui.Muted(Ui.T("The six digits the host shows. Change it to connect to another PC."), 12), hostNumberBox);
-        rows.Children.Add(hostNumberRow);
-        rows.Children.Add(Ui.SettingRow(Ui.T("Start with PC Butler"), Ui.T("Connected (or reachable) as soon as PC Butler runs, without a click."), autoStartSwitch));
+        incomingBox.Items.Add(new ComboBoxItem { Content = Ui.T("Ask me to allow it"), Tag = PortalSettings.Ask });
+        incomingBox.Items.Add(new ComboBoxItem { Content = Ui.T("Ask for a password"), Tag = PortalSettings.WithPassword });
+        incomingBox.SelectionChanged += (_, _) =>
+        {
+            if (!showing)
+                ChangeIncoming();
+        };
+        passwordButton = Ui.Button(Ui.T("Password…"), () => SetPassword());
+        passwordButton.VerticalAlignment = VerticalAlignment.Center;
+        rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("When a new PC connects"), 13, weight: FontWeights.Bold),
+                                        Ui.Muted(Ui.T("Allow each new PC yourself, or let in the ones that give the password."), 12), Ui.Row(6, incomingBox, passwordButton),
+                                        first: true));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Start with PC Butler"), Ui.T("Reachable, and connected to your PCs, as soon as PC Butler runs, without a click."), autoStartSwitch));
         rows.Children.Add(Ui.SettingRow(Ui.T("Show the Courier widget"), Ui.T("A small window while PCs are connected: drop files on it to send them, and watch them go."),
                                         widgetSwitch));
         firewallButton = Ui.Button(Ui.T("Allow"), AllowFirewall);
@@ -110,42 +107,50 @@ public sealed class PortalPage : Page
                                         Ui.Row(6, Ui.Button(Ui.T("Open"), OpenFolder), Ui.Button(Ui.T("Change…"), ChangeFolder))));
         var settingsCard = new CardPanel("Settings", "\uE713") { Margin = new Thickness(6, 0, 0, 18) };
         settingsCard.SetBody(rows);
-        top = new Grid();
+        var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5, GridUnitType.Star) });
         top.Children.Add(statusCard.At(0, 0));
         top.Children.Add(settingsCard.At(0, 1));
         page.Children.Add(top);
 
-        // --- the other PCs: drop files on a row, or double-click it, to send ---
-        deviceCard = new CardPanel("Clients", "\uE8AB") { Margin = new Thickness(0, 0, 0, 18) };
-        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Send files…"), SendFiles, accent: true));
-        deviceCard.Controls.Children.Add(Ui.Button(Ui.T("Send folder…"), SendFolder).Margin(6));
-        pairButton = Ui.Button(Ui.T("Pair again"), PairWithHost).Margin(6);
-        deviceCard.Controls.Children.Add(pairButton);
-        autoButton = Ui.Button(Ui.T("Ask before taking files: on/off"), ToggleAuto).Margin(6);
-        deviceCard.Controls.Children.Add(autoButton);
-        forgetButton = Ui.Button(Ui.T("Forget"), ForgetSelected).Margin(6);
-        deviceCard.Controls.Children.Add(forgetButton);
-        var footer = deviceCard.AddFooter();
-        footer.Children.Add(Ui.Muted(Ui.T("Drop files on a PC to send them, or double-click it to choose them."), 12));
+        // --- the PCs: every one connected to or paired with; drop files on a row to send them ---
+        pcCard = new CardPanel("Your PCs", "\uE8AB") { Margin = new Thickness(0, 0, 0, 18) };
+        connectButton = Ui.Button(Ui.T("Connect"), ConnectSelected, accent: true);
+        pcCard.Controls.Children.Add(connectButton);
+        disconnectButton = Ui.Button(Ui.T("Disconnect"), DisconnectSelected).Margin(6);
+        pcCard.Controls.Children.Add(disconnectButton);
+        askAgainButton = Ui.Button(Ui.T("Ask again"), AskAgain).Margin(6);
+        pcCard.Controls.Children.Add(askAgainButton);
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Send files…"), SendFiles).Margin(6));
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Send folder…"), SendFolder).Margin(6));
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Rename…"), RenameSelected).Margin(6));
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Ask before taking files: on/off"), ToggleAuto).Margin(6));
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Remove"), RemoveSelected).Margin(6));
+        var footer = pcCard.AddFooter();
+        footer.Children.Add(Ui.Muted(Ui.T("Connected PCs stay connected, also after a restart, until you press Disconnect. Remove kicks a PC out: it must ask, and be allowed, again."), 12));
         footer.Children.Add(queuedText.Dock(Dock.Right));
-        deviceList = Ui.List(("PC", 260, "PlainCell"), ("Status", 200), ("Files from it", 230), ("ID", 110), ("Address", 240));
-        deviceList.MinHeight = 120;
-        deviceList.SelectionMode = SelectionMode.Single;
-        deviceList.AllowDrop = true;
-        deviceList.Drop += (_, e) =>
+        pcList = Ui.List(("PC", 240, "PlainCell"), ("ID", 120), ("Status", 330), ("Files from it", 170), ("Address", 210));
+        pcList.MinHeight = 120;
+        pcList.SelectionMode = SelectionMode.Single;
+        pcList.AllowDrop = true;
+        pcList.SelectionChanged += (_, _) => ShowButtons();
+        pcList.Drop += (_, e) =>
         {
             if (e.Data.GetData(DataFormats.FileDrop) is string[] dropped)
-                SendTo(Ui.RowAt(e.OriginalSource)?.Tag ?? (deviceList.SelectedItem as Row)?.Tag, dropped);
+                SendTo(ReadyPeer(Ui.RowAt(e.OriginalSource) ?? pcList.SelectedItem as Row), dropped);
         };
-        deviceList.MouseDoubleClick += (_, e) =>
+        pcList.MouseDoubleClick += (_, e) =>
         {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Ui.RowAt(e.OriginalSource) is not null)
+            if (e.ChangedButton != System.Windows.Input.MouseButton.Left || Ui.RowAt(e.OriginalSource) is not { } row)
+                return;
+            if (ReadyPeer(row) is not null)
                 SendFiles();
+            else
+                Connect((string)row.Tag!);
         };
-        deviceCard.SetBody(deviceList);
-        page.Children.Add(deviceCard);
+        pcCard.SetBody(pcList);
+        page.Children.Add(pcCard);
 
         // --- what is moving, and what has moved ---
         transferCard = new CardPanel("Transfers", "\uE896");
@@ -195,55 +200,7 @@ public sealed class PortalPage : Page
         ShowAll();
     }
 
-    // --- the first choice ---
-
-    private Border Welcome()
-    {
-        Border Choice(string glyph, string title, string text, UIElement action)
-        {
-            var body = new StackPanel { Margin = new Thickness(24, 22, 24, 22) };
-            body.Children.Add(Ui.Glyph(glyph, 26, "Primary"));
-            body.Children.Add(Ui.Text(title, 18, weight: FontWeights.SemiBold).Margin(0, 12, 0, 0));
-            body.Children.Add(Ui.Muted(text, 12.5, wrap: true).Margin(0, 6, 0, 16));
-            body.Children.Add(action);
-            var card = new Border { Child = body };
-            Widgets.StyleCard(card);
-            return card;
-        }
-
-        var share = Ui.Button(Ui.T("Share from this PC"), BecomeHost, accent: true);
-        share.HorizontalAlignment = HorizontalAlignment.Left;
-        var connect = Ui.Button(Ui.T("Connect"), BecomeClient, accent: true);
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, 18) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.Children.Add(Choice("\uE774", Ui.T("Share from this PC"),
-                                 Ui.T("This PC becomes the host. It gets a short ID: give it to the other PCs, on any network, so they can connect."), share).At(0, 0));
-        grid.Children.Add(Choice("\uE8AB", Ui.T("Connect to a PC"),
-                                 Ui.T("Type the ID the other PC shows in its Courier, and connect. Files then go either way."),
-                                 Ui.Row(8, welcomeId, connect)).At(0, 2));
-        return new Border { Child = grid };
-    }
-
-    private async void BecomeHost()
-    {
-        Main.UpdateConfig(config => { config.Portal.Role = PortalSettings.Host; config.Portal.Devices = []; });
-        await StartNow();
-    }
-
-    private async void BecomeClient()
-    {
-        var number = Portal.NormalizeNumber(welcomeId.Text);
-        if (!Portal.IsNumber(number))
-        {
-            Ui.Info("Courier", Ui.T("Type the ID exactly as the other PC shows it: six digits, like 205 937."));
-            welcomeId.Focus();
-            return;
-        }
-        Main.UpdateConfig(config => { config.Portal.Role = PortalSettings.Client; config.Portal.HostNumber = number; config.Portal.Devices = []; });
-        await StartNow();
-    }
+    // --- connecting ---
 
     private async Task StartNow()
     {
@@ -251,29 +208,6 @@ public sealed class PortalPage : Page
         if (await Courier.Start() is { } problem)
             Ui.Warn("Courier", problem);
         startButton.IsEnabled = true;
-        ShowAll();
-    }
-
-    private async void ChangeRole()
-    {
-        if (Settings.Devices.Count > 0 && !Ui.Ask("Courier", Ui.T("Changing how this PC uses Courier forgets the PCs it was paired with; they will have to be paired again. Change it?")))
-            return;
-        await Courier.Stop();
-        Main.UpdateConfig(config => { config.Portal.Role = ""; config.Portal.Devices = []; });
-        ShowAll();
-    }
-
-    private void SaveHostNumber(string typed)
-    {
-        var number = Portal.NormalizeNumber(typed);
-        if (number == Settings.HostNumber || !Portal.IsNumber(number))
-        {
-            hostNumberBox.Text = Portal.ShowNumber(Settings.HostNumber);
-            return;
-        }
-        Main.UpdateConfig(config => config.Portal.HostNumber = number);
-        Courier.Node?.SetHost(number);
-        hostNumberBox.Text = Portal.ShowNumber(number);
         ShowAll();
     }
 
@@ -288,25 +222,188 @@ public sealed class PortalPage : Page
         await StartNow();
     }
 
+    private void ConnectTyped()
+    {
+        var number = Portal.NormalizeNumber(connectBox.Text);
+        if (!Portal.IsNumber(number) || number == Courier.OwnNumber)
+        {
+            Ui.Info("Courier", Ui.T(number == Courier.OwnNumber ? "That is this PC's own ID. Type the ID the other PC shows in its Courier."
+                                                               : "Type the ID exactly as the other PC shows it: six digits, like 205 937."));
+            connectBox.Focus();
+            return;
+        }
+        connectBox.Text = "";
+        Connect(number);
+    }
+
+    /// <summary>Connect to a PC, and stay connected to it: through the running Courier, or Courier starts for it.</summary>
+    private void Connect(string number)
+    {
+        passwordsAsked.Remove(number);
+        if (Courier.Node is { } node)
+        {
+            node.Connect(number);
+        }
+        else
+        {
+            Main.UpdateConfig(config =>
+            {
+                PortalSavedList.Add(config.Portal, number, "");
+                PortalSavedList.Find(config.Portal, number)!.Stay = true;
+            });
+            _ = StartNow();
+        }
+        ShowAll();
+    }
+
+    private string? ChosenNumber()
+    {
+        if ((pcList.SelectedItem as Row)?.Tag is string number)
+            return number;
+        Ui.Info("Courier", Ui.T("Select a PC in the list first."));
+        return null;
+    }
+
+    private string LabelOf(string number) =>
+        Settings.Saved.FirstOrDefault(saved => saved.Number == number) is { } saved ? PortalSavedList.Label(saved) : Portal.ShowNumber(number);
+
+    private void ConnectSelected()
+    {
+        if (ChosenNumber() is { } number)
+            Connect(number);
+    }
+
+    private async void DisconnectSelected()
+    {
+        if (ChosenNumber() is not { } number)
+            return;
+        if (Courier.Node is { } node)
+            await node.Disconnect(number);
+        else
+            Main.UpdateConfig(config => { if (PortalSavedList.Find(config.Portal, number) is { } saved) saved.Stay = false; });
+        ShowAll();
+    }
+
+    /// <summary>Kick a PC out: disconnected on both sides, off the list, and no longer trusted.</summary>
+    private async void RemoveSelected()
+    {
+        if (ChosenNumber() is not { } number)
+            return;
+        if (!Ui.Ask("Courier", Ui.T("Remove {0}? It is disconnected and taken off the list, and it will have to ask, and be allowed, again before files can go either way.",
+                                    LabelOf(number))))
+            return;
+        if (Courier.Node is { } node)
+            await node.Disconnect(number, forget: true);
+        else
+            Main.UpdateConfig(config => PortalSavedList.Remove(config.Portal, number));
+        ShowAll();
+    }
+
+    private void RenameSelected()
+    {
+        if (ChosenNumber() is not { } number)
+            return;
+        var current = Settings.Saved.FirstOrDefault(saved => saved.Number == number)?.Name ?? "";
+        if (TextDialog.Ask(Window.GetWindow(this), Ui.T("Rename"), Ui.T("A new name for {0}:", LabelOf(number)), current) is not { Length: > 0 } name)
+            return;
+        if (Courier.Node is { } node)
+            node.ChangeSaved(settings => PortalSavedList.Rename(settings, number, name));
+        else
+            Main.UpdateConfig(config => PortalSavedList.Rename(config.Portal, number, name));
+        ShowAll();
+    }
+
+    private void ToggleAuto()
+    {
+        if (Courier.Node is { } node && ChosenNumber() is { } number && node.PeerOf(number) is { Trusted: true } peer)
+            node.SetAutoAccept(peer.Id, !peer.AutoAccept);
+        else
+            Ui.Info("Courier", Ui.T("Select a paired PC first."));
+    }
+
+    private async void AskAgain()
+    {
+        if (Courier.Node is { } node && ChosenNumber() is { } number && node.PeerOf(number) is { Online: true } peer
+            && await node.Pair(peer) is null && node.StateOf(number) is not (PortalState.NeedsPassword or PortalState.WrongPassword))
+            Ui.Warn("Courier", Ui.T("{0} did not answer. Check that Courier is running on it.", peer.Name));
+        ShowAll();
+    }
+
+    // --- how new PCs get in ---
+
+    private void ChangeIncoming()
+    {
+        var rule = (incomingBox.SelectedItem as ComboBoxItem)?.Tag as string ?? PortalSettings.Ask;
+        if (rule == PortalSettings.WithPassword && Settings.Password.Length == 0 && !SetPassword())
+        {
+            ShowSettings(); // no password: it stays on asking
+            return;
+        }
+        Main.UpdateConfig(config => config.Portal.Incoming = rule);
+        Courier.Node?.UseIncoming(rule, Settings.Password);
+        ShowSettings();
+    }
+
+    /// <summary>Set the password new PCs give. Choosing one also switches to asking for it.</summary>
+    private bool SetPassword()
+    {
+        var hash = "";
+        var done = PasswordsDialog.Show(Window.GetWindow(this), Ui.T("Courier password"),
+                                        Ui.T("New PCs that give this password connect without your answer. PCs already connected are not asked."),
+                                        ["Password", "Type it again"], Ui.T("Save"), typed =>
+                                        {
+                                            if (typed[0].Length < 4)
+                                                return Ui.T("Use at least 4 characters.");
+                                            if (typed[0] != typed[1])
+                                                return Ui.T("The two passwords are not the same.");
+                                            hash = Portal.HashPassword(typed[0]);
+                                            return null;
+                                        });
+        if (!done)
+            return false;
+        Main.UpdateConfig(config => (config.Portal.Password, config.Portal.Incoming) = (hash, PortalSettings.WithPassword));
+        Courier.Node?.UseIncoming(PortalSettings.WithPassword, hash);
+        ShowSettings();
+        return true;
+    }
+
+    /// <summary>A PC this one connects to wants its password.</summary>
+    private void AskPassword(string number)
+    {
+        if (Courier.Node is not { } node)
+            return;
+        var state = node.StateOf(number);
+        if (state is not (PortalState.NeedsPassword or PortalState.WrongPassword))
+            return;
+        var name = node.PeerOf(number)?.Name ?? LabelOf(number);
+        PasswordsDialog.Show(Window.GetWindow(this), Ui.T("Courier password"),
+                             Ui.T(state == PortalState.WrongPassword ? "That password was not right. Type it again." : "{0} asks for a password.", name),
+                             ["Password"], Ui.T("Connect"), typed =>
+                             {
+                                 if (typed[0].Length == 0)
+                                     return Ui.T("Type the password first.");
+                                 node.GivePassword(number, typed[0]);
+                                 return null;
+                             });
+        ShowAll();
+    }
+
     // --- showing ---
 
     private void ShowAll()
     {
         Watch();
         var node = Courier.Node;
-        welcome.Visibility = HasRole ? Visibility.Collapsed : Visibility.Visible;
-        top.Visibility = deviceCard.Visibility = HasRole ? Visibility.Visible : Visibility.Collapsed;
-        startButton.Visibility = HasRole ? Visibility.Visible : Visibility.Collapsed;
         startButton.Content = Ui.T(node is null ? "Start Courier" : "Stop Courier");
         ShowStatus(node);
         ShowAsks(node);
         ShowSettings();
-        ShowDevices(node);
+        ShowPcs(node);
         ShowTransfers();
     }
 
     /// <summary>The ID, big, with a button that copies it.</summary>
-    private UIElement IdLine(string number)
+    private static UIElement IdLine(string number)
     {
         var text = new TextBox
         {
@@ -331,36 +428,17 @@ public sealed class PortalPage : Page
     private void Line(string text, string brush = "Muted") =>
         status.Children.Add(Ui.Text(text, 12.5, brush, wrap: true).Margin(0, 8, 0, 0));
 
+    /// <summary>This PC's ID (the same every time), how well others get through to it, and the box to connect to another PC.</summary>
     private void ShowStatus(PortalNode? node)
     {
         status.Children.Clear();
+        status.Children.Add(Ui.Row(10, Ui.Text("●", 12, node is null ? "Muted" : "Primary"),
+                                   Ui.Text(Ui.T(node is null ? "Courier is off" : "Courier is on"), 18, weight: FontWeights.SemiBold)));
+        status.Children.Add(Ui.Muted(Ui.T("This PC's ID: give it to your other PCs, so they can connect to this one. It stays the same."), 12, wrap: true).Margin(0, 12, 0, 0));
+        status.Children.Add(IdLine(Courier.OwnNumber));
         if (node is null)
-        {
-            status.Children.Add(Ui.Text(Ui.T("Courier is off"), 18, weight: FontWeights.SemiBold));
-            Line(Ui.T(IsHost ? "Start it to let the other PCs connect to this one." : "Start it to connect to the other PC."));
-            return;
-        }
-        status.Children.Add(Ui.Row(10, Ui.Text("●", 12, "Primary"),
-                                   Ui.Text(Ui.T(node.IsHost ? "Sharing from this PC" : "Connected mode"), 18, weight: FontWeights.SemiBold)));
-        if (node.IsHost)
-        {
-            status.Children.Add(Ui.Muted(Ui.T("Give this ID to the other PCs:"), 12).Margin(0, 12, 0, 0));
-            status.Children.Add(IdLine(node.Number));
-            ShowHostStatus(node);
-        }
-        else
-        {
-            ShowClientStatus(node);
-            status.Children.Add(Ui.Muted(Ui.T("This PC's own ID: {0}", Portal.ShowNumber(node.Number)), 11.5).Margin(0, 12, 0, 0));
-        }
-    }
-
-    /// <summary>The host: how well the other PCs can get through to it.</summary>
-    private void ShowHostStatus(PortalNode node)
-    {
-        var connected = Courier.Targets(node).Count(target => target.Ready);
-        Line(connected == 0 ? Ui.T("Waiting for the other PCs to connect.") : Ui.T("{0} PC(s) connected.", connected), connected == 0 ? "Muted" : "Primary");
-        if (!node.MappingTried)
+            Line(Ui.T("Start Courier so other PCs can reach this one, and it can connect to them."));
+        else if (!node.MappingTried)
             Line(Ui.T("Asking the router to open a port for Courier…"));
         else if (node.Mapping is { } given)
             Line(Ui.T("The router forwards a port to this PC ({0}), so PCs on any connection, mobile data included, can reach it.", given.Method), "Primary");
@@ -370,49 +448,43 @@ public sealed class PortalPage : Page
             Line(Ui.T("The router did not open a port. Most home connections still get through; turning on UPnP in the router makes every connection work."), "Amber");
     }
 
-    /// <summary>A client: whether it has reached the other PC, and what is in the way if not.</summary>
-    private void ShowClientStatus(PortalNode node)
-    {
-        var host = node.HostPeer;
-        var number = Portal.ShowNumber(Settings.HostNumber);
-        if (host is { Online: true, Trusted: true })
-            Line(Ui.T("Connected to {0}. Drop files on the widget, or on its row below, to send them.", host.Name), "Primary");
-        else if (host is { Online: true })
-            Line(Ui.T("Connected to {0}. Compare the code shown on both PCs to pair them.", host.Name), "Amber");
-        else if (node.Connecting)
-            Line(Ui.T("Connecting to {0}…", number));
-        else
-        {
-            Line(Ui.T(node.HostProblem switch
-            {
-                PortalConnectProblem.NoDirectory => "This PC could not reach the public directory that IDs are looked up in. This network may block it.",
-                PortalConnectProblem.NotFound => "No PC is sharing under {0} right now. Check the ID, and that Courier runs on that PC.",
-                PortalConnectProblem.NoPath => "{0} was found, but the two networks would not let a link through. Turning on UPnP in that PC's router fixes this in most cases.",
-                PortalConnectProblem.BadNumber => "{0} is not the ID of another PC.",
-                _ => "Connecting to {0}…",
-            }, number), node.HostProblem == PortalConnectProblem.None ? "Muted" : "Amber");
-            if (node.HostProblem != PortalConnectProblem.None)
-                Line(Ui.T("It tries again by itself."));
-        }
-    }
-
-    /// <summary>What waits for an answer: pairings (the code to compare) and files another PC wants to send.</summary>
+    /// <summary>What waits for an answer: pairings (the code to compare), passwords other PCs ask for, and files another PC wants to send.</summary>
     private void ShowAsks(PortalNode? node)
     {
         asks.Children.Clear();
         if (node is null)
             return;
-        foreach (var pairing in node.Pairings.Where(pairing => pairing.Code.Length > 0))
+        foreach (var pairing in node.Pairings.Where(pairing => pairing is { Incoming: true, Code.Length: > 0 }))
         {
             var code = new TextBlock
             {
                 Text = pairing.Code, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 34, FontWeight = FontWeights.SemiBold,
                 Foreground = Ui.Paint("Primary"), FlowDirection = FlowDirection.LeftToRight, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 24, 0),
             };
-            var match = Ui.Button(Ui.T("They match"), () => node.Confirm(pairing), accent: true);
-            asks.Children.Add(Ask(Ui.T(pairing.Incoming ? "{0} wants to join" : "Pairing with {0}", pairing.PeerName),
-                                  Ui.T("Press “They match” on both PCs only if both show this same code. If the codes differ, refuse: someone else may be in between."),
-                                  code, match, Ui.Button(Ui.T("Refuse"), () => node.Refuse(pairing))));
+            var allow = Ui.Button(Ui.T("Allow"), () => node.Confirm(pairing), accent: true);
+            asks.Children.Add(Ask(Ui.T("{0} wants to connect to this PC", pairing.PeerName),
+                                  Ui.T("Allow it only if you know that PC. The other PC shows this same code, if you want to check."),
+                                  code, allow, Ui.Button(Ui.T("Refuse"), () => node.Refuse(pairing))));
+        }
+        foreach (var saved in Settings.Saved)
+        {
+            var state = node.StateOf(saved.Number);
+            if (state is not (PortalState.NeedsPassword or PortalState.WrongPassword))
+            {
+                passwordsAsked.Remove(saved.Number);
+                continue;
+            }
+            var number = saved.Number;
+            var name = node.PeerOf(number)?.Name ?? PortalSavedList.Label(saved);
+            asks.Children.Add(Ask(Ui.T("{0} asks for a password", name),
+                                  Ui.T(state == PortalState.WrongPassword ? "That password was not right. Type it again." : "Type the password set on that PC for new PCs."),
+                                  null, Ui.Button(Ui.T("Type the password…"), () => AskPassword(number), accent: true)));
+            // Asked once by itself; after that, the button above asks again.
+            if (passwordsAsked.GetValueOrDefault(number) != state)
+            {
+                passwordsAsked[number] = state;
+                Dispatcher.BeginInvoke(() => AskPassword(number));
+            }
         }
         foreach (var request in node.Requests)
         {
@@ -448,14 +520,12 @@ public sealed class PortalPage : Page
     private void ShowSettings()
     {
         showing = true;
-        roleText.Text = Ui.T(IsHost ? "This PC shares: the others connect to it." : "This PC connects to another PC.");
-        hostNumberRow.Visibility = HasRole && !IsHost ? Visibility.Visible : Visibility.Collapsed;
-        if (!hostNumberBox.IsKeyboardFocused)
-            hostNumberBox.Text = Portal.ShowNumber(Settings.HostNumber);
         autoStartSwitch.IsChecked = Settings.AutoStart;
+        incomingBox.SelectedIndex = Settings.Incoming == PortalSettings.WithPassword ? 1 : 0;
+        passwordButton.Visibility = Settings.Incoming == PortalSettings.WithPassword ? Visibility.Visible : Visibility.Collapsed;
         widgetSwitch.IsChecked = Settings.Widget;
         showing = false;
-        // Only the host takes connections it did not start, so only the host needs the firewall to let them in.
+        // Every PC takes connections it did not start, so the firewall must let them in.
         // Asking the firewall runs a Windows tool, which takes a moment: asked once in the background, then remembered.
         if (firewallAllowed is null && !askingFirewall)
         {
@@ -466,67 +536,54 @@ public sealed class PortalPage : Page
                 ShowSettings();
             }));
         }
-        var allowed = firewallAllowed ?? true;
-        firewallRow.Visibility = IsHost && !allowed ? Visibility.Visible : Visibility.Collapsed;
+        firewallRow.Visibility = firewallAllowed ?? true ? Visibility.Collapsed : Visibility.Visible;
         firewallText.Text = Ui.T("Windows may block the other PCs until PC Butler is allowed. Needed once; Windows asks for permission.");
         folderText.Text = Portal.ReceiveFolder(Settings);
         folderText.FlowDirection = FlowDirection.LeftToRight;
     }
 
-    private void ShowDevices(PortalNode? node)
+    /// <summary>Every PC on the list, with where it stands. It shows while Courier is off too, to connect, rename or remove.</summary>
+    private void ShowPcs(PortalNode? node)
     {
-        var chosen = (deviceList.SelectedItem as Row)?.Tag switch { PortalPeer peer => peer.Id, PortalClient client => client.Id, PortalDevice device => device.Id, _ => "" };
-        deviceCard.Title = Ui.T(IsHost ? "Connected PCs" : "PCs you can send to");
-        autoButton.Visibility = node?.IsHost == true ? Visibility.Visible : Visibility.Collapsed;
-        forgetButton.Visibility = IsHost ? Visibility.Visible : Visibility.Collapsed;
-        pairButton.Visibility = !IsHost && node?.HostPeer is { Online: true, Trusted: false } ? Visibility.Visible : Visibility.Collapsed;
-        List<Row> rows;
-        if (node is null)
+        var chosen = (pcList.SelectedItem as Row)?.Tag as string;
+        var rows = Settings.Saved.Where(saved => saved.Number != Courier.OwnNumber).Select(saved =>
         {
-            // While Courier is off, the PCs paired before are still listed, so they can be forgotten.
-            rows = Settings.Devices.Select(device => new Row
+            var peer = node?.PeerOf(saved.Number);
+            var state = node?.StateOf(saved.Number) ?? PortalState.NotConnected;
+            var name = peer is { Name.Length: > 0 } && saved.Name.Length == 0 ? peer.Name : PortalSavedList.Label(saved);
+            var paired = node is null ? Settings.Devices.Any(device => device.Id.Length >= 15 && Portal.NumberOf(device.Id) == saved.Number) : peer is { Trusted: true };
+            var auto = node is null ? Settings.Devices.FirstOrDefault(device => device.Id.Length >= 15 && Portal.NumberOf(device.Id) == saved.Number)?.AutoAccept == true
+                                    : peer is { AutoAccept: true };
+            return new Row
             {
-                Name = device.Name, Tag = device, Dim = true,
-                Cells = [Ui.T("Courier is off"), "", Portal.ShowNumber(Portal.NumberOf(device.Id)), ""],
-            }).ToList();
-        }
-        else if (node.IsHost)
-        {
-            rows = node.Peers.Where(peer => peer.Trusted).Select(peer => new Row
-            {
-                Name = peer.Name.Length > 0 ? peer.Name : "PC", Tag = peer, Dim = !peer.Online,
+                Name = name, Tag = saved.Number, Dim = state != PortalState.Connected,
                 Cells =
                 [
-                    Ui.T(peer.Online ? "Connected" : "Not connected"), Ui.T(peer.AutoAccept ? "Taken at once" : "Asks first"),
-                    Portal.ShowNumber(peer.Number), peer.Tunnel?.ToString() ?? "",
+                    Portal.ShowNumber(saved.Number),
+                    node is null ? Ui.T(saved.Stay ? "Connects when Courier starts" : "Courier is off") : Courier.Describe(state, name),
+                    Ui.T(!paired ? "Not paired yet" : auto ? "Taken at once" : "Asks first"),
+                    peer?.Tunnel?.ToString() ?? "",
                 ],
-            }).ToList();
-        }
-        else
-        {
-            rows = [];
-            if (node.HostPeer is { } host)
-            {
-                rows.Add(new Row
-                {
-                    Name = host.Name.Length > 0 ? host.Name : "PC", Tag = host, Dim = !host.Online,
-                    Cells =
-                    [
-                        Ui.T(host.Online ? "Connected" : "Not connected"), Ui.T(host.Trusted ? "Taken at once" : "Not paired yet"),
-                        Portal.ShowNumber(host.Number), host.Tunnel?.ToString() ?? "",
-                    ],
-                });
-            }
-            rows.AddRange(node.OtherClients.Select(client => new Row
-            {
-                Name = client.Name, Tag = client, Dim = !client.Online,
-                Cells = [Ui.T(client.Online ? "Connected, through the host" : "Not connected"), "", Portal.ShowNumber(Portal.NumberOf(client.Id)), ""],
-            }));
-        }
-        deviceList.ItemsSource = rows;
-        deviceList.SelectedItem = rows.FirstOrDefault(row => row.Tag switch { PortalPeer peer => peer.Id, PortalClient client => client.Id, PortalDevice device => device.Id, _ => "" } == chosen)
-                                  ?? (rows.Count == 1 ? rows[0] : null);
+            };
+        }).ToList();
+        pcList.ItemsSource = rows;
+        pcList.SelectedItem = rows.FirstOrDefault(row => (string?)row.Tag == chosen) ?? (rows.Count == 1 ? rows[0] : null);
+        pcCard.Title = rows.Count == 0 ? Ui.T("Your PCs") : Ui.T("Your PCs ({0})", rows.Count);
         queuedText.Text = queued.Count > 0 ? Ui.T("{0} item(s) ready: choose a PC and press Send files", queued.Count) : "";
+        ShowButtons();
+    }
+
+    /// <summary>Connect for a PC that is not connected, Disconnect for one that is (or is being looked for).</summary>
+    private void ShowButtons()
+    {
+        var number = (pcList.SelectedItem as Row)?.Tag as string;
+        var node = Courier.Node;
+        var stays = number is not null && Settings.Saved.FirstOrDefault(saved => saved.Number == number)?.Stay == true;
+        var state = number is null || node is null ? PortalState.NotConnected : node.StateOf(number);
+        var linked = node is not null && number is not null && node.PeerOf(number) is { Online: true };
+        disconnectButton.Visibility = stays || linked ? Visibility.Visible : Visibility.Collapsed;
+        connectButton.Visibility = state == PortalState.Connected || (stays && node is not null) ? Visibility.Collapsed : Visibility.Visible;
+        askAgainButton.Visibility = state is PortalState.Asking or PortalState.WaitingForThem ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>The node's transfers with live progress on top, then the log of earlier ones.</summary>
@@ -584,36 +641,40 @@ public sealed class PortalPage : Page
                 });
             }
         }
-        transferCard.Visibility = HasRole || transferRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // --- sending ---
 
+    /// <summary>The PC a row is, when it can take files right now.</summary>
+    private static PortalPeer? ReadyPeer(Row? row) =>
+        row?.Tag is string number && Courier.Targets(Courier.Node).FirstOrDefault(target => target.Ready && target.Tag.Number == number) is { } target ? target.Tag : null;
+
     /// <summary>Where the chosen row sends to (the only connected PC when none is chosen), or null with a word to the user.</summary>
-    private object? Chosen()
+    private PortalPeer? Chosen()
     {
-        if (Courier.Node is not { } node)
+        if (Courier.Node is null)
         {
             Ui.Info("Courier", Ui.T("Start Courier first."));
             return null;
         }
-        var targets = Courier.Targets(node);
-        var ready = targets.Where(target => target.Ready).ToList();
-        var tag = (deviceList.SelectedItem as Row)?.Tag ?? (ready.Count == 1 ? ready[0].Tag : null);
-        var target = targets.FirstOrDefault(item => ReferenceEquals(item.Tag, tag));
-        if (target is null)
-            Ui.Info("Courier", Ui.T(ready.Count == 0 ? "No PC is connected right now." : "Select a PC in the list first."));
-        else if (!target.Ready)
-            Ui.Info("Courier", Ui.T("{0} is not connected right now.", target.Name));
-        else
-            return target.Tag;
+        var ready = Courier.Targets(Courier.Node).Where(target => target.Ready).ToList();
+        if (pcList.SelectedItem is Row row)
+        {
+            if (ReadyPeer(row) is { } peer)
+                return peer;
+            Ui.Info("Courier", Ui.T("{0} is not connected right now.", row.Name));
+            return null;
+        }
+        if (ready.Count == 1)
+            return ready[0].Tag;
+        Ui.Info("Courier", Ui.T(ready.Count == 0 ? "No PC is connected right now." : "Select a PC in the list first."));
         return null;
     }
 
-    private void SendTo(object? target, IEnumerable<string> paths)
+    private void SendTo(PortalPeer? target, IEnumerable<string> paths)
     {
         queued.AddRange(paths);
-        target = target is not null && Courier.Targets(Courier.Node).Any(item => ReferenceEquals(item.Tag, target) && item.Ready) ? target : Chosen();
+        target ??= Chosen();
         if (target is null || Courier.Node is not { } node)
         {
             // Nowhere to send yet: they are kept until a PC is chosen.
@@ -636,54 +697,15 @@ public sealed class PortalPage : Page
             SendTo(target, []);
             return;
         }
-        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", NameOf(target)) };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", target.Name) };
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
             SendTo(target, dialog.FileNames);
     }
 
     private void SendFolder()
     {
-        if (Chosen() is { } target && Ui.PickFolder(Ui.T("Folder to send to {0}", NameOf(target))) is { } folder)
+        if (Chosen() is { } target && Ui.PickFolder(Ui.T("Folder to send to {0}", target.Name)) is { } folder)
             SendTo(target, [folder]);
-    }
-
-    private static string NameOf(object target) => target switch { PortalPeer peer => peer.Name, PortalClient client => client.Name, _ => "" };
-
-    private async void PairWithHost()
-    {
-        if (Courier.Node is { HostPeer: { Online: true, Trusted: false } host } node && await node.Pair(host) is null)
-            Ui.Warn("Courier", Ui.T("{0} did not answer. Check that Courier is running on it.", host.Name));
-        ShowAll();
-    }
-
-    private void ToggleAuto()
-    {
-        if (Courier.Node is { } node && (deviceList.SelectedItem as Row)?.Tag is PortalPeer { Trusted: true } peer)
-            node.SetAutoAccept(peer.Id, !peer.AutoAccept);
-        else
-            Ui.Info("Courier", Ui.T("Select a connected PC first."));
-    }
-
-    private void ForgetSelected()
-    {
-        var (id, name) = (deviceList.SelectedItem as Row)?.Tag switch
-        {
-            PortalPeer { Trusted: true } peer => (peer.Id, peer.Name),
-            PortalDevice device => (device.Id, device.Name),
-            _ => ("", ""),
-        };
-        if (id.Length == 0)
-        {
-            Ui.Info("Courier", Ui.T("Select a paired PC first."));
-            return;
-        }
-        if (!Ui.Ask("Courier", Ui.T("Forget {0}? It will have to be paired again before files can go either way.", name)))
-            return;
-        if (Courier.Node is { } node)
-            node.Forget(id);
-        else
-            Main.UpdateConfig(config => config.Portal.Devices.RemoveAll(device => device.Id == id));
-        ShowAll();
     }
 
     /// <summary>Hold the selected transfers where they are, or let the held ones go on.</summary>

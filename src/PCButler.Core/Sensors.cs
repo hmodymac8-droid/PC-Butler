@@ -23,26 +23,26 @@ public sealed class SensorReading
 /// Temperature and fan speeds. Windows only hands these to a program running as
 /// administrator, and PC Butler itself never does. So on request it starts a small helper,
 /// a second copy of itself with administrator rights (Windows asks first), whose only job
-/// is to read the sensors every few seconds into a file the main program reads. The helper
-/// stops when the main program closes.
+/// is to read the sensors every few seconds into shared memory the main program reads
+/// (see LiveSlot; nothing goes to the disk). The helper stops when the main program closes.
 ///
 /// What a PC reports varies: many give one motherboard temperature, some none, and few
 /// report fan speeds at all. Nothing is installed and no driver is loaded.
 /// </summary>
 public static class Sensors
 {
-    public static string ReadingFile => Path.Combine(AppInfo.DataDir, "sensors.json");
+    public static string Slot => LiveSlot.Name("sensors");
     private const int IntervalSeconds = 3;
 
-    /// <summary>The newest reading, or null if the helper isn't running (its file is missing or stale).</summary>
-    public static SensorReading? Latest()
+    /// <summary>The newest reading, or null if the helper isn't running (nothing written yet, or stale).</summary>
+    public static SensorReading? Latest(string? slot = null)
     {
         try
         {
-            var reading = JsonSerializer.Deserialize<SensorReading>(File.ReadAllText(ReadingFile));
+            var reading = LiveSlot.Read(slot ?? Slot) is { } text ? JsonSerializer.Deserialize<SensorReading>(text) : null;
             return reading is not null && (DateTime.Now - reading.Time).TotalSeconds < IntervalSeconds * 4 ? reading : null;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
+        catch (JsonException)
         {
             return null;
         }
@@ -121,12 +121,16 @@ public static class Sensors
         try
         {
             Directory.CreateDirectory(AppInfo.DataDir);
+            // Made here, before the helper exists: what a program with administrator rights makes, this one could not open.
+            LiveSlot.Prepare(Slot);
+            LiveSlot.Prepare(FpsMeter.Slot);
+            LiveSlot.Prepare(NetMeter.Slot);
             var start = new ProcessStartInfo(Environment.ProcessPath!)
             {
                 UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden,
             };
             start.ArgumentList.Add("--sensors");
-            start.ArgumentList.Add(ReadingFile);
+            start.ArgumentList.Add(AppInfo.DataDir);
             start.ArgumentList.Add(Environment.ProcessId.ToString());
             Process.Start(start);
             return true;
@@ -137,10 +141,24 @@ public static class Sensors
         }
     }
 
-    /// <summary>The helper's whole life: read, write, repeat until the main program is gone.</summary>
-    public static void RunHelper(string file, int parentId)
+    /// <summary>
+    /// The helper's whole life: read, hand over, repeat until the main program is gone.
+    /// "directory" is the data folder, where requests come in (see AdminHelper).
+    /// </summary>
+    public static void RunHelper(string directory, int parentId)
     {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(file))!;
+        LiveSlot.Owner = parentId;
+        // Readings went through files here before; leave none behind.
+        foreach (var old in new[] { "sensors.json", "sensors.json.new", "fps.json", "fps.json.new" })
+        {
+            try
+            {
+                File.Delete(Path.Combine(directory, old));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
         var stopped = new List<string>(); // services paused for Boost (see AdminHelper)
         for (var tick = 0; ParentAlive(parentId); tick++)
         {
@@ -150,28 +168,13 @@ public static class Sensors
                 Thread.Sleep(1000);
                 continue;
             }
-            var reading = Read();
-            try
-            {
-                var temp = file + ".new";
-                File.WriteAllText(temp, JsonSerializer.Serialize(reading));
-                File.Move(temp, file, overwrite: true);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            {
-            }
+            LiveSlot.Write(Slot, JsonSerializer.Serialize(Read()));
             Thread.Sleep(1000);
         }
         AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
         CpuSensor.Close();
         FpsMeter.Stop();
-        try
-        {
-            File.Delete(file);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-        }
+        NetMeter.Stop();
     }
 
     private static bool ParentAlive(int parentId)

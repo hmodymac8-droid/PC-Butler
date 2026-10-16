@@ -503,30 +503,44 @@ public static partial class Programs
         new("EchoSub Lens", "mPhpMaster/echo-sub-lens", "EchoSub Lens", "Translates the text on your screen, in place", AppSource.GitHub),
         new("ATS CV Studio", "mPhpMaster/ats-cv-studio", "ATS CV Studio", "Builds ATS-friendly CVs and checks any CV, in English and Arabic",
             AppSource.GitHub),
+        // No setup file: the repository itself is the program. Its first script fetches scrcpy and gnirehtet, the second adds it to Start.
         new("AndroidDC", "mPhpMaster/androiddc", "AndroidDC", "Controls an Android phone from Windows over adb: mirroring, files, apps and more",
-            AppSource.Page),
+            AppSource.Archive) { Steps = ["get-upstream.ps1 -OnlyMissing", "start-menu.vbs /quiet"] },
         new("Prayer Times Reminder", "9PFTWDWLNL7C", "Prayer Times Reminder", "Reminds you of prayer times and takes a break for them",
             AppSource.Store),
     ];
 
-    /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list.</summary>
-    public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) => FindInstalled(app, installed) is not null;
+    /// <summary>Whether an app from the lists above is installed, judged by the names in the installed list (or, unpacked from an archive, by its folder).</summary>
+    public static bool IsInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
+        app.Source == AppSource.Archive ? File.Exists(Path.Combine(ArchiveFolder(app), ArchiveMark)) : FindInstalled(app, installed) is not null;
 
     /// <summary>The installed program an app from the lists above is, or null.</summary>
     public static InstalledProgram? FindInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
-        app.Source == AppSource.Page ? null
+        app.Source == AppSource.Archive ? null
         : installed.FirstOrDefault(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
                                               // a whole name or word: "Git" is not "GitHub Desktop"
                                               && (program.Name.Length == app.Match.Length
                                                   || !app.Exact && !char.IsLetterOrDigit(program.Name[app.Match.Length])));
 
-    /// <summary>The installed program a winget update is for. winget cuts long names short with "…".</summary>
+    /// <summary>
+    /// The installed program a winget update is for, or null when that can't be told for
+    /// sure. winget shows a program's own name, but cuts long ones short with "…": only then
+    /// is the start of a name enough, and when several programs start that way (the x64 and
+    /// x86 runtimes, say) the installed version must match too. A guess would run, show or
+    /// uninstall another program than the one listed.
+    /// </summary>
     public static InstalledProgram? FindInstalled(ProgramUpdate update, IEnumerable<InstalledProgram> installed)
     {
-        var name = update.Name.TrimEnd('…').Trim();
         var all = installed.ToList();
-        return all.FirstOrDefault(program => program.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-               ?? (name.Length >= 4 ? all.FirstOrDefault(program => program.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase)) : null);
+        var cut = update.Name.EndsWith('…');
+        var name = update.Name.TrimEnd('…').Trim();
+        var named = all.Where(program => program.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (named.Count == 0 && cut && name.Length >= 4)
+            named = all.Where(program => program.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (named.Count <= 1)
+            return named.FirstOrDefault();
+        var sameVersion = named.Where(program => program.Version == update.Version).ToList();
+        return sameVersion.Count == 1 ? sameVersion[0] : null;
     }
 
     /// <summary>The folder a program lives in: its install location, or the folder of what starts it. Null when unknown.</summary>
@@ -566,15 +580,15 @@ public static partial class Programs
     /// <summary>
     /// Start installing one app, with its own window so its questions and progress are visible:
     /// winget for winget and Microsoft Store apps, the release's setup file for GitHub apps.
-    /// An app with only a page gets that page opened, and null back. Throws IOException when
-    /// a GitHub download fails.
+    /// An app that is its repository is downloaded, unpacked and set up here, and null comes
+    /// back once that is done. Throws IOException when a download fails.
     /// </summary>
     public static Process? StartInstall(CatalogApp app)
     {
         switch (app.Source)
         {
-            case AppSource.Page:
-                Shell.Open(app.Page);
+            case AppSource.Archive:
+                InstallArchive(app);
                 return null;
             case AppSource.GitHub:
                 return Process.Start(new ProcessStartInfo(DownloadRelease(app)) { UseShellExecute = true });
@@ -591,6 +605,95 @@ public static partial class Programs
             Log.Warning($"winget could not be started: {error.Message}");
             return null;
         }
+    }
+
+    /// <summary>The file an unpacked app's folder gets once it is set up, so it counts as installed.</summary>
+    private const string ArchiveMark = ".pcbutler-installed";
+
+    /// <summary>Where an app that is its repository lives: a folder of its own among the user's programs.</summary>
+    public static string ArchiveFolder(CatalogApp app) =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", string.Concat(app.Name.Where(char.IsLetterOrDigit)));
+
+    /// <summary>
+    /// Download the repository's zip, unpack it into the app's folder (over what is there, so
+    /// installing again updates it) and run its own setup steps, each in a window of its own,
+    /// one after the other. Throws IOException when the download or a step fails.
+    /// </summary>
+    public static void InstallArchive(CatalogApp app)
+    {
+        var work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "PCButlerApps", string.Concat(app.Name.Where(char.IsLetterOrDigit)))).FullName;
+        var zip = Path.Combine(work, "main.zip");
+        try
+        {
+            using var client = Updater.Client(600);
+            using var download = client.GetStreamAsync(app.Archive).GetAwaiter().GetResult();
+            using var file = File.Create(zip);
+            download.CopyTo(file);
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException)
+        {
+            throw new IOException(error.Message, error);
+        }
+        var target = ArchiveFolder(app);
+        Unpack(zip, target);
+        Directory.Delete(work, recursive: true);
+        foreach (var step in app.Steps)
+        {
+            var (script, arguments) = step.IndexOf(' ') is var space and > 0 ? (step[..space], step[(space + 1)..]) : (step, "");
+            var path = Path.Combine(target, script);
+            if (!File.Exists(path))
+                throw new IOException($"{script} is missing from {app.Name}");
+            var start = script.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)
+                ? new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+                                       $"-NoProfile -ExecutionPolicy Bypass -File \"{path}\" {arguments}")
+                : new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "wscript.exe"), $"\"{path}\" {arguments}");
+            start.WorkingDirectory = target;
+            start.UseShellExecute = true;
+            using var process = Process.Start(start) ?? throw new IOException($"{script} could not be started");
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+                throw new IOException($"{script} ended with code {process.ExitCode}");
+        }
+        File.WriteAllText(Path.Combine(target, ArchiveMark), DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
+        Log.Info($"{app.Name} installed in {target}");
+    }
+
+    /// <summary>
+    /// Unpack a repository's zip into a folder, over what is there. GitHub puts everything in
+    /// one folder named after the repository and branch ("androiddc-main"); its contents are
+    /// what land in the folder. Throws IOException for a broken zip.
+    /// </summary>
+    public static void Unpack(string zip, string target)
+    {
+        var unpacked = zip + ".unpacked";
+        try
+        {
+            if (Directory.Exists(unpacked))
+                Directory.Delete(unpacked, recursive: true);
+            // Names that would land outside the folder are refused by the unpacking itself.
+            System.IO.Compression.ZipFile.ExtractToDirectory(zip, unpacked);
+            var top = Directory.GetDirectories(unpacked) is [var only] && Directory.GetFiles(unpacked).Length == 0 ? only : unpacked;
+            CopyOver(top, target);
+        }
+        catch (Exception error) when (error is InvalidDataException or UnauthorizedAccessException)
+        {
+            throw new IOException(error.Message, error);
+        }
+        finally
+        {
+            if (Directory.Exists(unpacked))
+                Directory.Delete(unpacked, recursive: true);
+        }
+    }
+
+    /// <summary>Copy a folder's files into another, replacing the ones already there and leaving the rest (what the app made for itself) alone.</summary>
+    private static void CopyOver(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.GetFiles(from))
+            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
+        foreach (var folder in Directory.GetDirectories(from))
+            CopyOver(folder, Path.Combine(to, Path.GetFileName(folder)));
     }
 
     /// <summary>The setup file of the app's latest GitHub release, downloaded and checked against its .sha256 when it has one.</summary>
@@ -636,15 +739,22 @@ public static partial class Programs
     }
 }
 
-public enum AppSource { Winget, Store, GitHub, Page }
+/// <summary>Where an app comes from: winget, the Microsoft Store, a GitHub release's setup file, or (Archive) the GitHub repository itself, as a zip.</summary>
+public enum AppSource { Winget, Store, GitHub, Archive }
 
 /// <summary>An app that can be installed from the Programs page: its name, winget package, the start of its installed name, and what it does.</summary>
 /// Id is a winget or Microsoft Store package, or "owner/repo" on GitHub. Exact: only that very name counts as installed.
 public sealed record CatalogApp(string Name, string Id, string Match, string Description, AppSource Source = AppSource.Winget, bool Exact = false)
 {
+    /// <summary>An Archive app: its own scripts to run, in order, once it is unpacked (a .ps1 or a .vbs, then its arguments).</summary>
+    public string[] Steps { get; init; } = [];
+
+    /// <summary>An Archive app: the zip of its main branch.</summary>
+    public string Archive => $"https://github.com/{Id}/archive/refs/heads/main.zip";
+
     public string Page => Source switch
     {
-        AppSource.GitHub or AppSource.Page => $"https://github.com/{Id}",
+        AppSource.GitHub or AppSource.Archive => $"https://github.com/{Id}",
         AppSource.Store => $"https://apps.microsoft.com/detail/{Id.ToLowerInvariant()}",
         _ => $"https://winstall.app/apps/{Id}",
     };

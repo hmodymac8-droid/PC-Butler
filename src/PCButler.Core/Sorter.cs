@@ -8,10 +8,16 @@ using System.Text.RegularExpressions;
 
 namespace PCButler.Core;
 
-/// <summary>A file that is due to move, and where it will go.</summary>
-public sealed record PlannedMove(string Source, string Folder, double Age, long Size, string Root)
+/// <summary>A file that is due to move, and where it will go. Delete: its category deletes such files instead (to the Recycle Bin).</summary>
+public sealed record PlannedMove(string Source, string Folder, double Age, long Size, string Root, bool Delete = false)
 {
     public string Name => Path.GetFileName(Source);
+}
+
+/// <summary>What a sorting run did: how many files it handled (moved or deleted), what went wrong, and how many of them were deleted.</summary>
+public readonly record struct SortResult(int Count, List<string> Errors, int Deleted)
+{
+    public void Deconstruct(out int count, out List<string> errors) => (count, errors) = (Count, Errors);
 }
 
 /// <summary>
@@ -162,22 +168,22 @@ public static class Sorter
     /// </summary>
     public static List<PlannedMove> PlanMoves(Config config, bool everything = false, IReadOnlyList<string>? onlyFolders = null)
     {
-        // A file the user put back with Undo stays put, or the next run would just move it again.
+        // A file the user put back with Undo (or brought back from the Recycle Bin) stays put, or the next run would just move or delete it again.
         var undone = everything
             ? []
-            : History.Load().SelectMany(run => run.Moves).Where(move => move.Count == 3 && move[2] == "undone")
+            : History.Load().SelectMany(run => run.Moves).Where(move => move.Count == 3 && move[2] is "undone" or "restored")
                      .Select(move => Norm(move[0])).ToHashSet();
         var moves = new List<PlannedMove>();
         var roots = onlyFolders?.Select(folder => folder.Length > 0 ? folder : ConfigStore.DetectDownloadsFolder())
                     ?? config.WatchedFolders();
         foreach (var root in roots)
         {
-            var rules = new Dictionary<string, (string Folder, int? MinAge)>(StringComparer.OrdinalIgnoreCase);
+            var rules = new Dictionary<string, (string Folder, int? MinAge, bool Delete)>(StringComparer.OrdinalIgnoreCase);
             foreach (var category in config.Categories)
                 foreach (var extension in category.Extensions)
-                    rules[extension] = (Path.Combine(root, category.Folder), category.MinAgeDays);
-            (string Folder, int? MinAge)? other =
-                config.OtherFolder.Length > 0 ? (Path.Combine(root, config.OtherFolder), null) : null;
+                    rules[extension] = (Path.Combine(root, category.Folder), category.MinAgeDays, category.Delete);
+            (string Folder, int? MinAge, bool Delete)? other =
+                config.OtherFolder.Length > 0 ? (Path.Combine(root, config.OtherFolder), null, false) : null;
             List<string> items;
             try
             {
@@ -203,7 +209,7 @@ public static class Sorter
                     var minAge = everything ? 0 : rule.Value.MinAge ?? config.MinAgeDays;
                     if (age < minAge)
                         continue;
-                    moves.Add(new PlannedMove(item, rule.Value.Folder, age, info.Length, root));
+                    moves.Add(new PlannedMove(item, rule.Value.Folder, age, info.Length, root, rule.Value.Delete));
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {
@@ -233,29 +239,39 @@ public static class Sorter
                 continue;
             var category = config.Categories.FirstOrDefault(item => item.Extensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase));
             var folder = category?.Folder ?? config.OtherFolder;
-            if (folder.Length == 0)
+            if (folder.Length == 0 && category is not { Delete: true })
                 continue;
             var info = new FileInfo(path);
             var target = Path.Combine(root, folder);
             // Already where it belongs: nothing to do.
-            if (!Norm(info.DirectoryName ?? "").Equals(Norm(target), StringComparison.Ordinal))
-                moves.Add(new PlannedMove(path, target, AgeInDays(info), info.Length, root));
+            if (category is { Delete: true } || !Norm(info.DirectoryName ?? "").Equals(Norm(target), StringComparison.Ordinal))
+                moves.Add(new PlannedMove(path, target, AgeInDays(info), info.Length, root, category is { Delete: true }));
         }
         return moves;
     }
 
     /// <summary>
-    /// Carry out planned moves and log them. review=true marks the run as waiting for the
-    /// user's Approve/Undo in the report window.
+    /// Carry out planned moves and log them. A file whose category deletes it goes to the
+    /// Recycle Bin instead, logged as deleted where it lay, so History can bring it back.
+    /// review=true marks the run as waiting for the user's Approve/Undo in the report window.
     /// </summary>
-    public static (int Count, List<string> Errors) MoveFiles(IEnumerable<PlannedMove> moves, bool review = false)
+    public static SortResult MoveFiles(IEnumerable<PlannedMove> moves, bool review = false)
     {
         var done = new List<List<string>>();
         var errors = new List<string>();
+        var deleted = 0;
         foreach (var move in moves)
         {
             try
             {
+                if (move.Delete)
+                {
+                    RecycleBin.Send(move.Source);
+                    done.Add([move.Source, "", "deleted"]);
+                    deleted++;
+                    Log.Info($"Deleted (Recycle Bin, as its category asks) {move.Source}");
+                    continue;
+                }
                 Directory.CreateDirectory(move.Folder);
                 var destination = UniqueDestination(move.Folder, move.Name);
                 File.Move(move.Source, destination);
@@ -271,7 +287,7 @@ public static class Sorter
         }
         if (done.Count > 0)
             History.AddRun(done, review);
-        return (done.Count, errors);
+        return new SortResult(done.Count, errors, deleted);
     }
 
     /// <summary>
@@ -393,12 +409,14 @@ public static class Sorter
                 }
                 count++;
                 var status = permanent ? "erased" : "deleted";
-                Log.Info($"Deleted ({(permanent ? "permanently" : "Recycle Bin")}) {path}");
                 if (active.TryGetValue(Norm(path), out var logged))
                     logged.Add(status);
                 else
                     unlogged.Add([path, "", status]);
             }
+            // One line for the lot: each file is in the history already, and a line per file once grew the log to megabytes.
+            if (count > 0)
+                Log.Info($"Deleted {count} file(s) ({(permanent ? "permanently" : "Recycle Bin")}), {errors.Count} could not be");
             if (unlogged.Count > 0)
                 history.Add(new Run { Time = DateTime.Now.ToString(History.TimeFormat), Moves = unlogged, Review = false });
             History.Save(history);

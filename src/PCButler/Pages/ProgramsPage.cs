@@ -38,7 +38,7 @@ public sealed class ProgramsPage : Page
         driveFilter.SelectionChanged += (_, _) => ShowInstalled();
         bar.Children.Add(driveFilter.Margin(6));
         bar.Children.Add(installedStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), () => Uninstall(Chosen(installedList).Select(row => (InstalledProgram)row.Tag!).ToList()),
+        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), () => Uninstall(Chosen(installedList!).Select(row => (InstalledProgram)row.Tag!).ToList()),
                                    accent: true).Dock(Dock.Right));
         installedList = Ui.List(("Program", 300, "CheckCell"), ("Drive", 60), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
         installedList.MouseDoubleClick += (_, e) =>
@@ -52,7 +52,7 @@ public sealed class ProgramsPage : Page
         bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Check for updates"), CheckUpdates));
         bar.Children.Add(updateStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Update selected"), () => Update(Chosen(updateList).Select(row => (ProgramUpdate)row.Tag!).ToList()),
+        bar.Children.Add(Ui.Button(Ui.T("Update selected"), () => Update(Chosen(updateList!).Select(row => (ProgramUpdate)row.Tag!).ToList()),
                                    accent: true).Dock(Dock.Right));
         updateList = Ui.List(("Program", 300, "CheckCell"), ("Installed", 150), ("New version", 150), ("Package", 260));
         updateStatus.Text = Ui.T("Updates come from winget, Windows' own package manager.");
@@ -108,10 +108,13 @@ public sealed class ProgramsPage : Page
                 menu.Items.Add(new Separator());
                 menu.Items.Add(Ui.Item("Uninstall…", () => Uninstall([program])));
             }
-            else if (app is not null && app.Source != AppSource.Page)
-                menu.Items.Add(Ui.Item("Install", () => Install([app], catalogs.First(catalog => catalog.List == list).Status)));
+            else if (app is not null)
+                menu.Items.Add(Ui.Item(app.Source == AppSource.Archive && Programs.IsInstalled(app, programs) ? "Update" : "Install",
+                                       () => Install([app], catalogs.First(catalog => catalog.List == list).Status)));
+            if (app is { Source: AppSource.Archive } && Programs.IsInstalled(app, programs))
+                menu.Items.Add(Ui.Item("Open file location", () => Shell.Open(Programs.ArchiveFolder(app))));
             if (app is not null)
-                menu.Items.Add(Ui.Item(app.Source == AppSource.Page ? "Open its page to get it" : "Open its web page", () => Shell.Open(app.Page)));
+                menu.Items.Add(Ui.Item("Open its web page", () => Shell.Open(app.Page)));
             if (program is null && app is null)
                 menu.Items.Add(new MenuItem { Header = Ui.T("Not found among the installed programs."), IsEnabled = false });
         };
@@ -148,8 +151,7 @@ public sealed class ProgramsPage : Page
             .Select(item => new Row
             {
                 Name = item.App.Name, Tag = item.App, Dim = item.Installed, Checked = ticked.Contains(item.App.Id),
-                Cells = [Ui.T(item.App.Source == AppSource.Page ? "On its web page"
-                              : programs.Count > 0 ? item.Installed ? "Is installed" : "Not installed" : ""),
+                Cells = [Ui.T(programs.Count > 0 || item.App.Source == AppSource.Archive ? item.Installed ? "Is installed" : "Not installed" : ""),
                          Ui.T(item.App.Description), item.App.Source == AppSource.Winget ? item.App.Id : item.App.Page],
             }).ToList();
     }
@@ -168,7 +170,8 @@ public sealed class ProgramsPage : Page
             Ui.Warn("Programs", Ui.T("winget is not installed on this PC (it comes with App Installer from the Microsoft Store)."));
             return;
         }
-        var already = apps.Where(app => Programs.IsInstalled(app, programs)).Select(app => app.Name).ToList();
+        // An app unpacked from its repository is updated by installing it again, so it is not asked about.
+        var already = apps.Where(app => app.Source != AppSource.Archive && Programs.IsInstalled(app, programs)).Select(app => app.Name).ToList();
         if (already.Count > 0 && !Ui.Ask("Programs", Ui.T("Already installed: {0}.\n\nInstall them again anyway?", string.Join(", ", already))))
             apps.RemoveAll(app => already.Contains(app.Name));
         busy = true;
@@ -176,7 +179,7 @@ public sealed class ProgramsPage : Page
         {
             foreach (var app in apps)
             {
-                status.Text = app.Source == AppSource.GitHub ? Ui.T("Downloading {0} from GitHub…", app.Name)
+                status.Text = app.Source is AppSource.GitHub or AppSource.Archive ? Ui.T("Downloading {0} from GitHub…", app.Name)
                                                              : Ui.T("Installing {0}: follow the winget window…", app.Name);
                 try
                 {

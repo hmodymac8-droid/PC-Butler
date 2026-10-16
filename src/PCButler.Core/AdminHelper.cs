@@ -10,7 +10,7 @@ namespace PCButler.Core;
 public sealed class HelperMessage
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
-    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore", "rename_pc" or "fps".</summary>
+    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore", "rename_pc", "fps" or "net".</summary>
     [JsonPropertyName("action")] public string Action { get; set; } = "";
     /// <summary>Asked: the services to act on. Answered: the ones it worked for.</summary>
     [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
@@ -108,7 +108,7 @@ public static class AdminHelper
         {
             return;
         }
-        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc" or "fps"))
+        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc" or "fps" or "net"))
             return;
         var services = message.Action is "stop_services" or "start_services";
         var stop = message.Action == "stop_services";
@@ -121,11 +121,19 @@ public static class AdminHelper
         if (message.Action == "tune_restore")
             done.AddRange(TuneUp.HelperRestore(message.Services, untune));
         // Counting frames: on or off, nothing else to say.
-        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start(directory))
+        if (message.Action == "fps" && message.Services is ["on"] && FpsMeter.Start())
             done.Add("on");
         if (message.Action == "fps" && message.Services is ["off"])
         {
             FpsMeter.Stop();
+            done.Add("off");
+        }
+        // Counting internet use per program, for the record of app usage: on or off the same way.
+        if (message.Action == "net" && message.Services is ["on"] && NetMeter.Start())
+            done.Add("on");
+        if (message.Action == "net" && message.Services is ["off"])
+        {
+            NetMeter.Stop();
             done.Add("off");
         }
         // A name Windows would refuse is refused here already.
