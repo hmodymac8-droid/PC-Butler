@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.5
+
+- Fixed: clicking the tray icon while its panel was closing could stop PC Butler with "Cannot set Visibility to Visible or call Show, ShowDialog, Close... while a Window is closing". The panel now ignores a second close while it is already closing.
+
 ## 1.22.4
 
 - PC Butler on the phone has a new look, from a design made in Lovable: darker colors with a mint accent, rounded cards and pill buttons, new icons, and a "PC Butler" bar on every page with its own header and buttons.

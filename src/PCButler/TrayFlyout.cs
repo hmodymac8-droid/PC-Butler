@@ -96,12 +96,13 @@ public sealed class TrayFlyout : Window
             Child = new StackPanel { Children = { head, readings, tiles, update, bottom } },
         };
 
-        Deactivated += (_, _) => CloseOnce();
+        Deactivated += (_, _) => Dismiss();
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
-                CloseOnce();
+                Dismiss();
         };
+        Closing += (_, _) => closing = true;
         Closed += (_, _) => ClosedAt = Environment.TickCount64;
         refresh.Tick += (_, _) => Fill();
         refresh.Start();
@@ -124,11 +125,12 @@ public sealed class TrayFlyout : Window
     /// <summary>Do it, and get out of the way.</summary>
     private void Act(Action action)
     {
-        CloseOnce();
+        Dismiss();
         action();
     }
 
-    private void CloseOnce()
+    /// <summary>Close it, unless it is already closing (WPF throws on a second Close while a window closes).</summary>
+    public void Dismiss()
     {
         if (closing)
             return;
