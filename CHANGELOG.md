@@ -10,6 +10,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Win + F opens a search box over whatever program is in front: Enter opens, Ctrl+Enter opens the folder. The shortcut can be changed on the Hotkeys tab.
 - Results: sort by name, path, size or date modified; open, open the folder, copy the path or name, rename, or move files to the Recycle Bin (History can bring them back).
 - Settings > Search: which drives and folders are indexed, what is left out, and how much memory the index uses. The index is saved, so search is ready at once when PC Butler starts, and changes are followed while it runs.
+- The tray icon's panel has a tile for everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), lit when it is on. A click switches it on or off right there instead of opening the program, and the same switch in the window follows.
 
 ## 1.21.6
 
