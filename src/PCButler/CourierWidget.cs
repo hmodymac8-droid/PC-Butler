@@ -176,14 +176,14 @@ public sealed class CourierWidget : Window
 
     private void PickFiles() => Choose(target =>
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", target is PortalPeer peer ? peer.Name : ((PortalClient)target).Name) };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", target.Name) };
         if (dialog.ShowDialog() == true && Courier.Node is { } node)
             Courier.Send(node, target, dialog.FileNames);
         Refresh();
     });
 
     /// <summary>The PC to send to: the only one connected at once, or a choice from a menu at the drop area.</summary>
-    private void Choose(Action<object> then)
+    private void Choose(Action<PortalPeer> then)
     {
         var ready = Courier.Targets(Courier.Node).Where(target => target.Ready).ToList();
         if (ready.Count == 0)
@@ -210,10 +210,7 @@ public sealed class CourierWidget : Window
         if (Courier.Node is not { } node)
             return;
         var ready = Courier.Targets(node).Where(target => target.Ready).ToList();
-        if (node.IsHost)
-            subtitle.Text = ready.Count == 0 ? Ui.T("Waiting for clients") : ready.Count == 1 ? Ui.T("{0} is connected", ready[0].Name) : Ui.T("{0} PCs connected", ready.Count);
-        else
-            subtitle.Text = node.HostPeer is { Online: true } host ? Ui.T("Connected to {0}", host.Name) : Ui.T("Connecting…");
+        subtitle.Text = ready.Count == 0 ? Ui.T("Connecting…") : ready.Count == 1 ? Ui.T("Connected to {0}", ready[0].Name) : Ui.T("{0} PCs connected", ready.Count);
         dot.Fill = Ui.Paint(ready.Count > 0 ? "Primary" : "Amber");
         dropText.Text = ready.Count == 0 ? Ui.T("No PC is connected yet.")
             : ready.Count == 1 ? Ui.T("Drop files here to send to {0}", ready[0].Name) : Ui.T("Drop files here, then choose the PC");
@@ -224,10 +221,11 @@ public sealed class CourierWidget : Window
     /// <summary>A pairing to confirm, or files waiting for Accept: answered right here.</summary>
     private void ShowAsks(PortalNode node)
     {
-        var pairings = node.Pairings.Where(pairing => pairing.Code.Length > 0).ToList();
+        var pairings = node.Pairings.Where(pairing => pairing is { Incoming: true, Code.Length: > 0 }).ToList();
         var requests = node.Requests;
+        var passwords = node.PasswordAsks;
         var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id))
-                  + "#" + node.PasswordWanted;
+                  + "#" + string.Join("|", passwords.Select(item => item.Number + item.Ask));
         if (key == asksShown)
             return;
         asksShown = key;
@@ -244,11 +242,11 @@ public sealed class CourierWidget : Window
                                   Ui.Button(Ui.T("Allow"), () => { node.Confirm(pairing); Refresh(); }, accent: true),
                                   Ui.Button(Ui.T("Refuse"), () => { node.Refuse(pairing); Refresh(); })));
         }
-        if (!node.IsHost && node.PasswordWanted != PortalPasswordAsk.None)
+        foreach (var (number, ask) in passwords)
         {
             // Typed on the Courier page, where it is asked for.
-            asks.Children.Add(Ask(Ui.T("{0} asks for a password", node.HostPeer?.Name ?? Portal.ShowNumber(node.HostNumber)),
-                                  Ui.T(node.PasswordWanted == PortalPasswordAsk.Wrong ? "That password was not right. Type it again." : "Type the password set on that PC for new PCs."), null,
+            asks.Children.Add(Ask(Ui.T("{0} asks for a password", node.PeerOf(number)?.Name ?? Portal.ShowNumber(number)),
+                                  Ui.T(ask == PortalPasswordAsk.Wrong ? "That password was not right. Type it again." : "Type the password set on that PC for new PCs."), null,
                                   Ui.Button(Ui.T("Type the password…"), () => App.Current.ShowPage("portal"), accent: true)));
         }
         foreach (var request in requests)

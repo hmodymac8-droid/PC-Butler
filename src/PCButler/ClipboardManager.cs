@@ -162,31 +162,42 @@ public sealed class ClipboardManager : IDisposable
 
     // --- putting an item back ---
 
-    /// <summary>Put an item on the clipboard (it moves to the top of the history). Returns false when the clipboard was busy.</summary>
-    public bool Copy(ClipEntry entry)
+    /// <summary>
+    /// Put an item on the clipboard (it moves to the top of the history). content: what to put
+    /// there when it is not the item itself (a locked item, opened with its password for this
+    /// once). Returns false when the clipboard was busy, or the item is locked.
+    /// </summary>
+    public bool Copy(ClipEntry entry, ClipEntry? content = null)
     {
+        var what = content ?? entry;
+        if (what.Hidden)
+            return false;
         ignoreUntil = DateTime.Now.AddMilliseconds(800);
         for (var attempt = 0; attempt < 4; attempt++)
         {
             try
             {
-                switch (entry.Kind)
+                switch (what.Kind)
                 {
                     case "files":
                         var list = new System.Collections.Specialized.StringCollection();
-                        list.AddRange(entry.Files.ToArray());
+                        list.AddRange(what.Files.ToArray());
                         Clipboard.SetFileDropList(list);
                         break;
                     case "image":
                         var image = new BitmapImage();
                         image.BeginInit();
                         image.CacheOption = BitmapCacheOption.OnLoad;
-                        image.UriSource = new Uri(entry.ImageFile);
+                        // A locked picture, unlocked, is only in memory.
+                        if (what.Picture is { } picture)
+                            image.StreamSource = new MemoryStream(picture);
+                        else
+                            image.UriSource = new Uri(what.ImageFile);
                         image.EndInit();
                         Clipboard.SetImage(image);
                         break;
                     default:
-                        Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, entry.Text), copy: true);
+                        Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, what.Text), copy: true);
                         break;
                 }
                 ClipboardHistory.Touch(entry);
@@ -206,9 +217,9 @@ public sealed class ClipboardManager : IDisposable
     }
 
     /// <summary>Copy the item, bring the earlier window back and press Ctrl+V in it.</summary>
-    public async void Paste(ClipEntry entry, IntPtr target)
+    public async void Paste(ClipEntry entry, IntPtr target, ClipEntry? content = null)
     {
-        if (!Copy(entry) || !settings.PasteOnPick || target == IntPtr.Zero)
+        if (!Copy(entry, content) || !settings.PasteOnPick || target == IntPtr.Zero)
             return;
         SetForegroundWindow(target);
         await Task.Delay(150);

@@ -222,7 +222,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Files and folders shared with Courier from File Explorer: open the Courier page with them
-    /// ready to send, starting Courier first when this PC has chosen its role.
+    /// ready to send, starting Courier first when it is off.
     /// </summary>
     public void TakeCourierInbox()
     {

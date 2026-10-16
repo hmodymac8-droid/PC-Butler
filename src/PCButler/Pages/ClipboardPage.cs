@@ -106,7 +106,7 @@ public sealed class ClipboardPage : Page
         bar.Children.Add(Ui.Button(Ui.T("Copy"), CopySelected, accent: true));
         bar.Children.Add(pinButton.Margin(6, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Delete"), DeleteSelected).Margin(6, 0, 0, 0));
-        bar.Children.Add(Ui.Muted(Ui.T("Right-click an item for more: Google, tags, its link."), 12).Margin(12, 0, 0, 0));
+        bar.Children.Add(Ui.Muted(Ui.T("Right-click an item for more: Google, tags, its link, a password."), 12).Margin(12, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Dock(Dock.Right));
         var history = new DockPanel { Margin = new Thickness(10) };
         history.Children.Add(top.Dock(Dock.Top));
@@ -200,7 +200,7 @@ public sealed class ClipboardPage : Page
 
     private void CopySelected()
     {
-        if (Selected().FirstOrDefault() is { } entry && !App.Current.Clips.Copy(entry))
+        if (Selected().FirstOrDefault() is { } entry && ClipboardMenu.Content(entry, Window.GetWindow(this)) is { } content && !App.Current.Clips.Copy(entry, content))
             Ui.Warn("Clipboard", Ui.T("The clipboard is busy. Try again in a moment."));
     }
 

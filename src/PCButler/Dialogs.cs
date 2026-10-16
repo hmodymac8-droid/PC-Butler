@@ -51,6 +51,7 @@ public sealed partial class CategoryDialog : Dialog
     private readonly TextBox extensions;
     private readonly TextBox age;
     private readonly TextBox recycle;
+    private readonly CheckBox delete;
     private Category? result;
 
     private CategoryDialog(Window owner, Category? category) : base(owner, "Category")
@@ -61,14 +62,18 @@ public sealed partial class CategoryDialog : Dialog
         age = Ui.Field(category.MinAgeDays?.ToString() ?? "", 80);
         recycle = Ui.Field(category.RecycleAfterDays.ToString(), 80);
         age.HorizontalAlignment = recycle.HorizontalAlignment = HorizontalAlignment.Left;
+        delete = Ui.Switch(Ui.T("Delete these files instead of moving them"), category.Delete);
 
         var body = new StackPanel { Margin = new Thickness(16) };
+        body.Children.Add(delete);
+        body.Children.Add(Ui.Muted(Ui.T("They go to the Recycle Bin once they are old enough, and History can bring them back. No folder is needed then."), 12, wrap: true)
+                            .Margin(0, 2, 0, 12));
         body.Children.Add(Ui.Text(Ui.T("Destination folder")));
         body.Children.Add(Ui.Row(6, folder, Ui.Button(Ui.T("Browse…"), Browse)).Margin(0, 2));
         body.Children.Add(Ui.Muted(Ui.T("A plain name creates the folder inside the folder being sorted."), 12));
         body.Children.Add(Ui.Text(Ui.T("File extensions (separated by spaces or commas)")).Margin(0, 10));
         body.Children.Add(extensions.Margin(0, 2));
-        body.Children.Add(Ui.Text(Ui.T("Move these files after (days)")).Margin(0, 10));
+        body.Children.Add(Ui.Text(Ui.T("Move (or delete) these files after (days)")).Margin(0, 10));
         body.Children.Add(age.Margin(0, 2));
         body.Children.Add(Ui.Muted(Ui.T("Leave blank to use the general setting."), 12));
         body.Children.Add(Ui.Text(Ui.T("Clean up: send to the Recycle Bin after (days in this folder)")).Margin(0, 10));
@@ -119,12 +124,13 @@ public sealed partial class CategoryDialog : Dialog
             Ui.Warn("Category", Ui.T("Days must be whole numbers, 0 or more."));
             return;
         }
-        if (name.Length == 0 || types.Count == 0)
+        var deleting = delete.IsChecked == true;
+        if ((name.Length == 0 && !deleting) || types.Count == 0)
         {
-            Ui.Warn("Category", Ui.T("Enter a folder and at least one extension."));
+            Ui.Warn("Category", Ui.T(deleting ? "Enter at least one extension." : "Enter a folder and at least one extension."));
             return;
         }
-        result = new Category { Folder = name, Extensions = types, MinAgeDays = days, RecycleAfterDays = recycleDays };
+        result = new Category { Folder = name, Extensions = types, MinAgeDays = days, RecycleAfterDays = recycleDays, Delete = deleting };
         Close();
     }
 }
