@@ -1739,5 +1739,6 @@
  "{0} file(s) moved into the vault.": "نُقل {0} ملف إلى الخزنة.",
  "{0} selected": "تم تحديد {0}",
  "{0}: it holds the vault itself": "{0}: فيه الخزنة نفسها",
- "{0}: not a folder": "{0}: ليس مجلدًا"
+ "{0}: not a folder": "{0}: ليس مجلدًا",
+ "Code: {0}": "الرمز: {0}"
 }
