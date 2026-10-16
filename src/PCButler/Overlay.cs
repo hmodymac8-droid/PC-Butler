@@ -388,7 +388,7 @@ public sealed class Hotkeys : IDisposable
             else if (RegisterHotKey(source.Handle, FirstId + index, (uint)modifiers | MOD_NOREPEAT, (uint)System.Windows.Input.KeyInterop.VirtualKeyFromKey(key)))
                 registered.Add(FirstId + index);
             else
-                errors[Actions[index].Key] = Ui.T("{0} is already used by another program. Choose another shortcut.", keys);
+                errors[Actions[index].Key] = Ui.T("Another program already uses {0}, and Windows does not say which one. Choose another shortcut, or close that program and try again.", keys);
         }
         if (!hook.Set(withWin.Select(item => (item.Modifiers, item.Key, item.Index)).ToList()))
         {
