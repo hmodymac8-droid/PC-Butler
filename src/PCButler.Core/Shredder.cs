@@ -205,3 +205,37 @@ public static class VaultInbox
         }
     }
 }
+
+/// <summary>
+/// Files and folders waiting to be sent with Courier, handed over by File Explorer's
+/// right-click entry. The running program holds Courier's connections, so the entry leaves
+/// the paths here and opens the window, which puts them on the Courier page's send list.
+/// </summary>
+public static class CourierInbox
+{
+    private static string InboxFile => Path.Combine(AppInfo.DataDir, "courier-inbox.txt");
+
+    public static void Add(IEnumerable<string> paths)
+    {
+        Directory.CreateDirectory(AppInfo.DataDir);
+        File.AppendAllLines(InboxFile, paths.Select(Path.GetFullPath));
+    }
+
+    /// <summary>The waiting files and folders that still exist; the list is emptied.</summary>
+    public static List<string> Take()
+    {
+        try
+        {
+            if (!File.Exists(InboxFile))
+                return [];
+            var paths = File.ReadAllLines(InboxFile).Where(path => File.Exists(path) || Directory.Exists(path))
+                            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            File.Delete(InboxFile);
+            return paths;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+}

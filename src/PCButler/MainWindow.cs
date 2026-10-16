@@ -229,6 +229,20 @@ public sealed partial class MainWindow : Window
         Vault.AddFromOutside(waiting);
     }
 
+    /// <summary>
+    /// Files and folders shared with Courier from File Explorer: open the Courier page with them
+    /// ready to send, starting Courier first when this PC has chosen its role.
+    /// </summary>
+    public void TakeCourierInbox()
+    {
+        var waiting = CourierInbox.Take();
+        if (waiting.Count == 0)
+            return;
+        if (Courier.Node is null)
+            _ = Courier.Start(); // the page explains what is missing when it can't start
+        SendWithPortal(waiting);
+    }
+
     /// <summary>Send files to another PC through Portal (from the drop zone).</summary>
     public void SendWithPortal(IEnumerable<string> paths)
     {

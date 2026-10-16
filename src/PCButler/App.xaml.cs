@@ -120,7 +120,8 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error($"Unhandled: {e.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            Log.Error($"Unobserved: {e.Exception}");
+            // The same failure over and over (a dropped Courier link, say) is written once an hour, not each time.
+            Log.Seldom("unobserved " + e.Exception.GetBaseException().Message, TimeSpan.FromHours(1), $"ERROR Unobserved: {e.Exception}");
             e.SetObserved();
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
@@ -206,6 +207,7 @@ public partial class App : Application
             window.Show();
             window.Activate();
             window.TakeVaultInbox();
+            window.TakeCourierInbox();
             return;
         }
         // Building the window takes a moment, and some of it lets other clicks through (a tray icon
@@ -252,7 +254,10 @@ public partial class App : Application
         Dispatcher.BeginInvoke(() =>
         {
             if (IsOpen(opened))
+            {
                 opened.TakeVaultInbox();
+                opened.TakeCourierInbox();
+            }
         }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
@@ -574,6 +579,7 @@ public partial class App : Application
     // --- Courier: started with the program, and its widget while PCs are connected ---
 
     private CourierWidget? courierWidget;
+    private CourierNotices? courierNotices;
     private bool widgetDismissed, widgetWasBusy;
     private readonly DispatcherTimer courierWatch = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -616,6 +622,9 @@ public partial class App : Application
         {
             courierWidget?.Hide();
         }
+        // A notification for each transfer while the widget, which shows the same, is not on screen.
+        courierNotices ??= new CourierNotices();
+        courierNotices.Update(node, allowed: courierWidget is not { IsVisible: true });
     }
 
     /// <summary>The widget was switched on or off on the Courier page.</summary>
