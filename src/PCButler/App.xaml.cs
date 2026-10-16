@@ -120,7 +120,8 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error($"Unhandled: {e.ExceptionObject}");
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            Log.Error($"Unobserved: {e.Exception}");
+            // The same failure over and over (a dropped Courier link, say) is written once an hour, not each time.
+            Log.Seldom("unobserved " + e.Exception.GetBaseException().Message, TimeSpan.FromHours(1), $"ERROR Unobserved: {e.Exception}");
             e.SetObserved();
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");

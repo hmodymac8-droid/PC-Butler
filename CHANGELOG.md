@@ -5,12 +5,8 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.21.6
 
-- Courier: every file sent or received shows a notification in the corner of the screen with its progress bar, the time it has taken and the time left, and Pause (then Resume) and Cancel. It shows while the Courier widget is hidden or switched off, and says how the transfer ended for a few seconds.
-- PC Butler on the phone: Courier's notification shows the file on its way with its progress bar, time taken and time left, and has Pause or Resume, Cancel and Disconnect buttons. The Courier tab has a Pause button and the times under each transfer too. A pause on one side holds the transfer on both.
-- Courier keeps a list of saved PCs, on Windows and on the phone: add a PC by its ID to connect to it later, connect to any of them with a click, rename them and remove them. The PCs you connect to join the list by themselves.
-- Mark one saved PC as the favourite: Courier connects to it by itself when PC Butler starts.
-- A PC that shares (the host) chooses what happens when a new PC connects: it asks you to allow it, or it lets in the PCs that give the password you set. The phone asks too now, with Allow and Refuse, instead of letting every PC in.
-- A host can rename the PCs it let in.
+- PC Butler no longer writes to the disk every second. The helper's temperatures and frame counts reach the program through memory instead of the sensors.json and fps.json files, and settings are only written when they change.
+- The log (pcbutler.log) stays under a megabyte: the older part moves to pcbutler.old.log. Deleting files adds one line, not one per file, and Courier no longer notes every repeated knock and renewal.
 
 ## 1.21.5
 
