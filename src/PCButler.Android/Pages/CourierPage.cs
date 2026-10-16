@@ -39,7 +39,7 @@ public sealed class CourierPage : ContentPage
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
-    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, long Done, DateTime At, double Speed)> rows = [];
+    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, Button Pause, Label Times)> rows = [];
     private string asksShown = "", targetsShown = "", transfersShown = "\0";
     private bool pulsing;
 
@@ -464,20 +464,29 @@ public sealed class CourierPage : ContentPage
                 var detail = Theme.Faint("", 12);
                 var cancel = Theme.Plain("✕", () => { transfer.Cancel(); Refresh(); });
                 (cancel.Padding, cancel.BackgroundColor, cancel.TextColor, cancel.VerticalOptions) = (new Thickness(10, 4), Colors.Transparent, Theme.Muted, LayoutOptions.Center);
+                var pause = Theme.Plain("", () => { Courier.TogglePause(transfer); Refresh(); });
+                (pause.Padding, pause.BackgroundColor, pause.TextColor, pause.VerticalOptions) = (new Thickness(10, 4), Colors.Transparent, Theme.Primary, LayoutOptions.Center);
+                var times = Theme.Faint("", 12);
                 var name = new Label { Text = (transfer.Incoming ? "↓ " : "↑ ") + transfer.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
                 var head = Theme.Line3(Theme.Tile(Theme.TileFor(transfer.Name), 36), Theme.TwoLines(name, detail), cancel);
-                transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar } }, 12));
-                rows[transfer] = rows.TryGetValue(transfer, out var old) ? (bar, detail, cancel, old.Done, old.At, old.Speed) : (bar, detail, cancel, transfer.Done, DateTime.UtcNow, 0);
+                var foot = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
+                foot.Add(times.Margin(0, 0, 8, 0), 0);
+                foot.Add(pause, 1);
+                times.VerticalOptions = LayoutOptions.Center;
+                transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot } }, 12));
+                rows[transfer] = (bar, detail, cancel, pause, times);
             }
         }
-        var clock = DateTime.UtcNow;
         foreach (var transfer in shown)
         {
-            var (bar, detail, cancel, done, at, speed) = rows[transfer];
-            if ((clock - at).TotalSeconds >= 0.9)
-                (done, at, speed) = (transfer.Done, clock, Math.Max(0, (transfer.Done - done) / (clock - at).TotalSeconds));
-            rows[transfer] = (bar, detail, cancel, done, at, speed);
+            var (bar, detail, cancel, pause, times) = rows[transfer];
             cancel.IsVisible = transfer.State is "active" or "waiting"; // a finished one has nothing left to stop
+            // Only what is moving can be held, and only this phone's own pause can be let go here.
+            pause.IsVisible = transfer.State == "active";
+            pause.Text = Tr.T(transfer.Paused ? "Resume" : "Pause");
+            times.Text = transfer.State is "active" or "done" ? Courier.Times(transfer) : "";
+            var held = Courier.Held(transfer);
+            var speed = transfer.Speed;
             var part = transfer.Size > 0 ? (double)transfer.Done / transfer.Size : 1;
             bar.Progress = transfer.State == "done" ? 1 : part;
             var direction = Tr.T(transfer.Incoming ? "From {0}" : "To {0}", transfer.Peer);
@@ -485,7 +494,7 @@ public sealed class CourierPage : ContentPage
             {
                 "waiting" => $"{direction}  ·  " + Tr.T(transfer.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept"),
                 "done" => $"{direction}  ·  " + Tr.T("Done") + $"  ·  {Size(transfer.Size)}",
-                "active" => $"{direction}  ·  {part * 100:0}%  ·  {Size(transfer.Done)} / {Size(transfer.Size)}" + (speed > 0 ? $"  ·  {Size((long)speed)}/s" : ""),
+                "active" => $"{direction}  ·  {part * 100:0}%  ·  {Size(transfer.Done)} / {Size(transfer.Size)}" + (held.Length > 0 ? $"  ·  {held}" : speed > 0 ? $"  ·  {Size((long)speed)}/s" : ""),
                 _ => $"{direction}  ·  " + Tr.T(transfer.State switch { "cancelled" => "Cancelled", "refused" => "Refused", _ => "Failed" })
                      + (transfer.Note.Length > 0 ? $": {transfer.Note}" : ""),
             };

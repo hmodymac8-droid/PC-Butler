@@ -3,6 +3,11 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.5
+
+- Courier: every file sent or received shows a notification in the corner of the screen with its progress bar, the time it has taken and the time left, and Pause (then Resume) and Cancel. It shows while the Courier widget is hidden or switched off, and says how the transfer ended for a few seconds.
+- PC Butler on the phone: Courier's notification shows the file on its way with its progress bar, time taken and time left, and has Pause or Resume, Cancel and Disconnect buttons. The Courier tab has a Pause button and the times under each transfer too. A pause on one side holds the transfer on both.
+
 ## 1.21.4
 
 - Settings > Hotkeys: the clipboard history's shortcut can be changed there too, like the others.

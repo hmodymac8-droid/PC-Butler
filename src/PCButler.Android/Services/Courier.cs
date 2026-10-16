@@ -16,6 +16,32 @@ public static class Courier
 
     public static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
+    /// <summary>A length of time as 0:42, 12:05 or 1:02:33.</summary>
+    public static string Time(TimeSpan time) =>
+        time.TotalHours >= 1 ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{time.Minutes}:{time.Seconds:00}";
+
+    /// <summary>"2:10 elapsed · 0:45 left" for a transfer that has started moving; "" before that.</summary>
+    public static string Times(PortalTransfer transfer)
+    {
+        if (transfer.Elapsed < TimeSpan.FromSeconds(1))
+            return "";
+        var text = Tr.T("{0} elapsed", Time(transfer.Elapsed));
+        return transfer.Remaining is { } left ? text + "  ·  " + Tr.T("{0} left", Time(left)) : text;
+    }
+
+    /// <summary>Why a moving transfer is not moving, or "".</summary>
+    public static string Held(PortalTransfer transfer) =>
+        transfer.Paused ? Tr.T("Paused") : transfer.PausedThere ? Tr.T("Paused on the other PC") : "";
+
+    /// <summary>Pause it if it moves, let it go on if this phone paused it.</summary>
+    public static void TogglePause(PortalTransfer transfer)
+    {
+        if (transfer.Paused)
+            transfer.Resume();
+        else
+            transfer.Pause();
+    }
+
     /// <summary>Started, stopped, or files shared from another app arrived.</summary>
     public static event Action? Changed;
 
