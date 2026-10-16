@@ -121,7 +121,7 @@ public sealed class BenchmarkPage : AppPage
                 ActivityLog.Record("benchmark", "CPU benchmark", $"{all:N0} MB/s · {one:N0} MB/s one core");
             }
         }
-        catch (OperationCanceledException)
+        catch (System.OperationCanceledException)
         {
         }
         catch (IOException error)

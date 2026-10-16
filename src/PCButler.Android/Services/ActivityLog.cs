@@ -17,7 +17,7 @@ public static class ActivityLog
 
     private const int Most = 300;
     private static readonly object Gate = new();
-    private static string LogFile => Path.Combine(AppInfo.DataDir, "activity.json");
+    private static string LogFile => Path.Combine(PCButler.Core.AppInfo.DataDir, "activity.json");
 
     /// <summary>The kinds that are about files; the others are tools.</summary>
     public static readonly string[] FileKinds = ["sorter", "duplicates", "storage", "cleaner", "courier"];
@@ -63,7 +63,7 @@ public static class ActivityLog
     {
         try
         {
-            Directory.CreateDirectory(AppInfo.DataDir);
+            Directory.CreateDirectory(PCButler.Core.AppInfo.DataDir);
             File.WriteAllText(LogFile, JsonSerializer.Serialize(list));
         }
         catch (IOException error)

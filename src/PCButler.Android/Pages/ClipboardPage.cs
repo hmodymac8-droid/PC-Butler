@@ -20,7 +20,7 @@ public sealed class ClipboardPage : AppPage
         public DateTime Saved { get; set; }
     }
 
-    private static string StoreFile => Path.Combine(AppInfo.DataDir, "snippets.json");
+    private static string StoreFile => Path.Combine(PCButler.Core.AppInfo.DataDir, "snippets.json");
     private readonly VerticalStackLayout list = new() { Spacing = 0 };
     private readonly Label count = Theme.Faint("", 12.5);
     private readonly Editor typed = new() { Placeholder = Tr.T("Type or paste text…"), AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 120, TextColor = Theme.Text, PlaceholderColor = Theme.Muted, FontSize = 15 };
@@ -61,7 +61,7 @@ public sealed class ClipboardPage : AppPage
 
     private void Save()
     {
-        Directory.CreateDirectory(AppInfo.DataDir);
+        Directory.CreateDirectory(PCButler.Core.AppInfo.DataDir);
         File.WriteAllText(StoreFile, JsonSerializer.Serialize(snippets));
         Show();
     }
