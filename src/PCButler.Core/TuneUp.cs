@@ -190,7 +190,7 @@ public static partial class TuneUp
                     needsHelper.AddRange(forHelper.Select(tweak => tweak.Key));
                 foreach (var tweak in answer is null ? [] : forHelper)
                 {
-                    var before = Enumerable.Range(0, tweak.Steps.Length).Select(index => Entry(answer, tweak.Key, index)).ToList();
+                    var before = Enumerable.Range(0, tweak.Steps.Length).Select(index => Entry(answer!, tweak.Key, index)).ToList();
                     if (before.All(entry => entry.Length == 0))
                         continue;
                     state.Applied[tweak.Key] = before;
