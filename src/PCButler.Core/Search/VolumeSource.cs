@@ -169,11 +169,6 @@ public static class FolderScanSource
     }
 }
 
-public enum ChangeKind { Created, Deleted, Renamed, Changed, Lost }
-
-/// <summary>Something that happened under a watched folder. Lost: Windows dropped changes (too many at once), so the folder needs walking again.</summary>
-public readonly record struct FileChange(ChangeKind Kind, string Path, string? OldPath = null);
-
 /// <summary>Watches a drive or folder, and everything under it, for files that come, go, are renamed or change.</summary>
 public sealed class FolderWatcher : IDisposable
 {
