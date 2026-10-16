@@ -16,6 +16,32 @@ public static class Courier
 
     public static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
+    /// <summary>A length of time as 0:42, 12:05 or 1:02:33.</summary>
+    public static string Time(TimeSpan time) =>
+        time.TotalHours >= 1 ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}" : $"{time.Minutes}:{time.Seconds:00}";
+
+    /// <summary>"2:10 elapsed · 0:45 left" for a transfer that has started moving; "" before that.</summary>
+    public static string Times(PortalTransfer transfer)
+    {
+        if (transfer.Elapsed < TimeSpan.FromSeconds(1))
+            return "";
+        var text = Tr.T("{0} elapsed", Time(transfer.Elapsed));
+        return transfer.Remaining is { } left ? text + "  ·  " + Tr.T("{0} left", Time(left)) : text;
+    }
+
+    /// <summary>Why a moving transfer is not moving, or "".</summary>
+    public static string Held(PortalTransfer transfer) =>
+        transfer.Paused ? Tr.T("Paused") : transfer.PausedThere ? Tr.T("Paused on the other PC") : "";
+
+    /// <summary>Pause it if it moves, let it go on if this phone paused it.</summary>
+    public static void TogglePause(PortalTransfer transfer)
+    {
+        if (transfer.Paused)
+            transfer.Resume();
+        else
+            transfer.Pause();
+    }
+
     /// <summary>Started, stopped, or files shared from another app arrived.</summary>
     public static event Action? Changed;
 
@@ -42,13 +68,14 @@ public static class Courier
         try
         {
             Portal.ClearParts(Portal.ReceiveFolder(settings));
-            var node = await PortalNode.Start(settings, () => Update(saved => { saved.Devices = settings.Devices.ToList(); saved.HostNumber = settings.HostNumber; }));
+            var node = await PortalNode.Start(settings, () => Update(saved => { saved.Devices = settings.Devices.ToList(); saved.HostNumber = settings.HostNumber; saved.Saved = settings.Saved.ToList(); }));
             Portal.Current = node;
             CourierService.Begin();
             return null;
         }
-        catch (IOException error)
+        catch (Exception error) when (error is not OperationCanceledException)
         {
+            // Not only IOException: a refused socket or a broken certificate land here too, and must not take the app down.
             Log.Warning($"Courier could not start: {error.Message}");
             return Tr.T("Courier could not start.") + "\n\n" + error.Message;
         }
@@ -75,9 +102,11 @@ public static class Courier
             return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, peer.Online)).ToList();
         var host = node.HostPeer;
         var list = new List<Target>();
+        // Paired on this side is not enough: the host has to have let this PC in too.
+        var allowed = host is { Online: true, Trusted: true } && !node.WaitingForHost;
         if (host is not null)
-            list.Add(new Target(host.Name, host, host is { Online: true, Trusted: true }));
-        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && host is { Online: true, Trusted: true })));
+            list.Add(new Target(host.Name, host, allowed));
+        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && allowed)));
         return list;
     }
 
@@ -117,6 +146,22 @@ public static class Courier
 /// <summary>Files shared to PC Butler from other apps arrive as content addresses: copied to the app's own cache, then queued for Courier.</summary>
 public static class SharedFiles
 {
+    private static string Root => Path.Combine(FileSystem.CacheDirectory, "shared");
+
+    /// <summary>At start: the copies of an earlier run are no longer waiting for anything (the queue lives in memory), so they go.</summary>
+    public static void ClearOld()
+    {
+        try
+        {
+            if (Directory.Exists(Root))
+                Directory.Delete(Root, recursive: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning($"Old shared files could not be removed: {error.Message}");
+        }
+    }
+
     public static void Take(Context context, Intent? intent)
     {
         if (intent?.Action is not (Intent.ActionSend or Intent.ActionSendMultiple))
@@ -128,7 +173,7 @@ public static class SharedFiles
             addresses.AddRange(many.OfType<global::Android.Net.Uri>());
         if (addresses.Count == 0)
             return;
-        var folder = Path.Combine(FileSystem.CacheDirectory, "shared", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+        var folder = Path.Combine(Root, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(folder);
         var copied = new List<string>();
         foreach (var address in addresses)
