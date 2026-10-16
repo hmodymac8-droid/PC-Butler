@@ -160,6 +160,7 @@ public partial class App : Application
         Search.Start(ConfigStore.Load().Search);
         StartBackground();
         StartCourier();
+        RecordUsage(ConfigStore.Load().Usage.Record);
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
 
@@ -527,6 +528,17 @@ public partial class App : Application
         }
         // A click, left or right, opens the panel (a second click closes it); a double-click opens the
         // window itself. From the tray the program is already running, so there is no launch screen.
+        // A click on a notification about files that arrived opens them where they are.
+        tray.BalloonTipClicked += (_, _) =>
+        {
+            if (receivedPath is not { } path)
+                return;
+            if (File.Exists(path))
+                Shell.Reveal(path);
+            else if (Directory.Exists(path))
+                Shell.Open(path);
+        };
+        tray.BalloonTipClosed += (_, _) => receivedPath = null;
         tray.MouseClick += (_, e) =>
         {
             if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
@@ -602,6 +614,63 @@ public partial class App : Application
         window?.ShowPage("portal");
     });
 
+    // --- the record of what each app uses (the Benchmark page's report) ---
+
+    private AppUsageRecorder? usageRecorder;
+    private readonly DispatcherTimer usageWatch = new() { Interval = TimeSpan.FromSeconds(10) };
+    private bool netAsked;
+
+    /// <summary>Record what each app uses, or stop. While the administrator helper runs, it is asked to count internet use per app too.</summary>
+    public void RecordUsage(bool on)
+    {
+        if (on && usageRecorder is null)
+        {
+            usageRecorder = new AppUsageRecorder();
+            usageWatch.Tick -= WatchUsage;
+            usageWatch.Tick += WatchUsage;
+            usageWatch.Start();
+        }
+        else if (!on && usageRecorder is not null)
+        {
+            usageWatch.Stop();
+            usageRecorder.Dispose();
+            usageRecorder = null;
+            if (netAsked && AdminHelper.Running)
+                Task.Run(() => AdminHelper.Send("net", ["off"], 10));
+            netAsked = false;
+        }
+    }
+
+    private void WatchUsage(object? sender, EventArgs e)
+    {
+        var running = AdminHelper.Running;
+        if (running && !netAsked)
+        {
+            netAsked = true;
+            Task.Run(() => AdminHelper.Send("net", ["on"], 10));
+        }
+        else if (!running)
+        {
+            netAsked = false; // a helper started later is asked again
+        }
+    }
+
+    /// <summary>Where the files of the last "received" notification are, for a click on it.</summary>
+    private string? receivedPath;
+
+    /// <summary>
+    /// Files from another PC arrived: a Windows notification says so (it stays in the
+    /// notification centre, so files that came while nobody watched are not missed), and a
+    /// click on it shows them.
+    /// </summary>
+    public void PortalReceived(PortalTransfer transfer) => Dispatcher.BeginInvoke(() =>
+    {
+        if (exiting)
+            return;
+        Notify(transfer.Files == 1 ? "Received {0} from {1}." : "Received {0} ({2} files) from {1}.", [transfer.Name, transfer.Peer, transfer.Files]);
+        receivedPath = transfer.Path;
+    });
+
     // --- Courier: started with the program, and its widget while PCs are connected ---
 
     private CourierWidget? courierWidget;
@@ -615,8 +684,8 @@ public partial class App : Application
         courierWatch.Start();
         var settings = ConfigStore.Load().Portal;
         Courier.WidgetOn = settings.Widget;
-        // A PC that has chosen its role starts Courier by itself: a client gets connected, a host gets reachable.
-        if (settings.AutoStart && settings.Role is PortalSettings.Host or PortalSettings.Client)
+        // Once Courier has been switched on here (before 1.22: once a role was chosen), it starts by itself: reachable, and connected to its PCs.
+        if (settings.AutoStart && (settings.Used || settings.Role.Length > 0))
             _ = Courier.Start();
     }
 
@@ -762,6 +831,7 @@ public partial class App : Application
         Usage.Stop();
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
         Overlay.Stop();
+        RecordUsage(false);
         Search.Stop(); // saves the index, so the next start is instant
         courierWatch.Stop();
         courierWidget?.Close();

@@ -5,15 +5,16 @@ using PCButler.Core;
 namespace PCButler.Android.Pages;
 
 /// <summary>
-/// Courier on the phone: connect to a PC by its ID (or share from the phone), pair once,
-/// then send files either way. Files shared to PC Butler from any app wait here and go to
-/// the PC with one tap; what moves shows with a progress bar.
+/// Courier on the phone, one page and one way of working: the phone has its own ID (always
+/// the same) that PCs connect to, and it connects to PCs by theirs. Every PC connected to or
+/// paired with is on the list, where it can be connected, disconnected (on both sides) or
+/// removed. Files shared to PC Butler from any app wait here and go to the PC with one tap;
+/// what moves shows with a progress bar.
 /// </summary>
 public sealed class CourierPage : ContentPage
 {
-    private readonly VerticalStackLayout welcome = new() { Spacing = 0 };
     private readonly VerticalStackLayout running = new() { Spacing = 0 };
-    private readonly Entry welcomeId = new() { Placeholder = "000 000 000", FontSize = 24, FontFamily = "monospace", Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
+    private readonly Entry connectId = new() { Placeholder = "000 000 000", FontSize = 24, FontFamily = "monospace", Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
     // The status card: a round badge (a pulsing dot while waiting, a monitor once connected), two lines, a pill.
     private readonly Border statusBadge = new() { WidthRequest = 42, HeightRequest = 42, StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), VerticalOptions = LayoutOptions.Center };
     private readonly BoxView statusDot = new() { WidthRequest = 11, HeightRequest = 11, CornerRadius = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
@@ -40,11 +41,8 @@ public sealed class CourierPage : ContentPage
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
     private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, Button Pause, Label Times)> rows = [];
-    private readonly Border savedCard;
     private readonly Label savedTitle = Theme.Title("", 18);
-    private readonly Label savedHint = Theme.Faint("", 12.5);
     private readonly VerticalStackLayout savedRows = new() { Spacing = 8 };
-    private readonly Button addSaved;
     private readonly VerticalStackLayout incomingBox = new() { Spacing = 10 };
     private readonly Button askButton, passwordRuleButton;
     private readonly Entry newPassword = new() { IsPassword = true, Placeholder = "••••", TextColor = Theme.Text };
@@ -57,30 +55,7 @@ public sealed class CourierPage : ContentPage
     public CourierPage()
     {
         Title = Tr.T("Courier");
-        // --- the first time: connect to a PC, or share from this phone ---
-        var connect = Theme.Accent(Tr.T("Connect"), () => _ = BecomeClient());
-        welcome.Children.Add(Theme.CardOf(new VerticalStackLayout
-        {
-            Spacing = 12,
-            Children =
-            {
-                Theme.Line3(Theme.Tile(("ic_monitor.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Connect to a PC"), 19).Centered()),
-                Theme.Faint(Tr.T("Type the ID the PC shows in its Courier, and connect. Files then go either way.")),
-                Theme.BoxOf(welcomeId, 4), connect,
-            },
-        }));
-        welcome.Children.Add(Theme.CardOf(new VerticalStackLayout
-        {
-            Spacing = 12,
-            Children =
-            {
-                Theme.Line3(Theme.Tile(("ic_share.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Share from this phone"), 19).Centered()),
-                Theme.Faint(Tr.T("This phone becomes the host. It gets a short ID: give it to the PCs, so they can connect to it.")),
-                Theme.Plain(Tr.T("Share from this phone"), () => _ = BecomeHost()),
-            },
-        }));
-
-        // --- running: who is connected, questions, sending, what moves ---
+        // --- this phone: where it stands, and its own ID ---
         var copy = new Border
         {
             BackgroundColor = Theme.SurfaceRaised, StrokeThickness = 0, Padding = new Thickness(14, 9), StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
@@ -99,6 +74,17 @@ public sealed class CourierPage : ContentPage
                 idCaption.Margin(0, 14, 0, 0),
                 Theme.Line3(null, idText, copy, 0),
                 idHelp,
+            },
+        }));
+        // --- connecting to a PC by its ID: it joins the list and stays connected ---
+        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        {
+            Spacing = 12,
+            Children =
+            {
+                Theme.Line3(Theme.Tile(("ic_monitor.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Connect to a PC"), 19).Centered()),
+                Theme.Faint(Tr.T("Type the ID the PC shows in its Courier. It joins your list and stays connected.")),
+                Theme.BoxOf(connectId, 4), Theme.Accent(Tr.T("Connect"), () => _ = ConnectTyped()),
             },
         }));
         running.Children.Add(asks);
@@ -122,12 +108,18 @@ public sealed class CourierPage : ContentPage
         });
         running.Children.Add(transfersCard);
 
-        // --- a client: the PCs it can connect to; a host: the PCs it let in ---
-        addSaved = Theme.Plain(Tr.T("Add a PC"), () => _ = AddSaved());
-        savedCard = Theme.CardOf(new VerticalStackLayout { Spacing = 12, Children = { savedTitle, savedHint, savedRows, addSaved } });
-        running.Children.Add(savedCard);
+        // --- the PCs: every one connected to or paired with ---
+        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        {
+            Spacing = 12,
+            Children =
+            {
+                savedTitle, Theme.Faint(Tr.T("Tap a PC to connect or disconnect it, rename it or remove it. Connected PCs stay connected until you disconnect them."), 12.5),
+                savedRows,
+            },
+        }));
 
-        // --- a host: how new PCs get in ---
+        // --- how new PCs get in ---
         askButton = Theme.Plain(Tr.T("Ask me"), () => SetRule(PortalSettings.Ask));
         passwordRuleButton = Theme.Plain(Tr.T("Password"), () => SetRule(PortalSettings.WithPassword));
         savePassword = Theme.Accent(Tr.T("Save password"), () => _ = SavePassword());
@@ -143,10 +135,6 @@ public sealed class CourierPage : ContentPage
         // --- settings ---
         startStop = Theme.Plain("", () => _ = Toggle());
         storageButton = Theme.Plain(Tr.T("Allow"), async () => { await Access.AskToSaveToDownload(); Refresh(); });
-        var changeRole = Theme.Plain(Tr.T("Change"), () => _ = ChangeRole());
-        var actions = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
-        actions.Add(startStop, 0);
-        actions.Add(changeRole, 1);
         running.Children.Add(Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
@@ -156,7 +144,7 @@ public sealed class CourierPage : ContentPage
                 Theme.BoxOf(Theme.Line3(Theme.Tile(Theme.FolderTile, 36),
                                         Theme.TwoLines(new Label { Text = "Download/PC Butler Courier", FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text },
                                                        Theme.Faint(Tr.T("Received files land here."), 12))), 10),
-                incomingBox, storageText, storageButton, actions,
+                incomingBox, storageText, storageButton, startStop,
             },
         }));
 
@@ -165,7 +153,7 @@ public sealed class CourierPage : ContentPage
             Content = new VerticalStackLayout
             {
                 Padding = new Thickness(18, 22, 18, 24),
-                Children = { AppPage.PageHeader("Courier", "Files between your phone and your PCs, across the internet."), welcome, running },
+                Children = { AppPage.PageHeader("Courier", "Files between your phone and your PCs, across the internet."), running },
             },
         };
         Dispatcher.StartTimer(TimeSpan.FromMilliseconds(700), () =>
@@ -182,35 +170,46 @@ public sealed class CourierPage : ContentPage
         base.OnAppearing();
         await Access.AskForNotifications();
         var settings = Courier.Settings;
-        // Files shared from another app need Courier running to go anywhere, whatever the start setting says.
-        if ((settings.AutoStart || Courier.Waiting.Count > 0) && settings.Role is PortalSettings.Host or PortalSettings.Client)
+        // Once switched on (before 1.22: once a role was chosen), it starts with the app; files shared from another app need it running, whatever the setting says.
+        if (settings.AutoStart && (settings.Used || settings.Role.Length > 0) || Courier.Waiting.Count > 0)
             await Courier.Start();
         Refresh();
         SendShared();
     }
 
-    // --- choices ---
+    // --- connecting ---
 
-    private async Task BecomeClient()
+    private async Task ConnectTyped()
     {
-        var number = Portal.NormalizeNumber(welcomeId.Text ?? "");
-        if (!Portal.IsNumber(number))
+        var number = Portal.NormalizeNumber(connectId.Text ?? "");
+        if (!Portal.IsNumber(number) || number == Courier.OwnNumber)
         {
-            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
+            await DisplayAlert(Tr.T("Courier"), Tr.T(number == Courier.OwnNumber ? "That is this phone's own ID. Type the ID the PC shows in its Courier."
+                                                                                  : "Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
             return;
         }
-        Courier.Update(settings =>
-        {
-            (settings.Role, settings.HostNumber, settings.Devices) = (PortalSettings.Client, number, []);
-            PortalSavedList.Add(settings, number, "");
-        });
-        await StartNow();
+        connectId.Text = "";
+        await Connect(number);
     }
 
-    private async Task BecomeHost()
+    /// <summary>Connect to a PC and stay connected to it: through the running Courier, or Courier starts for it.</summary>
+    private async Task Connect(string number)
     {
-        Courier.Update(settings => { settings.Role = PortalSettings.Host; settings.Devices = []; });
-        await StartNow();
+        if (Courier.Node is { } node)
+        {
+            node.Connect(number);
+        }
+        else
+        {
+            Courier.Update(settings =>
+            {
+                PortalSavedList.Add(settings, number, "");
+                PortalSavedList.Find(settings, number)!.Stay = true;
+            });
+            await StartNow();
+        }
+        savedShown = "\0";
+        Refresh();
     }
 
     private async Task StartNow()
@@ -226,16 +225,6 @@ public sealed class CourierPage : ContentPage
             await Courier.Stop();
         else
             await StartNow();
-    }
-
-    private async Task ChangeRole()
-    {
-        if (!await DisplayAlert(Tr.T("Courier"), Tr.T("Changing how this phone uses Courier forgets the PCs it was paired with; they will have to be paired again. Change it?"),
-                                Tr.T("Change"), Tr.T("Cancel")))
-            return;
-        await Courier.Stop();
-        Courier.Update(settings => { settings.Role = ""; settings.Devices = []; });
-        Refresh();
     }
 
     // --- sending ---
@@ -265,7 +254,7 @@ public sealed class CourierPage : ContentPage
     }
 
     /// <summary>The files waiting go to the PC chosen, or to the only one connected.</summary>
-    private async void SendWaiting(object? target)
+    private async void SendWaiting(PortalPeer? target)
     {
         if (Courier.Node is not { } node || Courier.Waiting.Count == 0)
             return;
@@ -300,22 +289,17 @@ public sealed class CourierPage : ContentPage
     {
         var settings = Courier.Settings;
         var node = Courier.Node;
-        var hasRole = settings.Role is PortalSettings.Host or PortalSettings.Client;
-        welcome.IsVisible = !hasRole;
-        running.IsVisible = hasRole;
         startStop.Text = Tr.T(node is null ? "Start Courier" : "Stop Courier");
         (startStop.BackgroundColor, startStop.TextColor) = node is null ? (Theme.Primary, Theme.PrimaryText) : (Theme.Secondary, Theme.Red);
         var canSave = Access.CanSaveToDownload;
         storageText.Text = canSave ? "" : Tr.T("Allow PC Butler to save to Download, so received files can be kept.");
         storageText.IsVisible = storageButton.IsVisible = !canSave;
-        if (!hasRole)
-            return;
         // Sending and transfers mean nothing until a PC is connected: they show only then
         // (Send also while files shared from another app wait, so it is plain they will go).
         var connected = Courier.Targets(node).Any(target => target.Ready);
         sendCard.IsVisible = connected || Courier.Waiting.Count > 0;
-        transfersCard.IsVisible = connected;
-        ShowStatus(node, settings);
+        transfersCard.IsVisible = connected || node?.Transfers.Count > 0;
+        ShowStatus(node);
         ShowAsks(node);
         ShowSaved(node, settings);
         ShowIncoming(settings);
@@ -323,39 +307,13 @@ public sealed class CourierPage : ContentPage
         ShowTransfers(node);
     }
 
-    private void ShowStatus(PortalNode? node, PortalSettings settings)
+    private void ShowStatus(PortalNode? node)
     {
         var ready = Courier.Targets(node).Where(target => target.Ready).ToList();
-        bool connected;
-        if (node is null)
-        {
-            (statusText.Text, statusDetail.Text) = (Tr.T("Courier is off"), "");
-            connected = false;
-        }
-        else if (node.IsHost)
-        {
-            connected = ready.Count > 0;
-            statusText.Text = connected ? Tr.T("{0} PC(s) connected.", ready.Count) : Tr.T("Waiting for a PC…");
-            statusDetail.Text = Tr.T("It stays on in the background.");
-        }
-        else
-        {
-            var host = node.HostPeer;
-            connected = host is { Online: true, Trusted: true } && !node.WaitingForHost;
-            statusText.Text = connected ? Tr.T("Connected to {0}", host!.Name)
-                : host is { Online: true, Trusted: true } ? Tr.T("Waiting for {0} to allow this phone", host.Name) + "…"
-                : host is { Online: true } && node.PasswordWanted != PortalPasswordAsk.None ? Tr.T("{0} asks for a password.", host.Name)
-                : host is { Online: true } ? Tr.T("Asking {0} to let this phone in…", host.Name)
-                : node.Connecting ? Tr.T("Connecting to {0}…", Portal.ShowNumber(settings.HostNumber))
-                : Tr.T(node.HostProblem switch
-                {
-                    PortalConnectProblem.NoDirectory => "This network blocks the public directory that IDs are looked up in.",
-                    PortalConnectProblem.NotFound => "No PC is sharing under {0} right now. Check the ID, and that Courier runs on that PC.",
-                    PortalConnectProblem.NoPath => "{0} was found, but the two networks would not let a link through.",
-                    _ => "Connecting to {0}…",
-                }, Portal.ShowNumber(settings.HostNumber));
-            statusDetail.Text = node.HostProblem is PortalConnectProblem.None ? "" : Tr.T("It tries again by itself.");
-        }
+        var connected = ready.Count > 0;
+        (statusText.Text, statusDetail.Text) = node is null ? (Tr.T("Courier is off"), Tr.T("Start it so PCs can reach this phone, and it can connect to them."))
+            : connected ? (ready.Count == 1 ? Tr.T("Connected to {0}", ready[0].Name) : Tr.T("{0} PC(s) connected.", ready.Count), Tr.T("It stays on in the background."))
+            : (Tr.T("Reachable by its ID"), Tr.T("No PC is connected yet."));
         statusDetail.IsVisible = statusDetail.Text.Length > 0;
         // The badge: a monitor once connected, a pulsing amber dot while waiting, a grey dot when off.
         statusBadge.Content = connected ? statusMonitor : statusDot;
@@ -368,11 +326,11 @@ public sealed class CourierPage : ContentPage
             Theme.SetPill(statusPill, Tr.T("Off"), Theme.Muted, Theme.Secondary);
         else
             Theme.SetPill(statusPill, Tr.T("Waiting"), Theme.Amber, Theme.AmberSoft);
-        idCaption.Text = (node?.IsHost == true ? Tr.T("Give this ID to the PCs:") : Tr.T("This phone's own ID:")).TrimEnd(':').ToUpper(System.Globalization.CultureInfo.CurrentCulture);
-        idText.Text = node is null ? "—" : Portal.ShowNumber(node.Number);
-        idHelp.Text = node?.IsHost != true ? ""
-            : settings.Incoming == PortalSettings.WithPassword ? Tr.T("Type it on the PC, with the password set below.") : Tr.T("Type it on the PC, then allow it here.");
-        idHelp.IsVisible = idHelp.Text.Length > 0;
+        // The ID shows whether Courier runs or not: it is the phone's own, and stays the same.
+        idCaption.Text = Tr.T("This phone's own ID:").TrimEnd(':').ToUpper(System.Globalization.CultureInfo.CurrentCulture);
+        idText.Text = Portal.ShowNumber(Courier.OwnNumber);
+        idHelp.Text = Tr.T("Type it on your PCs to connect them to this phone. It stays the same.");
+        idHelp.IsVisible = true;
     }
 
     /// <summary>The waiting dot breathes, so it is plain that Courier is still at work.</summary>
@@ -398,8 +356,6 @@ public sealed class CourierPage : ContentPage
     /// <summary>The ID to the clipboard, and "Copied" on the button for a moment.</summary>
     private async void CopyId()
     {
-        if (Courier.Node is null)
-            return;
         await Clipboard.SetTextAsync(idText.Text);
         (copyText.Text, copyText.TextColor, copyIcon.Source) = (Tr.T("Copied"), Theme.Primary, "ic_check.png");
         await Task.Delay(1600);
@@ -411,8 +367,9 @@ public sealed class CourierPage : ContentPage
         // A PC that wants in is allowed or refused here (with a password set, the right one lets it in by itself).
         var pairings = node?.Pairings.Where(pairing => pairing is { Incoming: true, Code.Length: > 0 }).ToList() ?? [];
         var requests = node?.Requests ?? [];
-        var password = node is { IsHost: false } ? node.PasswordWanted : PortalPasswordAsk.None;
-        var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id)) + "#" + password;
+        var passwords = node?.PasswordAsks ?? [];
+        var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id))
+                  + "#" + string.Join("|", passwords.Select(item => item.Number + item.Ask));
         if (key == asksShown)
             return;
         asksShown = key;
@@ -425,17 +382,17 @@ public sealed class CourierPage : ContentPage
                                   Theme.Accent(Tr.T("Allow"), () => { node!.Confirm(pairing); Refresh(); }),
                                   Theme.Plain(Tr.T("Refuse"), () => { node!.Refuse(pairing); Refresh(); })));
         }
-        if (password != PortalPasswordAsk.None)
+        foreach (var (number, password) in passwords)
         {
             var typed = new Entry { IsPassword = true, Placeholder = Tr.T("Password"), TextColor = Theme.Text };
-            var name = node!.HostPeer?.Name ?? Portal.ShowNumber(node.HostNumber);
+            var name = node!.PeerOf(number)?.Name ?? Portal.ShowNumber(number);
             asks.Children.Add(Ask(Tr.T("{0} asks for a password", name),
                                   Tr.T(password == PortalPasswordAsk.Wrong ? "That password was not right. Type it again." : "Type the password set on that PC for new PCs."),
                                   Theme.BoxOf(typed, 4),
                                   Theme.Accent(Tr.T("Connect"), () =>
                                   {
                                       if ((typed.Text ?? "").Length > 0)
-                                          node.GivePassword(typed.Text!);
+                                          node.GivePassword(number, typed.Text!);
                                       Refresh();
                                   }), null));
         }
@@ -461,37 +418,35 @@ public sealed class CourierPage : ContentPage
         return card;
     }
 
-    // --- the saved PCs (a client), or the PCs let in (a host) ---
+    // --- the PCs ---
 
     private void ShowSaved(PortalNode? node, PortalSettings settings)
     {
-        var host = settings.Role == PortalSettings.Host;
-        savedTitle.Text = Tr.T(host ? "PCs let in" : "Saved PCs");
-        savedHint.Text = Tr.T(host ? "Tap a PC to rename it or to remove it." : "Tap a PC to connect to it, rename it, make it the favourite or remove it. The favourite is connected to when the app starts.");
-        addSaved.IsVisible = !host;
-        var connected = node?.HostPeer is { Online: true, Trusted: true } && !node.WaitingForHost;
-        var items = host
-            ? settings.Devices.Select(device => (Key: device.Id, Name: device.Name.Length > 0 ? device.Name : "PC", Number: Portal.NumberOf(device.Id), Favorite: false,
-                                                 State: node?.Peers.FirstOrDefault(peer => peer.Id == device.Id)?.Online == true ? Tr.T("Connected") : "")).ToList()
-            : settings.Saved.Select(saved => (Key: saved.Number, Name: PortalSavedList.Label(saved), saved.Number, saved.Favorite,
-                                              State: saved.Number != settings.HostNumber ? "" : node is null ? Tr.T("Chosen") : connected ? Tr.T("Connected") : Tr.T("Waiting"))).ToList();
-        var key = string.Join("|", items.Select(item => $"{item.Key}{item.Name}{item.Favorite}{item.State}")) + host;
+        var items = settings.Saved.Where(saved => saved.Number != Courier.OwnNumber).Select(saved =>
+        {
+            var state = node?.StateOf(saved.Number) ?? PortalState.NotConnected;
+            var name = node?.PeerOf(saved.Number) is { Name.Length: > 0 } peer && saved.Name.Length == 0 ? peer.Name : PortalSavedList.Label(saved);
+            var words = node is null ? Tr.T(saved.Stay ? "Connects when Courier starts" : "Courier is off") : Courier.Describe(state, name);
+            return (saved.Number, Name: name, saved.Stay, State: state, Words: words);
+        }).ToList();
+        savedTitle.Text = items.Count == 0 ? Tr.T("Your PCs") : Tr.T("Your PCs ({0})", items.Count);
+        var key = string.Join("|", items.Select(item => $"{item.Number}{item.Name}{item.Stay}{item.Words}")) + (node is null);
         if (key == savedShown)
             return;
         savedShown = key;
-        savedCard.IsVisible = !host || items.Count > 0;
         savedRows.Children.Clear();
         if (items.Count == 0)
-            savedRows.Children.Add(Theme.Faint(Tr.T("No PC saved yet. The PCs you connect to are added here.")));
+            savedRows.Children.Add(Theme.Faint(Tr.T("No PC yet. Connect to one by its ID above; PCs that connect to this phone are added here too.")));
         foreach (var item in items)
         {
-            var name = new Label { Text = (item.Favorite ? "★ " : "") + item.Name, FontSize = 14.5, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.TailTruncation };
-            var line = Theme.TwoLines(name, Theme.Faint(Portal.ShowNumber(item.Number), 12));
-            View? pill = item.State.Length == 0 ? null
-                : item.State == Tr.T("Connected") ? Theme.Pill(item.State, Theme.Primary, Theme.PrimarySoft) : Theme.Pill(item.State, Theme.Amber, Theme.AmberSoft);
-            var row = Theme.BoxOf(Theme.Line3(Theme.Tile(("ic_monitor.png", item.State == Tr.T("Connected") ? Theme.PrimarySoft : Theme.Secondary), 34), line, pill), 8);
+            var on = item.State == PortalState.Connected;
+            var name = new Label { Text = item.Name, FontSize = 14.5, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.TailTruncation };
+            var line = Theme.TwoLines(name, Theme.Faint(Portal.ShowNumber(item.Number) + "  ·  " + item.Words, 12));
+            View? pill = on ? Theme.Pill(Tr.T("Connected"), Theme.Primary, Theme.PrimarySoft)
+                : item.State is PortalState.NotConnected ? null : Theme.Pill(Tr.T("Waiting"), Theme.Amber, Theme.AmberSoft);
+            var row = Theme.BoxOf(Theme.Line3(Theme.Tile(("ic_monitor.png", on ? Theme.PrimarySoft : Theme.Secondary), 34), line, pill), 8);
             var chosen = item;
-            row.Tapped(() => _ = (host ? ManageLetIn(chosen.Key, chosen.Name) : ManageSaved(chosen.Key, chosen.Name)));
+            row.Tapped(() => _ = Manage(chosen.Number, chosen.Name));
             savedRows.Children.Add(row);
         }
     }
@@ -499,7 +454,7 @@ public sealed class CourierPage : ContentPage
     /// <summary>A change to the list: through the running Courier when it runs, so what it shows follows; straight to the settings otherwise.</summary>
     private void ChangeSaved(Action<PortalSettings> change)
     {
-        if (Courier.Node is { IsHost: false } node)
+        if (Courier.Node is { } node)
             node.ChangeSaved(change);
         else
             Courier.Update(change);
@@ -507,92 +462,61 @@ public sealed class CourierPage : ContentPage
         Refresh();
     }
 
-    private async Task AddSaved()
+    private async Task Manage(string number, string label)
     {
-        var typed = await DisplayPromptAsync(Tr.T("Add a PC"), Tr.T("The PC's ID: the nine digits it shows in its Courier."), Tr.T("Next"), Tr.T("Cancel"),
-                                             "000 000 000", 11, Keyboard.Numeric);
-        if (typed is null)
-            return;
-        var number = Portal.NormalizeNumber(typed);
-        if (!Portal.IsNumber(number) || number == Courier.Node?.Number)
-        {
-            await DisplayAlert(Tr.T("Courier"), Tr.T("Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
-            return;
-        }
-        var name = await DisplayPromptAsync(Tr.T("Add a PC"), Tr.T("A name for it, to tell it apart (you can leave it empty)."), Tr.T("Add"), Tr.T("Cancel"));
-        if (name is null)
-            return;
-        ChangeSaved(settings => PortalSavedList.Add(settings, number, name));
-    }
-
-    private async Task ManageSaved(string number, string label)
-    {
-        var settings = Courier.Settings;
-        var favorite = PortalSavedList.Find(settings, number)?.Favorite == true;
-        string connect = Tr.T("Connect"), rename = Tr.T("Rename"), star = Tr.T(favorite ? "No longer the favourite" : "Make it the favourite"), remove = Tr.T("Remove");
-        var choice = await DisplayActionSheet(label, Tr.T("Cancel"), remove, connect, rename, star);
+        var node = Courier.Node;
+        var saved = PortalSavedList.Find(Courier.Settings, number);
+        var linked = node?.PeerOf(number) is { Online: true };
+        var peer = node?.PeerOf(number);
+        string connect = Tr.T("Connect"), disconnect = Tr.T("Disconnect"), rename = Tr.T("Rename"), remove = Tr.T("Remove"),
+               auto = Tr.T(peer is { AutoAccept: true } ? "Ask before taking its files" : "Take its files without asking");
+        var choices = new List<string>();
+        if (saved is { Stay: true } || linked)
+            choices.Add(disconnect);
+        if (!(saved is { Stay: true } && node is not null) && node?.StateOf(number) != PortalState.Connected)
+            choices.Add(connect);
+        choices.Add(rename);
+        if (peer is { Trusted: true })
+            choices.Add(auto);
+        var choice = await DisplayActionSheet(label, Tr.T("Cancel"), remove, choices.ToArray());
         if (choice == connect)
         {
-            if (Courier.Node is { } node)
-                node.ConnectTo(number);
+            await Connect(number);
+        }
+        else if (choice == disconnect)
+        {
+            if (node is not null)
+                await node.Disconnect(number);
             else
-            {
-                Courier.Update(saved => saved.HostNumber = number);
-                await StartNow();
-            }
+                Courier.Update(settings => { if (PortalSavedList.Find(settings, number) is { } item) item.Stay = false; });
         }
         else if (choice == rename)
         {
-            var name = await DisplayPromptAsync(rename, Tr.T("A new name for {0}:", label), Tr.T("Save"), Tr.T("Cancel"), initialValue: PortalSavedList.Find(settings, number)?.Name ?? "");
+            var name = await DisplayPromptAsync(rename, Tr.T("A new name for {0}:", label), Tr.T("Save"), Tr.T("Cancel"), initialValue: saved?.Name ?? "");
             if (!string.IsNullOrWhiteSpace(name))
-                ChangeSaved(saved => PortalSavedList.Rename(saved, number, name));
+                ChangeSaved(settings => PortalSavedList.Rename(settings, number, name));
         }
-        else if (choice == star)
+        else if (choice == auto && node is not null && peer is not null)
         {
-            ChangeSaved(saved => PortalSavedList.ToggleFavorite(saved, number));
+            node.SetAutoAccept(peer.Id, !peer.AutoAccept);
         }
-        else if (choice == remove && await DisplayAlert(Tr.T("Courier"), Tr.T("Remove {0} from the list? It will have to be paired again before files can go either way.", label),
-                                                         remove, Tr.T("Cancel")))
+        else if (choice == remove && await DisplayAlert(Tr.T("Courier"),
+                     Tr.T("Remove {0}? It is disconnected and taken off the list, and it will have to ask, and be allowed, again before files can go either way.", label),
+                     remove, Tr.T("Cancel")))
         {
-            var wasCurrent = number == settings.HostNumber;
-            ChangeSaved(saved => PortalSavedList.Remove(saved, number));
-            if (wasCurrent && Courier.Node is { } node)
-                node.SetHost(Courier.Settings.HostNumber);
-        }
-        Refresh();
-    }
-
-    private async Task ManageLetIn(string id, string label)
-    {
-        string rename = Tr.T("Rename"), remove = Tr.T("Remove");
-        var choice = await DisplayActionSheet(label, Tr.T("Cancel"), remove, rename);
-        if (choice == rename)
-        {
-            var name = await DisplayPromptAsync(rename, Tr.T("A new name for {0}:", label), Tr.T("Save"), Tr.T("Cancel"), initialValue: label);
-            if (string.IsNullOrWhiteSpace(name))
-                return;
-            if (Courier.Node is { } node)
-                node.Rename(id, name);
+            if (node is not null)
+                await node.Disconnect(number, forget: true);
             else
-                Courier.Update(settings => { foreach (var device in settings.Devices.Where(device => device.Id == id)) device.Name = Portal.CleanLabel(name.Trim()); });
-        }
-        else if (choice == remove && await DisplayAlert(Tr.T("Courier"), Tr.T("Remove {0} from the list? It will have to be paired again before files can go either way.", label),
-                                                         remove, Tr.T("Cancel")))
-        {
-            if (Courier.Node is { } node)
-                node.Forget(id);
-            else
-                Courier.Update(settings => settings.Devices.RemoveAll(device => device.Id == id));
+                Courier.Update(settings => PortalSavedList.Remove(settings, number));
         }
         savedShown = "\0";
         Refresh();
     }
 
-    // --- a host: how new PCs get in ---
+    // --- how new PCs get in ---
 
     private void ShowIncoming(PortalSettings settings)
     {
-        incomingBox.IsVisible = settings.Role == PortalSettings.Host;
         var password = settings.Incoming == PortalSettings.WithPassword || pickingPassword;
         (askButton.BackgroundColor, askButton.TextColor) = password ? (Theme.Secondary, Theme.Text) : (Theme.Primary, Theme.PrimaryText);
         (passwordRuleButton.BackgroundColor, passwordRuleButton.TextColor) = password ? (Theme.Primary, Theme.PrimaryText) : (Theme.Secondary, Theme.Text);
