@@ -140,6 +140,8 @@ public sealed class SearchPage : Page
                 return;
             results.Show(result, keepPlace);
             ShowStatus();
+            // A big search (millions of results) is not run again every second while files change.
+            refresh.Interval = TimeSpan.FromMilliseconds(Math.Clamp(result.Took.TotalMilliseconds * 10, 1000, 10000));
         }
         catch (OperationCanceledException)
         {
@@ -150,24 +152,25 @@ public sealed class SearchPage : Page
     {
         if (results.Result is not { } result)
             return;
-        var chosen = results.Chosen();
         var text = Ui.T("{0:N0} results", result.Rows.Length) + "  ·  " + Ui.T("{0} ms", (int)result.Took.TotalMilliseconds);
-        if (chosen.Count > 0)
+        var count = results.SelectedItems.Count;
+        if (count > 0)
         {
             long bytes = 0;
-            if (chosen.Count <= 10000)
+            // The window never waits for the index here: the size is left out while it is busy.
+            if (count <= 10000 && result.Index.Gate.TryEnterReadLock(0))
             {
-                result.Index.Gate.EnterReadLock();
                 try
                 {
-                    bytes = chosen.Sum(row => Math.Max(0, result.Index.Size(row.Row)));
+                    foreach (var row in results.SelectedItems.OfType<SearchRow>())
+                        bytes += Math.Max(0, result.Index.Size(row.Row));
                 }
                 finally
                 {
                     result.Index.Gate.ExitReadLock();
                 }
             }
-            text += "  ·  " + Ui.T("{0:N0} chosen", chosen.Count) + (bytes > 0 ? $" ({Ui.FormatSize(bytes)})" : "");
+            text += "  ·  " + Ui.T("{0:N0} chosen", count) + (bytes > 0 ? $" ({Ui.FormatSize(bytes)})" : "");
         }
         status.Text = text;
     }
