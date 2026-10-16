@@ -1115,6 +1115,20 @@ Check(Math.Abs(boxes[0].Width * boxes[0].Height / (600.0 * 400) - 6.0 / 24) < 0.
 Check(Storage.Treemap([], 100, 100).Count == 0 && Storage.Treemap([5], 100, 50) is [(0, 0, 100, 50)], "treemap edge cases");
 
 Section("clipboard history");
+var configBefore = File.Exists(AppInfo.ConfigFile) ? File.ReadAllText(AppInfo.ConfigFile) : null;
+Check(new ClipboardSettings().Shortcut == "Win+V", "Win+V is the default shortcut");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"enabled": true, "shortcut": "Ctrl+Alt+V"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Win+V", "the old default shortcut moves to Win+V");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"shortcut": "Ctrl+Shift+B"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Shift+B", "a shortcut the user chose stays");
+var chosen = ConfigStore.Load();
+chosen.Clipboard.Shortcut = "Ctrl+Alt+V";
+ConfigStore.Save(chosen);
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Alt+V", "Ctrl+Alt+V chosen after the change stays");
+if (configBefore is null)
+    File.Delete(AppInfo.ConfigFile);
+else
+    File.WriteAllText(AppInfo.ConfigFile, configBefore);
 ClipboardHistory.Clear(keepPinned: false);
 ClipboardHistory.Add(new ClipEntry { Text = "first" }, 3);
 ClipboardHistory.Add(new ClipEntry { Text = "second" }, 3);

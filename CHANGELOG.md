@@ -10,6 +10,7 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.21.5
 
+- Clipboard: Win+V now opens PC Butler's clipboard history instead of Windows' own, and it is the default shortcut (if you kept the old Ctrl+Alt+V, it moves to Win+V). Any other shortcut can still be set on the Clipboard page or in Settings > Hotkeys.
 - Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
 
 ## 1.21.4
