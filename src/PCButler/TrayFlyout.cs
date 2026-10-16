@@ -14,8 +14,8 @@ namespace PCButler;
 
 /// <summary>
 /// The panel a click on the tray icon opens, like Windows' quick settings: what PC Butler
-/// is doing, the processor and memory, tiles for sorting and one for each background feature
-/// (lit when on, a click switches it), the update when there is one, and Open and Exit. It closes
+/// is doing, the processor and memory, a tile for each background feature (lit when on, a
+/// click switches it), the update when there is one, and Open and Exit. It closes
 /// when anything else is clicked. A double-click on the icon opens the main window instead.
 /// </summary>
 public sealed class TrayFlyout : Window
@@ -162,11 +162,7 @@ public sealed class TrayFlyout : Window
         var courier = Courier.Node;
         var connected = Courier.Targets(courier).Count(target => target.Ready);
         tiles.Children.Clear();
-        tiles.Children.Add(Tile("\uE8FD", Ui.T("Sort now"), false, true, () => App.Current.Background.RequestSort()));
-        tiles.Children.Add(Tile(config.IsPaused ? "\uE768" : "\uE769", Ui.T(config.IsPaused ? "Resume" : "Pause today"), config.IsPaused, config.AutoSortOn,
-                                () => App.Current.Background.TogglePause()));
-        tiles.Children.Add(Tile("\uE81C", Ui.T("Report"), false, true, () => App.Current.ShowReport()));
-        // Then one tile per background feature: a click switches it on or off and the panel stays open.
+        // One tile per background feature: a click switches it on or off and the panel stays open.
         foreach (var feature in App.Current.Features())
         {
             var name = feature.Key == "courier" && connected > 0 ? Ui.T("Courier · {0}", connected) : Ui.T(feature.Name);
@@ -189,8 +185,10 @@ public sealed class TrayFlyout : Window
     private Border Tile(string glyph, string name, bool on, bool enabled, Action action, bool stayOpen = false)
     {
         var label = Ui.Text(name, 11.5, on ? "Primary" : "Text");
+        // The whole name, on two lines when it needs them.
         label.HorizontalAlignment = HorizontalAlignment.Center;
-        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.TextAlignment = TextAlignment.Center;
+        label.TextWrapping = TextWrapping.Wrap;
         var mark = Ui.Glyph(glyph, 18, on ? "Primary" : "Muted");
         mark.HorizontalAlignment = HorizontalAlignment.Center;
         var tile = new Border
