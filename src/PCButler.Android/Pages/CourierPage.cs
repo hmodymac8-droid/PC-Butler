@@ -34,6 +34,8 @@ public sealed class CourierPage : ContentPage
     private readonly VerticalStackLayout targets = new() { Spacing = 8 };
     private readonly Border transfersPill = Theme.Pill("", Theme.Primary, Theme.PrimarySoft);
     private readonly VerticalStackLayout transfers = new() { Spacing = 8 };
+    private readonly Border sendCard;
+    private readonly Border transfersCard;
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
@@ -92,12 +94,13 @@ public sealed class CourierPage : ContentPage
         sharedNote = Theme.BoxOf(Theme.Line3(new Image { Source = "ic_share.png", WidthRequest = 17, HeightRequest = 17, VerticalOptions = LayoutOptions.Start, Margin = new Thickness(0, 2, 0, 0) }, sharedText, null, 10),
                                  12, Theme.PrimarySoft);
         var send = Theme.Accent(Tr.T("Send files…"), () => _ = PickAndSend());
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        sendCard = Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
             Children = { Theme.Header(Tr.T("Send"), sendPill), sharedNote, waitingText, targets, send },
-        }));
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        });
+        running.Children.Add(sendCard);
+        transfersCard = Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
             Children =
@@ -105,7 +108,8 @@ public sealed class CourierPage : ContentPage
                 Theme.Header(Tr.T("Transfers"), transfersPill), transfers,
                 Theme.Hint("ic_bell.png", Tr.T("Transfers keep going in the background — check the notification.")),
             },
-        }));
+        });
+        running.Children.Add(transfersCard);
 
         // --- settings ---
         startStop = Theme.Plain("", () => _ = Toggle());
@@ -273,6 +277,11 @@ public sealed class CourierPage : ContentPage
         storageText.IsVisible = storageButton.IsVisible = !canSave;
         if (!hasRole)
             return;
+        // Sending and transfers mean nothing until a PC is connected: they show only then
+        // (Send also while files shared from another app wait, so it is plain they will go).
+        var connected = Courier.Targets(node).Any(target => target.Ready);
+        sendCard.IsVisible = connected || Courier.Waiting.Count > 0;
+        transfersCard.IsVisible = connected;
         ShowStatus(node, settings);
         ShowAsks(node);
         ShowTargets(node);
@@ -299,7 +308,7 @@ public sealed class CourierPage : ContentPage
             var host = node.HostPeer;
             connected = host is { Online: true, Trusted: true };
             statusText.Text = connected ? Tr.T("Connected to {0}", host!.Name)
-                : host is { Online: true } ? Tr.T("Connected to {0}. Compare the code shown on both to pair them.", host.Name)
+                : host is { Online: true } ? Tr.T("Pairing with {0}", host.Name) + "…"
                 : node.Connecting ? Tr.T("Connecting to {0}…", Portal.ShowNumber(settings.HostNumber))
                 : Tr.T(node.HostProblem switch
                 {
@@ -324,7 +333,7 @@ public sealed class CourierPage : ContentPage
             Theme.SetPill(statusPill, Tr.T("Waiting"), Theme.Amber, Theme.AmberSoft);
         idCaption.Text = (node?.IsHost == true ? Tr.T("Give this ID to the PCs:") : Tr.T("This phone's own ID:")).TrimEnd(':').ToUpper(System.Globalization.CultureInfo.CurrentCulture);
         idText.Text = node is null ? "—" : Portal.ShowNumber(node.Number);
-        idHelp.Text = node?.IsHost == true ? Tr.T("Type it on the PC, then confirm the code on both screens.") : "";
+        idHelp.Text = node?.IsHost == true ? Tr.T("Type it on the PC, and confirm there.") : "";
         idHelp.IsVisible = idHelp.Text.Length > 0;
     }
 
@@ -361,7 +370,11 @@ public sealed class CourierPage : ContentPage
 
     private void ShowAsks(PortalNode? node)
     {
-        var pairings = node?.Pairings.Where(pairing => pairing.Code.Length > 0).ToList() ?? [];
+        // Pairing goes through without comparing the codes on both screens: the user asked for no
+        // "They match" step. The other side still has to know this phone's ID.
+        foreach (var pairing in node?.Pairings.Where(pairing => pairing.Code.Length > 0 && pairing.State == "waiting").ToList() ?? [])
+            node!.Confirm(pairing);
+        var pairings = new List<PortalPairing>();
         var requests = node?.Requests ?? [];
         var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id));
         if (key == asksShown)
