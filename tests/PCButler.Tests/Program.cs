@@ -983,6 +983,40 @@ File.WriteAllBytes(blob, bytes);
 var refused = vault.MoveOut(vault.Items.ToList(), outFolder);
 Check(refused.Count == 0 && refused.Errors.Count == 1 && !File.Exists(Path.Combine(outFolder, "tamper.txt")), "a changed vault file is refused");
 Check(vault.Delete(vault.Items.ToList()).Count == 1 && vault.Items.Count == 0, "delete from the vault");
+// Folders inside the vault: whole folders in, made, renamed, moved, and out again with their shape.
+var vaultAlbum = Path.Combine(temp, "Album");
+Make(Path.Combine(vaultAlbum, "2024"), "beach.jpg", "sand");
+Make(Path.Combine(vaultAlbum, "2024", "June"), "cake.jpg", "cream");
+Make(vaultAlbum, "cover.jpg", "front");
+Directory.CreateDirectory(Path.Combine(vaultAlbum, "Empty"));
+var vaultAlbumIn = vault.AddFolders([vaultAlbum]);
+Check(vaultAlbumIn.Count == 3 && vaultAlbumIn.Errors.Count == 0 && !Directory.Exists(vaultAlbum)
+      && vault.FoldersIn("").SequenceEqual(["Album"]) && vault.FoldersIn("Album").SequenceEqual(["Album/2024", "Album/Empty"])
+      && vault.FilesIn("Album/2024/June").Single().Name == "cake.jpg" && vault.FilesIn("Album").Single().Name == "cover.jpg",
+      "a whole folder goes in with its sub-folders, empty ones too: " + string.Join("; ", vaultAlbumIn.Errors));
+var notes = vault.CreateFolder("", "Notes");
+vault.Add([Make(temp, "todo.txt", "milk")], dir: notes);
+var badName = false;
+try { vault.CreateFolder("", "a/b"); } catch (VaultException) { badName = true; }
+Check(badName && vault.CreateFolder("", "Notes") == "Notes (2)" && vault.FilesIn("Notes").Single().Dir == "Notes", "folders are made, names checked and kept apart");
+vault.Move(vault.FilesIn("Notes"), "Album/Empty");
+var renamedAlbum = vault.RenameFolder("Album", "Pictures");
+var movedYear = vault.MoveFolder("Pictures/2024", "");
+var intoItself = false;
+try { vault.MoveFolder("2024", "2024/June"); } catch (VaultException) { intoItself = true; }
+Check(renamedAlbum == "Pictures" && movedYear == "2024" && intoItself && vault.FilesIn("Pictures/Empty").Single().Name == "todo.txt"
+      && vault.FilesIn("2024/June").Single().Name == "cake.jpg" && !vault.Folders().Any(folder => folder.StartsWith("Album")),
+      "files and folders move and are renamed, but never into themselves");
+vault.Rename(vault.FilesIn("Pictures").Single(), "front.jpg");
+vault = Vault.Unlock("new password");
+Check(vault.FilesIn("Pictures").Single().Name == "front.jpg" && vault.Folders().Contains("Notes (2)"), "the folders, empty ones too, are kept when the vault locks");
+var folderOut = vault.MoveOutFolder("2024", outFolder);
+Check(folderOut.Count == 2 && File.ReadAllText(Path.Combine(outFolder, "2024", "June", "cake.jpg")) == "cream"
+      && File.ReadAllText(Path.Combine(outFolder, "2024", "beach.jpg")) == "sand" && !vault.Folders().Contains("2024"), "a vault folder comes out as a normal folder");
+var folderGone = vault.DeleteFolder("Pictures");
+Check(folderGone.Count == 2 && vault.Items.Count == 0 && vault.Folders().SequenceEqual(["Notes", "Notes (2)"]), "deleting a folder deletes what is in it");
+vault.DeleteFolder("Notes");
+vault.DeleteFolder("Notes (2)");
 
 // A vault made by Downloads Sorter (the Python program) must open unchanged.
 if (args.Length >= 2)
