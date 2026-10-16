@@ -24,6 +24,8 @@ public sealed class VaultItem
     [JsonPropertyName("added")] public double Added { get; set; }
     /// <summary>Where it came from, offered as the default when moving it out.</summary>
     [JsonPropertyName("folder")] public string Folder { get; set; } = "";
+    /// <summary>The vault's own folder it is kept in, like "Photos/2024"; "" for the top. Versions up to 1.21 don't know it, and show every file at the top.</summary>
+    [JsonPropertyName("dir")] public string Dir { get; set; } = "";
 }
 
 /// <summary>
@@ -47,6 +49,8 @@ public sealed class Vault
     public static string VaultDir => Path.Combine(AppInfo.DataDir, "Vault");
     private static string HeaderFile => Path.Combine(VaultDir, "vault.json");
     private static string IndexFile => Path.Combine(VaultDir, "index.bin");
+    /// <summary>The vault's own folders, empty ones included, encrypted like the file list (older versions leave this file alone).</summary>
+    private static string FoldersFile => Path.Combine(VaultDir, "folders.bin");
     /// <summary>
     /// Decrypted copies of opened files: under Local AppData, away from anything the cleaner or sorter scans.
     /// </summary>
@@ -66,6 +70,9 @@ public sealed class Vault
     private readonly Dictionary<string, (string Copy, DateTime Modified, long Size)> opened = [];
 
     public List<VaultItem> Items { get; private set; } = [];
+
+    /// <summary>The folders made in the vault, also those with nothing in them yet.</summary>
+    private HashSet<string> folders = new(StringComparer.OrdinalIgnoreCase);
 
     private Vault(byte[] key) => this.key = key;
 
@@ -297,10 +304,29 @@ public sealed class Vault
         {
             var plain = Unseal(key, data[..12], data.AsSpan(12), "index"u8.ToArray());
             Items = JsonSerializer.Deserialize<List<VaultItem>>(plain) ?? [];
+            foreach (var item in Items)
+                item.Dir = CleanDir(item.Dir);
         }
         catch (Exception error) when (error is CryptographicException or JsonException or ArgumentException)
         {
             throw new VaultException(Tr.T("The vault's file list is damaged."));
+        }
+        folders = new(StringComparer.OrdinalIgnoreCase);
+        if (File.Exists(FoldersFile))
+        {
+            try
+            {
+                var stored = File.ReadAllBytes(FoldersFile);
+                var plain = Unseal(key, stored[..12], stored.AsSpan(12), "folders"u8.ToArray());
+                foreach (var dir in JsonSerializer.Deserialize<List<string>>(plain) ?? [])
+                    if (CleanDir(dir) is { Length: > 0 } clean)
+                        folders.Add(clean);
+            }
+            catch (Exception error) when (error is CryptographicException or JsonException or ArgumentException)
+            {
+                // Only empty folders are lost: every file still knows its own folder.
+                Log.Warning($"The vault's list of folders could not be read: {error.Message}");
+            }
         }
     }
 
@@ -309,6 +335,164 @@ public sealed class Vault
         var nonce = RandomNumberGenerator.GetBytes(12);
         var plain = JsonSerializer.SerializeToUtf8Bytes(Items);
         WriteAtomic(IndexFile, [.. nonce, .. Seal(key, nonce, plain, "index"u8.ToArray())]);
+        var folderNonce = RandomNumberGenerator.GetBytes(12);
+        var list = JsonSerializer.SerializeToUtf8Bytes(folders.Order(StringComparer.OrdinalIgnoreCase).ToList());
+        WriteAtomic(FoldersFile, [.. folderNonce, .. Seal(key, folderNonce, list, "folders"u8.ToArray())]);
+    }
+
+    // --- the vault's own folders: paths like "Photos/2024", "" for the top ---
+
+    /// <summary>A folder path written one way: "/" between names, none at either end, no empty names.</summary>
+    public static string CleanDir(string? dir) =>
+        string.Join('/', (dir ?? "").Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    public static string JoinDir(string dir, string name) => dir.Length == 0 ? name : name.Length == 0 ? dir : dir + "/" + name;
+
+    /// <summary>The folder a folder is in: "Photos" for "Photos/2024", "" for a folder at the top.</summary>
+    public static string ParentDir(string dir) => dir.LastIndexOf('/') is var slash and >= 0 ? dir[..slash] : "";
+
+    /// <summary>A folder's own name: "2024" for "Photos/2024".</summary>
+    public static string DirName(string dir) => dir[(dir.LastIndexOf('/') + 1)..];
+
+    /// <summary>True when dir is inside parent (at any depth), or is parent itself.</summary>
+    public static bool IsInside(string dir, string parent) =>
+        parent.Length == 0 || dir.Equals(parent, StringComparison.OrdinalIgnoreCase) || dir.StartsWith(parent + "/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A name for a file or folder in the vault, or a VaultException saying why it can't be one.</summary>
+    public static string CheckName(string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || name is "." or ".." || name.Contains('/') || name.Contains('\\') || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || name.IndexOfAny(['<', '>', ':', '"', '|', '?', '*']) >= 0)
+            throw new VaultException(Tr.T("That name can't be used: {0}", name));
+        return name;
+    }
+
+    /// <summary>Every folder in the vault: the ones made, and those its files are in, with the folders around them.</summary>
+    public List<string> Folders()
+    {
+        var all = new HashSet<string>(folders, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Items)
+            all.Add(item.Dir);
+        foreach (var dir in all.ToList())
+            for (var up = dir; up.Length > 0; up = ParentDir(up))
+                all.Add(up);
+        all.Remove("");
+        return all.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    /// <summary>The folders directly inside dir, by full path.</summary>
+    public List<string> FoldersIn(string dir) =>
+        Folders().Where(folder => ParentDir(folder).Equals(dir, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The files directly inside dir.</summary>
+    public List<VaultItem> FilesIn(string dir) =>
+        Items.Where(item => item.Dir.Equals(dir, StringComparison.OrdinalIgnoreCase)).OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    /// <summary>The files in dir and every folder inside it.</summary>
+    public List<VaultItem> FilesUnder(string dir) => Items.Where(item => IsInside(item.Dir, dir)).ToList();
+
+    private bool FolderExists(string dir) => dir.Length == 0 || Folders().Contains(dir, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A name not yet used in that folder, by a file or a folder: "name", then "name (2)"…</summary>
+    private string FreeName(string dir, string name, VaultItem? except = null)
+    {
+        bool Taken(string candidate) =>
+            Items.Any(item => item != except && item.Dir.Equals(dir, StringComparison.OrdinalIgnoreCase) && item.Name.Equals(candidate, StringComparison.OrdinalIgnoreCase))
+            || FolderExists(JoinDir(dir, candidate)) && candidate.Length > 0;
+        if (!Taken(name))
+            return name;
+        string stem = Path.GetFileNameWithoutExtension(name), extension = Path.GetExtension(name);
+        for (var number = 2; ; number++)
+            if (!Taken($"{stem} ({number}){extension}"))
+                return $"{stem} ({number}){extension}";
+    }
+
+    /// <summary>Make a folder in the vault. Returns its path.</summary>
+    public string CreateFolder(string parent, string name)
+    {
+        parent = CleanDir(parent);
+        var made = JoinDir(parent, FreeName(parent, CheckName(name)));
+        folders.Add(made);
+        SaveIndex();
+        return made;
+    }
+
+    /// <summary>Give a folder another name; what is inside goes with it. Returns its new path.</summary>
+    public string RenameFolder(string dir, string name)
+    {
+        dir = CleanDir(dir);
+        name = CheckName(name);
+        if (name.Equals(DirName(dir), StringComparison.Ordinal))
+            return dir;
+        var renamed = JoinDir(ParentDir(dir), name.Equals(DirName(dir), StringComparison.OrdinalIgnoreCase) ? name : FreeName(ParentDir(dir), name));
+        Relocate(dir, renamed);
+        return renamed;
+    }
+
+    /// <summary>Move a folder, with everything in it, into another folder ("" for the top). Returns its new path.</summary>
+    public string MoveFolder(string dir, string into)
+    {
+        dir = CleanDir(dir);
+        into = CleanDir(into);
+        if (IsInside(into, dir) && into.Length >= dir.Length)
+            throw new VaultException(Tr.T("A folder can't be moved into itself."));
+        if (ParentDir(dir).Equals(into, StringComparison.OrdinalIgnoreCase))
+            return dir;
+        var moved = JoinDir(into, FreeName(into, DirName(dir)));
+        Relocate(dir, moved);
+        return moved;
+    }
+
+    /// <summary>Every file and folder at or under "from" now lives at or under "to".</summary>
+    private void Relocate(string from, string to)
+    {
+        string Moved(string dir) => to + dir[from.Length..];
+        foreach (var item in Items.Where(item => IsInside(item.Dir, from)))
+            item.Dir = Moved(item.Dir);
+        folders = new(folders.Select(folder => IsInside(folder, from) ? Moved(folder) : folder), StringComparer.OrdinalIgnoreCase) { to };
+        SaveIndex();
+    }
+
+    /// <summary>Delete a folder from the vault for good, with every file in it.</summary>
+    public (int Count, List<string> Errors) DeleteFolder(string dir)
+    {
+        dir = CleanDir(dir);
+        if (dir.Length == 0)
+            return (0, []);
+        var result = Delete(FilesUnder(dir));
+        if (result.Errors.Count == 0)
+        {
+            folders.RemoveWhere(folder => IsInside(folder, dir));
+            SaveIndex();
+        }
+        return result;
+    }
+
+    /// <summary>Give a file another name, in the same folder.</summary>
+    public void Rename(VaultItem item, string name)
+    {
+        name = CheckName(name);
+        if (name == item.Name)
+            return;
+        item.Name = FreeName(item.Dir, name, except: item);
+        SaveIndex();
+    }
+
+    /// <summary>Move files into another of the vault's folders ("" for the top). A name already there gets " (2)".</summary>
+    public void Move(IEnumerable<VaultItem> items, string dir)
+    {
+        dir = CleanDir(dir);
+        foreach (var item in items.ToList())
+        {
+            if (item.Dir.Equals(dir, StringComparison.OrdinalIgnoreCase))
+                continue;
+            item.Name = FreeName(dir, item.Name, except: item);
+            item.Dir = dir;
+        }
+        if (dir.Length > 0)
+            folders.Add(dir);
+        SaveIndex();
     }
 
     // --- encrypting and decrypting one file, a chunk at a time ---
@@ -476,15 +660,81 @@ public sealed class Vault
     /// Recycle Bin would keep a readable copy). progress(file number, files, name, done, size).
     /// </summary>
     public (int Count, List<string> Errors) Add(IReadOnlyList<string> paths,
+        Action<int, int, string, long, long>? progress = null, CancellationToken cancel = default, string dir = "")
+    {
+        dir = CleanDir(dir);
+        return Add(paths.Select(path => (path, dir)).ToList(), progress, cancel);
+    }
+
+    /// <summary>
+    /// Move whole folders into the vault, each as a folder of its own inside dir with all it
+    /// holds, sub-folders too (empty ones included). The originals are removed once every file
+    /// in them is safely in; a folder something could not be taken from is left with that in it.
+    /// </summary>
+    public (int Count, List<string> Errors) AddFolders(IReadOnlyList<string> sources, string dir = "",
+        Action<int, int, string, long, long>? progress = null, CancellationToken cancel = default)
+    {
+        dir = CleanDir(dir);
+        var files = new List<(string Path, string Dir)>();
+        var errors = new List<string>();
+        foreach (var source in sources)
+        {
+            var root = source.TrimEnd('\\', '/');
+            if (!Directory.Exists(root))
+            {
+                errors.Add(Tr.T("{0}: not a folder", Path.GetFileName(root)));
+                continue;
+            }
+            if (Sorter.Norm(VaultDir).Contains(Sorter.Norm(root)) || Sorter.Norm(OpenDir).Contains(Sorter.Norm(root)))
+            {
+                errors.Add(Tr.T("{0}: it holds the vault itself", Path.GetFileName(root)));
+                continue;
+            }
+            var top = JoinDir(dir, FreeName(dir, CheckName(Path.GetFileName(root))));
+            folders.Add(top);
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+                    folders.Add(JoinDir(top, CleanDir(Path.GetRelativePath(root, sub))));
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                    files.Add((file, JoinDir(top, CleanDir(Path.GetDirectoryName(Path.GetRelativePath(root, file))))));
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                errors.Add($"{Path.GetFileName(root)}: {error.Message}");
+            }
+        }
+        SaveIndex();
+        var (count, problems) = Add(files, progress, cancel);
+        errors.AddRange(problems);
+        // The folders left empty go too, deepest first; any that still hold something stay.
+        foreach (var source in sources.Where(Directory.Exists))
+        {
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories).OrderByDescending(path => path.Length).Append(source))
+                    if (!Directory.EnumerateFileSystemEntries(sub).Any())
+                        Directory.Delete(sub);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Log.Warning($"Vault: a folder moved in could not be removed: {error.Message}");
+            }
+        }
+        return (count, errors);
+    }
+
+    /// <summary>Files into the vault, each into its own vault folder.</summary>
+    public (int Count, List<string> Errors) Add(IReadOnlyList<(string Path, string Dir)> files,
         Action<int, int, string, long, long>? progress = null, CancellationToken cancel = default)
     {
         var added = 0;
         var errors = new List<string>();
-        for (var number = 0; number < paths.Count; number++)
+        for (var number = 0; number < files.Count; number++)
         {
             if (cancel.IsCancellationRequested)
                 break;
-            var path = paths[number];
+            var (path, dir) = files[number];
             var name = Path.GetFileName(path);
             try
             {
@@ -495,11 +745,11 @@ public sealed class Vault
                 var info = new FileInfo(path);
                 var item = new VaultItem
                 {
-                    Id = Guid.NewGuid().ToString("N"), Name = name, Size = info.Length,
-                    Added = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0, Folder = info.DirectoryName ?? "",
+                    Id = Guid.NewGuid().ToString("N"), Name = FreeName(dir, name), Size = info.Length,
+                    Added = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0, Folder = info.DirectoryName ?? "", Dir = dir,
                 };
                 var fileNumber = number;
-                EncryptFile(path, item.Id, progress is null ? null : (done, size) => progress(fileNumber, paths.Count, name, done, size), cancel);
+                EncryptFile(path, item.Id, progress is null ? null : (done, size) => progress(fileNumber, files.Count, name, done, size), cancel);
                 if (!Matches(item, path))
                 {
                     TryDelete(Blob(item.Id));
@@ -557,6 +807,37 @@ public sealed class Vault
             {
                 errors.Add($"{item.Name}: {error.Message}");
             }
+        }
+        return (moved, errors);
+    }
+
+    /// <summary>
+    /// Decrypt a vault folder, with everything in it, into a normal folder of the same name
+    /// inside target, and remove it from the vault.
+    /// </summary>
+    public (int Count, List<string> Errors) MoveOutFolder(string dir, string target, Action<int, int, string, long, long>? progress = null)
+    {
+        dir = CleanDir(dir);
+        var top = Sorter.UniqueDestination(target, DirName(dir));
+        Directory.CreateDirectory(top);
+        foreach (var folder in Folders().Where(folder => IsInside(folder, dir)))
+            Directory.CreateDirectory(Path.Combine(top, Path.Combine(folder[dir.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries))));
+        var moved = 0;
+        var errors = new List<string>();
+        var items = FilesUnder(dir);
+        for (var number = 0; number < items.Count; number++)
+        {
+            var item = items[number];
+            var into = Path.Combine(top, Path.Combine(item.Dir[dir.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries)));
+            var fileNumber = number;
+            var (count, problems) = MoveOut([item], into, progress is null ? null : (_, _, name, done, size) => progress(fileNumber, items.Count, name, done, size));
+            moved += count;
+            errors.AddRange(problems);
+        }
+        if (errors.Count == 0)
+        {
+            folders.RemoveWhere(folder => IsInside(folder, dir));
+            SaveIndex();
         }
         return (moved, errors);
     }

@@ -107,6 +107,18 @@ public sealed class ClipboardSettings
     [JsonPropertyName("paste_on_pick")] public bool PasteOnPick { get; set; } = true;
 }
 
+/// <summary>When the vault locks itself (both apps).</summary>
+public sealed class VaultSettings
+{
+    /// <summary>Lock after this many minutes without use; 0 = only by hand (or when the app closes, below).</summary>
+    [JsonPropertyName("lock_minutes")] public int LockMinutes { get; set; } = 10;
+    /// <summary>Lock when the app is closed (on the PC, to the tray as well; on the phone, when it leaves the screen).</summary>
+    [JsonPropertyName("lock_on_close")] public bool LockOnClose { get; set; } = true;
+
+    /// <summary>The choices offered for LockMinutes.</summary>
+    public static readonly int[] Choices = [1, 5, 10, 15, 30, 60, 0];
+}
+
 public sealed class CleanerSettings
 {
     /// <summary>Keys ticked on the Cleaner page; null = the defaults.</summary>
@@ -145,6 +157,7 @@ public sealed class Config
     /// <summary>Keyboard shortcuts that work in any program: action -> keys ("Ctrl+Alt+B"). An action without one is not listed.</summary>
     [JsonPropertyName("hotkeys")] public Dictionary<string, string> Hotkeys { get; set; } = [];
     [JsonPropertyName("portal")] public PortalSettings Portal { get; set; } = new();
+    [JsonPropertyName("vault")] public VaultSettings Vault { get; set; } = new();
     /// <summary>Show a tray notification when the processor or the memory stays nearly full.</summary>
     [JsonPropertyName("usage_alerts")] public bool UsageAlerts { get; set; } = true;
     /// <summary>Show the drop zone, the small always-on-top tile that files can be dragged onto.</summary>
