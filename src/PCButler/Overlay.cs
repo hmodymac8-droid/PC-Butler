@@ -218,7 +218,7 @@ public sealed class OverlayController
         // First try to count frames here, with no helper: Windows lets some accounts do that. Only if it refuses is the helper needed.
         if (settings.Fps && countsItself is null)
         {
-            countsItself = FpsMeter.Start(AppInfo.DataDir);
+            countsItself = FpsMeter.Start();
             (itselfSince, itselfSawFrames) = (now, false);
             Log.Info(countsItself == true ? "Counting frames without the helper" : "Counting frames needs the helper on this account");
         }

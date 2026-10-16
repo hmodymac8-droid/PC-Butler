@@ -33,6 +33,14 @@ public sealed partial class SettingsPage : Page
     private readonly TextBox ignore;
     private readonly ComboBox language = new() { Width = 130 };
     private readonly ListView categories;
+    private readonly CheckBox autostart;
+    private readonly CheckBox dropZone;
+
+    public override void ShowSwitches()
+    {
+        Match(autostart, Autostart.IsEnabled());
+        Match(dropZone, Main.Config.DropZone);
+    }
 
     public SettingsPage(MainWindow main) : base(main, "Settings", "Your folders. Your rules.")
     {
@@ -44,7 +52,8 @@ public sealed partial class SettingsPage : Page
         quickTitle.FontFamily = Ui.DisplayFont;
         quick.Children.Add(quickTitle);
         // Two separate things: whether PC Butler starts with Windows, and whether it sorts by itself.
-        quick.Children.Add(Ui.Switch(Ui.T("Start PC Butler when Windows starts"), Autostart.IsEnabled(), MainWindow.SetAutostart));
+        autostart = Ui.Switch(Ui.T("Start PC Butler when Windows starts"), Autostart.IsEnabled(), MainWindow.SetAutostart);
+        quick.Children.Add(autostart);
         quick.Children.Add(Ui.Muted(Ui.T("It waits in the taskbar tray, for automatic sorting, updates and the drop zone."), 12, wrap: true)
                              .Margin(0, 2, 0, 0));
         main.AutoSortSwitch.Content = Ui.T("Sort automatically");
@@ -78,7 +87,8 @@ public sealed partial class SettingsPage : Page
             quick.Children.Add(Ui.Muted(Ui.T("The classic menu shows every entry at once, including the “PC Butler” menu. Switch it off to get "
                                              + "Windows 11's short menu back."), 12, wrap: true).Margin(0, 2, 0, 0));
         }
-        quick.Children.Add(Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on)).Margin(0, 12, 0, 0));
+        dropZone = Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on));
+        quick.Children.Add(dropZone.Margin(0, 12, 0, 0));
         quick.Children.Add(Ui.Muted(Ui.T("A small tile that stays on top of other windows. Drag files or folders onto it to sort them, lock them in "
                                          + "the Vault, shred them or recycle them. Drag the tile to move it."), 12, wrap: true).Margin(0, 2, 0, 0));
         AddSandbox(quick);
