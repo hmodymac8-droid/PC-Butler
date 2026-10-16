@@ -4,20 +4,23 @@ using Android.App;
 using Android.Content;
 using Android.Content.PM;
 using Android.OS;
+using PCButler.Android.Pages;
 using PCButler.Core;
 
 namespace PCButler.Android;
 
 /// <summary>
 /// Keeps Courier connected while the app is in the background or the screen is off, as
-/// Android asks: with a notification that says what it is doing, and shows the progress of
-/// the file on its way. Tapping it opens the app.
+/// Android asks: with a notification that says what it is doing. While a file is on its way
+/// it shows its progress bar, how long it has been moving and how long is left, with Pause or
+/// Resume and Cancel; Disconnect is always there and stops Courier. Tapping it opens the app.
 /// </summary>
 [Service(ForegroundServiceType = ForegroundService.TypeDataSync, Exported = false)]
 public sealed class CourierService : Service
 {
     private const int NotificationId = 7001;
     private const string Channel = "courier";
+    private const string PauseAction = "pcbutler.courier.pause", CancelAction = "pcbutler.courier.cancel", DisconnectAction = "pcbutler.courier.disconnect";
     private Timer? timer;
     private string shown = "";
 
@@ -38,6 +41,18 @@ public sealed class CourierService : Service
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        if (intent?.Action == DisconnectAction)
+        {
+            MainThread.BeginInvokeOnMainThread(() => _ = Courier.Stop());
+            return StartCommandResult.NotSticky;
+        }
+        if (intent?.Action is PauseAction or CancelAction && Courier.Node?.Transfers.FirstOrDefault(transfer => transfer.Id == intent.GetStringExtra("id")) is { } chosen)
+        {
+            if (intent.Action == PauseAction)
+                Courier.TogglePause(chosen);
+            else
+                chosen.Cancel();
+        }
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
         {
             var manager = (NotificationManager)GetSystemService(NotificationService)!;
@@ -64,33 +79,80 @@ public sealed class CourierService : Service
             StopSelf();
             return;
         }
+        var before = shown;
         var notification = Make();
+        if (shown == before)
+            return; // the same words and progress: no need to wake the notification shade every second
         var manager = (NotificationManager)GetSystemService(NotificationService)!;
         manager.Notify(NotificationId, notification);
     }
 
-    /// <summary>What Courier is doing, in one line, with the progress of the file being sent or received.</summary>
+    /// <summary>A button on the notification: it comes back to this service with its action and the transfer's ID.</summary>
+    private Notification.Action Button(string action, string title, string id, int code)
+    {
+        var intent = new Intent(this, typeof(CourierService)).SetAction(action).PutExtra("id", id);
+        var pending = PendingIntent.GetService(this, code, intent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent)!;
+#pragma warning disable CA1422 // the icon-number form is the one that works on every Android version the app runs on
+        return new Notification.Action(0, title, pending);
+#pragma warning restore CA1422
+    }
+
+    /// <summary>What Courier is doing, with the file on its way: its progress, its times and its buttons.</summary>
     private Notification Make()
     {
         var node = Courier.Node;
-        var moving = node?.Transfers.LastOrDefault(transfer => transfer.State == "active");
+        var running = node?.Transfers.Where(transfer => transfer.Running).ToList() ?? [];
+        var moving = running.LastOrDefault(transfer => transfer.State == "active") ?? running.LastOrDefault();
         var ready = Courier.Targets(node).Where(target => target.Ready).ToList();
-        var text = moving is not null
-            ? Tr.T(moving.Incoming ? "Receiving {0}" : "Sending {0}", moving.Name)
-            : ready.Count switch
+        string title, text, more = "";
+        var progress = -1;
+        if (moving is not null)
+        {
+            title = Tr.T(moving.Incoming ? "Receiving {0}" : "Sending {0}", moving.Name);
+            var direction = Tr.T(moving.Incoming ? "From {0}" : "To {0}", moving.Peer);
+            if (moving.State == "waiting")
+            {
+                text = $"{direction}  ·  " + Tr.T(moving.Incoming ? "Waiting for your answer" : "Waiting for the other PC to accept");
+            }
+            else
+            {
+                progress = moving.Size > 0 ? (int)Math.Min(1000, moving.Done * 1000 / moving.Size) : 0;
+                var held = Courier.Held(moving);
+                text = $"{direction}  ·  {progress / 10}%  ·  {CourierPage.Size(moving.Done)} / {CourierPage.Size(moving.Size)}"
+                       + (held.Length > 0 ? $"  ·  {held}" : moving.Speed > 0 ? $"  ·  {CourierPage.Size((long)moving.Speed)}/s" : "");
+                more = Courier.Times(moving);
+            }
+            if (running.Count > 1)
+                more += (more.Length > 0 ? "\n" : "") + Tr.T("{0} more on the way", running.Count - 1);
+        }
+        else
+        {
+            title = Tr.T("Courier");
+            text = ready.Count switch
             {
                 0 => node?.IsHost == true ? Tr.T("Waiting for the other PCs to connect.") : Tr.T("Connecting…"),
                 1 => Tr.T("Connected to {0}", ready[0].Name),
                 _ => Tr.T("{0} PCs connected", ready.Count),
             };
+        }
         var open = PendingIntent.GetActivity(this, 0, new Intent(this, typeof(MainActivity)).AddFlags(ActivityFlags.SingleTop),
                                              PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
         var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O ? new Notification.Builder(this, Channel) : new Notification.Builder(this);
-        builder.SetContentTitle(Tr.T("Courier")).SetContentText(text).SetSmallIcon(Resource.Drawable.notification_icon).SetOngoing(true).SetContentIntent(open)
+        builder.SetContentTitle(title).SetContentText(text).SetSmallIcon(Resource.Drawable.notification_icon).SetOngoing(true).SetContentIntent(open)
                .SetOnlyAlertOnce(true);
-        if (moving is not null && moving.Size > 0)
-            builder.SetProgress(1000, (int)(moving.Done * 1000 / moving.Size), false);
-        shown = text;
+        if (more.Length > 0)
+            builder.SetStyle(new Notification.BigTextStyle().BigText(text + "\n" + more));
+        if (progress >= 0)
+            builder.SetProgress(1000, progress, false);
+        else if (moving?.State == "waiting")
+            builder.SetProgress(0, 0, true);
+        // At most three buttons: Pause or Resume while it moves, Cancel while it runs, and Disconnect.
+        if (moving is { State: "active" })
+            builder.AddAction(Button(PauseAction, Tr.T(moving.Paused ? "Resume" : "Pause"), moving.Id, 1));
+        if (moving is not null)
+            builder.AddAction(Button(CancelAction, Tr.T("Cancel"), moving.Id, 2));
+        builder.AddAction(Button(DisconnectAction, Tr.T("Disconnect"), "", 3));
+        shown = $"{title}|{text}|{more}|{progress}|{moving?.Paused}";
         return builder.Build()!;
     }
 }
