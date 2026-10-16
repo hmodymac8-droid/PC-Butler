@@ -38,7 +38,7 @@ public sealed class ProgramsPage : Page
         driveFilter.SelectionChanged += (_, _) => ShowInstalled();
         bar.Children.Add(driveFilter.Margin(6));
         bar.Children.Add(installedStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), () => Uninstall(Chosen(installedList).Select(row => (InstalledProgram)row.Tag!).ToList()),
+        bar.Children.Add(Ui.Button(Ui.T("Uninstall"), () => Uninstall(Chosen(installedList!).Select(row => (InstalledProgram)row.Tag!).ToList()),
                                    accent: true).Dock(Dock.Right));
         installedList = Ui.List(("Program", 300, "CheckCell"), ("Drive", 60), ("Version", 120), ("Publisher", 200), ("Size", 90), ("Installed", 110));
         installedList.MouseDoubleClick += (_, e) =>
@@ -52,7 +52,7 @@ public sealed class ProgramsPage : Page
         bar = new DockPanel { LastChildFill = false };
         bar.Children.Add(Ui.Button(Ui.T("Check for updates"), CheckUpdates));
         bar.Children.Add(updateStatus);
-        bar.Children.Add(Ui.Button(Ui.T("Update selected"), () => Update(Chosen(updateList).Select(row => (ProgramUpdate)row.Tag!).ToList()),
+        bar.Children.Add(Ui.Button(Ui.T("Update selected"), () => Update(Chosen(updateList!).Select(row => (ProgramUpdate)row.Tag!).ToList()),
                                    accent: true).Dock(Dock.Right));
         updateList = Ui.List(("Program", 300, "CheckCell"), ("Installed", 150), ("New version", 150), ("Package", 260));
         updateStatus.Text = Ui.T("Updates come from winget, Windows' own package manager.");

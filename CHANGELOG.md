@@ -3,6 +3,14 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.0
+
+- New Search page: every file and folder on your drives, found as you type. Space means and, | means or, ! means not, < > groups, quotes keep spaces, * and ? are wildcards, a \ searches the path, and path:, file:, folder:, ext:jpg;png, case: and diacritics: work as in other file search tools.
+- Arabic names are found without their tashkeel, and أ إ آ ا, ى ي and ة ه count as the same letter (both can be switched off).
+- Win + F opens a search box over whatever program is in front: Enter opens, Ctrl+Enter opens the folder. The shortcut can be changed on the Hotkeys tab.
+- Results: sort by name, path, size or date modified; open, open the folder, copy the path or name, rename, or move files to the Recycle Bin (History can bring them back).
+- Settings > Search: which drives and folders are indexed, what is left out, and how much memory the index uses. The index is saved, so search is ready at once when PC Butler starts, and changes are followed while it runs.
+
 ## 1.21.4
 
 - Settings > Hotkeys: the clipboard history's shortcut can be changed there too, like the others.

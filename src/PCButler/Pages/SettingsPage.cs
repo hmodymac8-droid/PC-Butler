@@ -194,10 +194,19 @@ public sealed partial class SettingsPage : Page
         all.Children.Add(quick.Dock(Dock.Top));
         all.Children.Add(grid);
         general.Children.Add(new ScrollViewer { Content = all, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
-        var tabs = new TabControl();
-        tabs.Items.Add(new TabItem { Header = Ui.T("General"), Content = new Border { Padding = new Thickness(18, 16, 18, 12), Child = general } });
-        tabs.Items.Add(new TabItem { Header = Ui.T("Hotkeys"), Content = HotkeysTab() });
+        tabs.Items.Add(new TabItem { Header = Ui.T("General"), Content = new Border { Padding = new Thickness(18, 16, 18, 12), Child = general }, Tag = "general" });
+        tabs.Items.Add(new TabItem { Header = Ui.T("Search"), Content = SearchTab(), Tag = "search" });
+        tabs.Items.Add(new TabItem { Header = Ui.T("Hotkeys"), Content = HotkeysTab(), Tag = "hotkeys" });
         Children.Add(tabs);
+    }
+
+    private readonly TabControl tabs = new();
+
+    /// <summary>Open the page at one of its tabs ("general", "search", "hotkeys").</summary>
+    public void ShowTab(string key)
+    {
+        Main.ShowPage("settings");
+        tabs.SelectedItem = tabs.Items.OfType<TabItem>().FirstOrDefault(tab => (string?)tab.Tag == key) ?? tabs.SelectedItem;
     }
 
     /// <summary>Hotkeys: one shortcut per action, working in any program, applied the moment it is typed.</summary>
@@ -222,39 +231,43 @@ public sealed partial class SettingsPage : Page
             set(Shortcut.Format(Keyboard.Modifiers, pressed));
         };
         var first = true;
+        string Current(string action) => Hotkeys.Effective(Main.Config.Hotkeys).GetValueOrDefault(action, "");
+        // An action with a default shortcut keeps "" when cleared, so the default does not come back.
+        void Store(Config config, string action, string keys)
+        {
+            if (keys.Length > 0 || Hotkeys.Defaults.ContainsKey(action))
+                config.Hotkeys[action] = keys;
+            else
+                config.Hotkeys.Remove(action);
+        }
         foreach (var (key, label, detail) in Hotkeys.Actions)
         {
-            var field = Ui.Field(Main.Config.Hotkeys.GetValueOrDefault(key, ""), 190, Ui.T("None"));
+            var field = Ui.Field(Current(key), 190, Ui.T("None"));
             field.IsReadOnly = true;
             void Set(string keys)
             {
-                var before = Main.Config.Hotkeys.GetValueOrDefault(key, "");
-                var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => other.Key != key && Main.Config.Hotkeys.GetValueOrDefault(other.Key, "") == keys).Label : null;
+                var before = Current(key);
+                var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => other.Key != key && Current(other.Key) == keys).Label : null;
                 if (taken is not null || (keys.Length > 0 && keys == Main.Config.Clipboard.Shortcut && Main.Config.Clipboard.Enabled))
                 {
                     Ui.Warn("Hotkeys", Ui.T("{0} is already the shortcut for “{1}”.", keys, Ui.T(taken ?? "Clipboard history")));
                     return;
                 }
-                Main.UpdateConfig(config =>
-                {
-                    if (keys.Length > 0)
-                        config.Hotkeys[key] = keys;
-                    else
-                        config.Hotkeys.Remove(key);
-                });
+                Main.UpdateConfig(config => Store(config, key, keys));
                 if (App.Current.Keys.Apply(Main.Config.Hotkeys).TryGetValue(key, out var problem))
                 {
-                    Ui.Warn("Hotkeys", problem);
-                    Main.UpdateConfig(config =>
+                    var freed = problem.StartsWith(Hotkeys.HeldByWindows, StringComparison.Ordinal)
+                                && OfferExplorerKey(keys, problem[Hotkeys.HeldByWindows.Length..]);
+                    if (!freed)
                     {
-                        if (before.Length > 0)
-                            config.Hotkeys[key] = before;
-                        else
-                            config.Hotkeys.Remove(key);
-                    });
-                    App.Current.Keys.Apply(Main.Config.Hotkeys);
+                        if (!problem.StartsWith(Hotkeys.HeldByWindows, StringComparison.Ordinal))
+                            Ui.Warn("Hotkeys", problem);
+                        Main.UpdateConfig(config => Store(config, key, before));
+                        App.Current.Keys.Apply(Main.Config.Hotkeys);
+                    }
                 }
-                field.Text = Main.Config.Hotkeys.GetValueOrDefault(key, "");
+                ReturnExplorerKeys();
+                field.Text = Current(key);
             }
             Record(field, Set);
             rows.Children.Add(Ui.SettingRow(Ui.T(label), detail.Length > 0 ? Ui.T(detail) : "", Ui.Row(6, field, Ui.Button(Ui.T("Clear"), () => Set(""))), first));
@@ -266,7 +279,7 @@ public sealed partial class SettingsPage : Page
         void SetClipboard(string keys)
         {
             var before = Main.Config.Clipboard.Shortcut;
-            var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => Main.Config.Hotkeys.GetValueOrDefault(other.Key, "") == keys).Label : null;
+            var taken = keys.Length > 0 ? Hotkeys.Actions.FirstOrDefault(other => Current(other.Key) == keys).Label : null;
             if (taken is not null)
             {
                 Ui.Warn("Hotkeys", Ui.T("{0} is already the shortcut for “{1}”.", keys, Ui.T(taken)));
@@ -286,6 +299,9 @@ public sealed partial class SettingsPage : Page
                                         Ui.T(Main.Config.Clipboard.Enabled ? "Opens the list of what you copied."
                                                                            : "Opens the list of what you copied. It works once the clipboard manager is switched on, on the Clipboard page."),
                                         Ui.Row(6, clipboard, Ui.Button(Ui.T("Clear"), () => SetClipboard("")))));
+        rows.Children.Add(Ui.Muted(Ui.T("Shortcuts with the Win key (such as Win + F, which Windows normally keeps for Feedback Hub) are taken over while "
+                                        + "PC Butler runs. They do not work while a program running as administrator is in front."), 12, wrap: true)
+                             .Margin(24, 14, 24, 10));
         return new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
     }
 
