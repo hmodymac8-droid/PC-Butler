@@ -6,6 +6,8 @@ Each version is a `## heading` followed by `- ` lines.
 ## 1.22.1
 
 - Fixed: the overlay could say "helper is off" while the helper was running, and frames per second stayed empty.
+- The tray panel shows only the background features now, each tile with its full name. Sort now, Pause and Report are gone from it: sorting is on the Sorter page, Pause in the window's status bar.
+- Sorter: a Review moved files button opens the list of what automatic sorting moved, to approve it or undo it.
 
 ## 1.22.0
 
