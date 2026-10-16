@@ -14,6 +14,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Vault: choose how long it stays open without use before it locks (1 to 60 minutes, or never), and whether it locks when PC Butler is closed (on the phone, when the app leaves the screen).
 - PC Butler on the phone: Add files… in the Vault works again (the vault no longer locks while Android's file picker is open), and a file opened from the vault is no longer removed while it is being shown.
 - PC Butler on the phone: in Arabic the app reads from right to left; Duplicates and Storage share one list of folders; the Recycle Bin says when the space is freed and empties itself after 30 days; Sorter's Undo also removes the folders it left empty; putting a big file back no longer freezes the screen; buttons with nothing to act on are hidden.
+- Courier: when a PC wants to connect, or to send files, a pop-up asks right away, on the PC and on the phone, with the code to compare and Allow or Refuse. Closing it leaves the question on the Courier page, where it can still be answered.
 
 ## 1.22.0
 
