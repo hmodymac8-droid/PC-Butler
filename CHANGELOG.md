@@ -3,6 +3,16 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.4
+
+- PC Butler on the phone has a new look, from a design made in Lovable: darker colors with a mint accent, rounded cards and pill buttons, new icons, and a "PC Butler" bar on every page with its own header and buttons.
+- Courier on the phone: the phone's ID sits in one big card with a copy button; a PC's ID is typed in one box with a paste button next to Connect; the settings (received files, how new PCs get in, stop) open in a sheet from the gear button; a PC's actions open in a sheet.
+- Sorter on the phone: the count and Sort now on top, folders as chips, and a preview grouped by type that opens and closes.
+- Duplicates on the phone: pick how files match with chips; in each group tap the copy to keep and the others are marked Delete; a bar at the bottom shows the space freed and deletes the extras.
+- Storage on the phone: the free space shown big, a Scan button in the header, folders with bars, and a delete button on each large old file.
+- Vault on the phone: new create and unlock screens with a password eye, three tiles to add files, add a folder or make one, a ⋮ sheet for each file, a bar at the bottom while selecting, and lock settings in a sheet.
+- New on the phone: a Tools button on top of every page opens all of PC Butler's tools. Search finds files by name or type in your folders. Cleaner finds installers, files of 100 MB or more and old downloads to remove, and clears PC Butler's own cache. Apps lists your apps with their size, to open, see in Android's app info or uninstall. Benchmark measures the processor and storage for real. Clipboard keeps text to copy again or send to a PC through Courier. History shows what PC Butler did.
+
 ## 1.22.3
 
 - Fixed: PC Butler could close with "A new guard page for the stack cannot be created". Search worked out a file's full path one folder level at a time in a way that ran out of room on very deep folders; it now walks the folders in a loop, and a folder is never moved inside itself in the index.

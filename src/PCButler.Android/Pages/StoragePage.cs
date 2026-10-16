@@ -14,75 +14,76 @@ public sealed class StoragePage : AppPage
 {
     private static readonly Color[] Tones = [Theme.Primary, Color.FromArgb("#69acf3"), Theme.Amber, Color.FromArgb("#a993f0"), Color.FromArgb("#5cc6d6")];
 
-    private readonly Label phoneFree = new() { FontSize = 26, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.End };
-    private readonly Label phoneTotal = new() { FontSize = 14, TextColor = Theme.Muted, VerticalOptions = LayoutOptions.End, Margin = new Thickness(0, 0, 0, 4) };
-    private readonly Label phoneUsed = Theme.Faint("", 12.5);
+    private readonly Label phoneFree = new() { FontSize = 34, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
+    private readonly Label phoneTotal = Theme.Faint("", 13);
+    private readonly Label phoneUsed = new() { FontSize = 15, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, VerticalOptions = LayoutOptions.Start };
     private readonly ContentView phoneBar = new();
     private readonly Label scanStatus = new() { FontSize = 12, TextColor = Theme.Muted, VerticalOptions = LayoutOptions.Center, HorizontalTextAlignment = TextAlignment.End, LineBreakMode = LineBreakMode.HeadTruncation };
-    private readonly Label folderTitle = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
+    private readonly Label folderTitle = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.HeadTruncation };
     private readonly Border binPill = Theme.Pill("", Theme.Amber, Theme.AmberSoft);
+    private readonly View firstScan;
     private readonly Border resultsCard;
+    private readonly View bigSection;
     private readonly Border bigCard;
-    private readonly VerticalStackLayout folderList = new() { Spacing = 8 };
-    private readonly Button upButton;
-    private readonly VerticalStackLayout bigList = new() { Spacing = 6 };
-    private readonly Button bigDelete;
-    private readonly Label bigNote;
+    private readonly VerticalStackLayout folderList = new() { Spacing = 0 };
+    private readonly Border upButton;
+    private readonly VerticalStackLayout bigList = new() { Spacing = 0 };
     private readonly Grid binButtons;
     private readonly VerticalStackLayout binList = new() { Spacing = 6 };
-    private readonly Label binText = Theme.Faint("");
-    private readonly List<(BigFile File, CheckBox Box)> bigBoxes = [];
+    private readonly Label binText = Theme.Faint("", 12.5);
     private StorageResult? result;
     private StorageNode? shown;
     private readonly Dictionary<string, Doc> docs = new(StringComparer.Ordinal);
     private CancellationTokenSource? scanning;
 
-    public StoragePage() : base("Storage", "See what fills your phone. Decide what stays.")
+    public StoragePage() : base("Storage")
     {
-        var free = new HorizontalStackLayout { Spacing = 8, Children = { phoneFree, phoneTotal } };
-        Body.Children.Add(Theme.CardOf(new VerticalStackLayout { Spacing = 10, Children = { free, phoneBar, phoneUsed } }));
-        Body.Children.Add(FoldersCard("storage", "These folders, and all the folders inside them, are measured.", () => { }));
+        HeaderRight.Content = Theme.IconButton("i_scan_line_w.png", () => _ = Scan());
+        // How full the phone is: the free space big, the total and the share used next to it.
+        var numbers = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) } };
+        numbers.Add(new VerticalStackLayout { Spacing = 0, Children = { phoneFree, phoneTotal } }, 0);
+        numbers.Add(phoneUsed, 1);
+        Body.Children.Add(Theme.CardOf(new VerticalStackLayout { Spacing = 14, Children = { numbers, phoneBar } }, 20));
+        Body.Children.Add(Theme.Section(Tr.T("Scan folders")));
+        Body.Children.Add(FoldersChips("storage", () => { }));
+        firstScan = Theme.CardOf(Theme.Empty("i_chart_pie_m.png", Tr.T("See what fills your phone"), Tr.T("These folders, and all the folders inside them, are measured."),
+                                             Theme.Accent(Tr.T("Scan now"), () => _ = Scan(), "i_scan_line_k.png"))).Margin(0, 12, 0, 12);
+        Body.Children.Add(firstScan);
         // Back up one folder: an arrow before the folder's name, there only inside a folder.
-        upButton = Theme.Plain(Tr.IsArabic ? "→" : "←", () =>
+        upButton = Theme.IconButton("i_arrow_left_w.png", () =>
         {
             if (shown?.Parent is { } parent)
                 ShowNode(parent);
-        });
-        (upButton.Padding, upButton.FontSize, upButton.BackgroundColor, upButton.VerticalOptions) = (new Thickness(12, 4), 18, Theme.SurfaceRaised, LayoutOptions.Center);
+        }, Theme.SurfaceRaised, 34);
+        if (Tr.IsArabic)
+            upButton.RotationY = 180;
         upButton.IsVisible = false;
-        Body.Children.Add(Theme.Accent(Tr.T("Scan"), () => _ = Scan()).Margin(0, 0, 0, 14));
-        var head = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star) }, ColumnSpacing = 10 };
+        var head = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 10, Padding = new Thickness(0, 0, 0, 6) };
         head.Add(upButton, 0);
         head.Add(folderTitle, 1);
         head.Add(scanStatus, 2);
         // The results and the large files show once something has been scanned.
         resultsCard = Theme.CardOf(new VerticalStackLayout { Spacing = 4, Children = { head, folderList } }, 16);
         resultsCard.IsVisible = false;
-        Body.Children.Add(resultsCard);
-        bigDelete = Theme.Danger(Tr.T("Tick a file first"), () => _ = DeleteBig());
-        bigDelete.IsEnabled = false;
-        bigNote = new Label { Text = Tr.T("Deleted files go to the Recycle Bin first."), FontSize = 12, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center };
+        Body.Children.Add(resultsCard.Margin(0, 12, 0, 12));
+        bigSection = Theme.Section(Tr.T("Large & old files"));
+        bigSection.IsVisible = false;
+        Body.Children.Add(bigSection);
         bigCard = Theme.CardOf(new VerticalStackLayout
         {
-            Spacing = 10,
-            Children =
-            {
-                Theme.Header(Tr.T("Large & old files"), null, 16), Theme.Faint(Tr.T("Bigger than 50 MB and not changed for 3 months or more."), 12.5), bigList, bigDelete, bigNote,
-            },
+            Spacing = 6,
+            Children = { Theme.Hint(Tr.T("Bigger than 50 MB and not changed for 3 months or more.")), bigList },
         }, 16);
         bigCard.IsVisible = false;
         Body.Children.Add(bigCard);
         var bins = binButtons = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
-        bins.Add(Theme.Plain(Tr.T("Put all back"), () => _ = RestoreAll()), 0);
-        bins.Add(Theme.DangerGhost(Tr.T("Empty"), () => _ = EmptyBin()), 1);
+        bins.Add(Theme.Tonal(Tr.T("Put all back"), () => _ = RestoreAll(), "i_undo_2_m.png"), 0);
+        bins.Add(Theme.Danger(Tr.T("Empty"), () => _ = EmptyBin(), "i_trash_2_r.png"), 1);
+        Body.Children.Add(Theme.Section(Tr.T("Recycle Bin"), binPill));
         Body.Children.Add(Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
-            Children =
-            {
-                Theme.Line3(Theme.Tile(Theme.BinTile), Theme.TwoLines(new Label { Text = Tr.T("Recycle Bin"), FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text }, binText), binPill),
-                binList, bins,
-            },
+            Children = { Theme.Line3(Theme.Tile(Theme.BinTile), binText), binList, bins },
         }, 16));
     }
 
@@ -93,8 +94,9 @@ public sealed class StoragePage : AppPage
         var used = total > 0 ? (double)(total - free) / total : 0;
         phoneFree.Text = Tr.T("{0} free", Size(free));
         phoneTotal.Text = Tr.T("of {0}", Size(total));
-        phoneUsed.Text = Tr.T("{0}% used.", Math.Round(used * 100));
-        phoneBar.Content = Theme.Bar(used, used >= 0.9 ? Theme.Red : Theme.Primary, 10);
+        phoneUsed.Text = $"{Math.Round(used * 100)}%";
+        phoneUsed.TextColor = used >= 0.9 ? Theme.Red : Theme.Primary;
+        phoneBar.Content = Theme.Bar(used, used >= 0.9 ? Theme.Red : Theme.Primary, 12);
         ShowBin();
     }
 
@@ -110,6 +112,7 @@ public sealed class StoragePage : AppPage
             return;
         }
         var current = "";
+        firstScan.IsVisible = false;
         resultsCard.IsVisible = true;
         folderTitle.Text = Tr.T("Your folders");
         scanStatus.Text = Tr.T("Looking for files…");
@@ -131,7 +134,7 @@ public sealed class StoragePage : AppPage
         }
         scanStatus.Text = Tr.T("{0} in {1} file(s).", Size(result.Root.Size), result.Root.Files.ToString("N0"));
         ShowNode(result.Root);
-        bigCard.IsVisible = true;
+        bigCard.IsVisible = bigSection.IsVisible = true;
         ShowBig();
     }
 
@@ -213,49 +216,54 @@ public sealed class StoragePage : AppPage
             var title = new Label { Text = name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.MiddleTruncation };
             var size = new Label { Text = Size(child.Size), FontSize = 12, TextColor = Theme.Muted, VerticalOptions = LayoutOptions.Center };
             var bar = Meter(part, Tones[index++ % Tones.Length]);
-            bar.Margin = new Thickness(48, 0, 0, 0);
-            var row = new VerticalStackLayout { Spacing = 8, Padding = new Thickness(0, 10), Children = { Theme.Line3(Theme.Tile(tile, 36), title, size), bar } };
-            if (child.IsFolder && child.Children.Count > 0)
+            bar.Margin = new Thickness(50, 0, 0, 0);
+            var opens = child.IsFolder && child.Children.Count > 0;
+            var end = new HorizontalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { size } };
+            if (opens)
+                end.Children.Add(Theme.Icon(Tr.IsArabic ? "i_chevron_left_g.png" : "i_chevron_right_g.png", 16));
+            var row = new VerticalStackLayout { Spacing = 8, Padding = new Thickness(0, 10), Children = { Theme.Line3(Theme.Tile(tile, 38), title, end), bar } };
+            if (opens)
                 row.Tapped(() => ShowNode(child));
             if (folderList.Children.Count > 0)
-                folderList.Children.Add(new BoxView { HeightRequest = 1, Color = Theme.Line });
+                folderList.Children.Add(Theme.Divider());
             folderList.Children.Add(row);
         }
     }
 
+    /// <summary>Big files nobody has changed for months, each with its own delete button.</summary>
     private void ShowBig()
     {
         bigList.Children.Clear();
-        bigBoxes.Clear();
         var files = result is null ? [] : Storage.LargeAndOld(result, Storage.BigFileMinimum, 3);
         if (files.Count == 0)
-            bigList.Children.Add(Theme.Faint(Tr.T("No files match.")));
-        bigDelete.IsVisible = bigNote.IsVisible = files.Count > 0; // nothing to tick, nothing to delete
-        bigDelete.Text = Tr.T("Tick a file first");
-        bigDelete.IsEnabled = false;
+            bigList.Children.Add(Theme.Empty("i_circle_check_m.png", Tr.T("No files match.")));
         foreach (var file in files.Take(40))
         {
-            var (row, box) = Tickable(file.Name, $"{Size(file.Size)} · {Tr.T("Last used")} {file.LastUsed:yyyy-MM-dd} · {Path.GetDirectoryName(file.Path)}", tile: Theme.TileFor(file.Name));
-            box.CheckedChanged += (_, _) =>
-            {
-                var ticked = bigBoxes.Where(item => item.Box.IsChecked).ToList();
-                bigDelete.IsEnabled = ticked.Count > 0;
-                bigDelete.Text = ticked.Count == 0 ? Tr.T("Tick a file first") : Tr.T("Delete {0} · frees {1}", ticked.Count, Size(ticked.Sum(item => item.File.Size)));
-            };
-            bigBoxes.Add((file, box));
+            var name = new Label { Text = file.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
+            var detail = Theme.Faint($"{Size(file.Size)}  ·  {Tr.T("Last used")} {file.LastUsed:yyyy-MM-dd}", 12);
+            detail.LineBreakMode = LineBreakMode.TailTruncation;
+            var chosen = file;
+            var trash = Theme.IconButton("i_trash_2_r.png", () => _ = DeleteBig(chosen), Theme.DangerBack, 38);
+            var row = Theme.Line3(Theme.Tile(Theme.TileFor(file.Name), 38), Theme.TwoLines(name, detail), trash);
+            row.Padding = new Thickness(0, 10);
+            if (bigList.Children.Count > 0)
+                bigList.Children.Add(Theme.Divider());
             bigList.Children.Add(row);
         }
     }
 
-    private async Task DeleteBig()
+    private async Task DeleteBig(BigFile file)
     {
-        var chosen = bigBoxes.Where(item => item.Box.IsChecked).Select(item => item.File).ToList();
-        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, below.", chosen.Count) + "\n\n" + DuplicatesPage.SpaceNote, Tr.T("Delete")))
+        if (!await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, below.", 1) + "\n\n" + file.Name + "\n\n" + DuplicatesPage.SpaceNote, Tr.T("Delete")))
             return;
-        var (count, errors) = await Task.Run(() => DuplicatesPage.Bin(chosen.Select(file => docs[file.Path])));
-        var gone = chosen.Select(file => file.Path).ToHashSet();
-        result?.BigFiles.RemoveAll(file => gone.Contains(file.Path) && !errors.Any(error => error.StartsWith(Path.GetFileName(file.Path) + ":")));
-        await Say(errors.Count == 0 ? Tr.T("{0} file(s) deleted.", count) : Tr.T("{0} file(s) deleted. {1} could not be:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
+        var (_, errors) = await Task.Run(() => DuplicatesPage.Bin([docs[file.Path]]));
+        if (errors.Count == 0)
+        {
+            result?.BigFiles.RemoveAll(item => item.Path == file.Path);
+            ActivityLog.Record("storage", "Large file deleted", $"{file.Name}  ·  {Size(file.Size)}");
+        }
+        else
+            await Say(string.Join("\n", errors));
         ShowBig();
         ShowBin();
         Shown();
@@ -268,14 +276,15 @@ public sealed class StoragePage : AppPage
         var items = RecycleBin.Items();
         binText.Text = items.Count == 0 ? Tr.T("Empty. Files deleted in Duplicates or here wait in it until put back.")
             : Tr.T("{0} file(s), {1}. Tap one to put it back where it was.", items.Count, Size(items.Sum(item => item.Size))) + " " + Tr.T("Emptying it frees that space.");
+        binText.VerticalOptions = LayoutOptions.Center;
         binPill.IsVisible = binButtons.IsVisible = items.Count > 0;
         Theme.SetPill(binPill, items.Count.ToString(), Theme.Amber, Theme.AmberSoft);
         binList.Children.Clear();
         foreach (var item in items.Take(30))
         {
             var name = new Label { Text = Path.GetFileName(item.Original), FontSize = 13.5, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.MiddleTruncation };
-            var size = new Label { Text = "↩  " + Size(item.Size), FontSize = 12, TextColor = Theme.Muted, VerticalOptions = LayoutOptions.Center };
-            binList.Children.Add(Theme.BoxOf(Theme.Line3(Theme.Tile(Theme.TileFor(item.Original), 32), name, size), 8).Tapped(() => _ = RestoreOne(item)));
+            var size = new HorizontalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center, Children = { Theme.Faint(Size(item.Size), 12).Centered(), Theme.Icon("i_undo_2_m.png", 16) } };
+            binList.Children.Add(Theme.BoxOf(Theme.Line3(Theme.Tile(Theme.TileFor(item.Original), 34), name, size), 10).Tapped(() => _ = RestoreOne(item)));
         }
     }
 

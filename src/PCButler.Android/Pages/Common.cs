@@ -4,41 +4,157 @@ using PCButler.Core;
 
 namespace PCButler.Android.Pages;
 
-/// <summary>What every page of the app shares: a title, sizes and dates in words, the folders card.</summary>
+/// <summary>
+/// What every page of the app shares: the "PC Butler" bar on top, a compact title with room
+/// for a status and a button, sheets from the bottom, sizes in words and the folders chips.
+/// </summary>
 public abstract class AppPage : ContentPage
 {
     protected readonly VerticalStackLayout Body = new() { Spacing = 0 };
 
-    protected AppPage(string title, string description)
+    /// <summary>The page's root: the bar, the scrolling content, and the sheets and floating bars over them.</summary>
+    protected readonly Grid Root = new() { RowDefinitions = { new(GridLength.Auto), new(GridLength.Star) } };
+
+    /// <summary>Under the title: a status pill, a count…</summary>
+    protected readonly ContentView HeaderSub = new() { IsVisible = false };
+
+    /// <summary>At the end of the title: a round button (settings, refresh, lock…).</summary>
+    protected readonly ContentView HeaderRight = new() { VerticalOptions = LayoutOptions.Center };
+
+    protected readonly ScrollView Scroller;
+
+    /// <summary>A page of its own, opened from the Tools sheet: the bar has a way back.</summary>
+    private readonly bool tool;
+
+    protected AppPage(string title, bool tool = false)
     {
+        this.tool = tool;
         Title = Tr.T(title);
-        Content = new ScrollView
+        Microsoft.Maui.Controls.Shell.SetNavBarIsVisible(this, false);
+        var head = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 12, Padding = new Thickness(4, 14, 2, 8) };
+        head.Add(new VerticalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center, Children = { Theme.Title(Tr.T(title), 24), HeaderSub } }, 0);
+        head.Add(HeaderRight, 1);
+        Scroller = new ScrollView
         {
-            Content = new VerticalStackLayout
+            Content = new VerticalStackLayout { Padding = new Thickness(18, 0, 18, 32), Children = { head, Body } },
+        };
+        Root.Add(Bar(), 0, 0);
+        Root.Add(Scroller, 0, 1);
+        Content = Root;
+    }
+
+    /// <summary>The bar on top of every page: "PC Butler", Butler in the accent (on a tool's page, with an arrow back), and Tools at the end.</summary>
+    private View Bar()
+    {
+        var name = new Label
+        {
+            FontSize = 16, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center,
+            FormattedText = new FormattedString { Spans = { new Span { Text = "PC ", TextColor = Theme.Text }, new Span { Text = "Butler", TextColor = Theme.Primary } } },
+        };
+        View start = name;
+        if (tool)
+        {
+            var arrow = Theme.Icon("i_arrow_left_w.png", 18);
+            if (Tr.IsArabic)
+                arrow.RotationY = 180;
+            start = new HorizontalStackLayout { Spacing = 8, VerticalOptions = LayoutOptions.Center, Children = { arrow, name } };
+            start.Tapped(() => _ = Navigation.PopAsync());
+        }
+        var tools = new Border
+        {
+            BackgroundColor = Theme.PrimarySoft, StrokeThickness = 0, StrokeShape = Theme.Round(18), HeightRequest = 36, Padding = new Thickness(12, 0),
+            VerticalOptions = LayoutOptions.Center,
+            Content = new HorizontalStackLayout
             {
-                Padding = new Thickness(18, 22, 18, 32),
-                Children = { PageHeader(title, description), Body },
+                Spacing = 6,
+                Children = { Theme.Icon("i_grid_2x2_m.png", 16), new Label { Text = Tr.T("Tools"), FontSize = 13, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, VerticalOptions = LayoutOptions.Center } },
             },
         };
+        tools.Tapped(OpenTools);
+        var line = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, Padding = new Thickness(22, 0, 16, 0), HeightRequest = 52 };
+        line.Add(start, 0);
+        line.Add(tools, 1);
+        return new VerticalStackLayout { Children = { line, Theme.Divider() } };
     }
 
-    private static readonly string[] Order = ["Courier", "Sorter", "Duplicates", "Storage", "Vault"];
+    /// <summary>The five tabs and the tools, in a grid of three: a tab is switched to, a tool opens over the tabs.</summary>
+    private static readonly (string Name, string Icon, Func<AppPage>? Open)[] AllTools =
+    [
+        ("Courier", "i_send_m.png", null), ("Sorter", "i_wand_sparkles_m.png", null), ("Duplicates", "i_copy_m.png", null),
+        ("Storage", "i_chart_pie_m.png", null), ("Vault", "i_lock_m.png", null),
+        ("Search", "i_search_m.png", () => new SearchPage()), ("Cleaner", "i_sparkles_m.png", () => new CleanerPage()),
+        ("Apps", "i_app_window_m.png", () => new AppsPage()), ("Benchmark", "i_gauge_m.png", () => new BenchmarkPage()),
+        ("Clipboard", "i_clipboard_m.png", () => new ClipboardPage()), ("History", "i_history_m.png", () => new HistoryPage()),
+    ];
 
-    /// <summary>The top of a page: "02 · SORTER" in small letters, the title, and what the page is for.</summary>
-    public static View PageHeader(string title, string description)
+    private void OpenTools()
     {
-        var number = Array.IndexOf(Order, title) + 1;
-        var kicker = new Label
+        var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
+        for (var column = 0; column < 3; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        Action close = () => { };
+        for (var index = 0; index < AllTools.Length; index++)
         {
-            Text = $"{number:00} · {Tr.T(title).ToUpper(System.Globalization.CultureInfo.CurrentCulture)}", FontSize = 11.5, CharacterSpacing = 2.5,
-            FontFamily = "monospace", TextColor = Theme.Kicker,
-        };
-        return new VerticalStackLayout
-        {
-            Spacing = 4, Margin = new Thickness(2, 0, 2, 18),
-            Children = { kicker, Theme.Title(Tr.T(title), 30), Theme.Faint(Tr.T(description), 14) },
-        };
+            var (name, icon, open) = AllTools[index];
+            var here = Title == Tr.T(name);
+            var cell = new Border
+            {
+                BackgroundColor = here ? Theme.PrimarySoft : Theme.SurfaceRaised, StrokeThickness = 0, StrokeShape = Theme.Round(18), Padding = new Thickness(4, 14),
+                Content = new VerticalStackLayout
+                {
+                    Spacing = 8,
+                    Children =
+                    {
+                        Theme.Icon(icon, 22),
+                        new Label { Text = Tr.T(name), FontSize = 12.5, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, TextColor = here ? Theme.Primary : Theme.Text },
+                    },
+                },
+            };
+            var tab = index;
+            cell.Tapped(async () =>
+            {
+                close();
+                if (here)
+                    return;
+                if (open is not null)
+                {
+                    await Navigation.PushAsync(open());
+                    return;
+                }
+                // A tab: back to the tabs first, if a tool is open over them.
+                if (Navigation.NavigationStack.Count > 1)
+                    await Navigation.PopToRootAsync(false);
+                if (Microsoft.Maui.Controls.Shell.Current?.CurrentItem is { } bar && tab < bar.Items.Count)
+                    bar.CurrentItem = bar.Items[tab];
+            });
+            if (grid.RowDefinitions.Count <= index / 3)
+                grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            grid.Add(cell, index % 3, index / 3);
+        }
+        close = OpenSheet(Tr.T("PC Butler tools"), grid);
     }
+
+    protected void SetSub(View? view)
+    {
+        HeaderSub.Content = view;
+        HeaderSub.IsVisible = view is not null;
+    }
+
+    /// <summary>A sheet of choices over this page.</summary>
+    protected Task<string?> Choose(string title, IEnumerable<SheetChoice> choices, (string Icon, Color Back)? tile = null) => Sheets.Choose(Root, title, choices, tile);
+
+    /// <summary>Any content in a sheet over this page; the returned action closes it.</summary>
+    protected Action OpenSheet(string title, View content, Action? closed = null) => Sheets.Open(Root, Sheets.TitleText(title), content, closed);
+
+    /// <summary>A bar that floats over the bottom of the page (Delete extras, what is selected).</summary>
+    protected void Float(View bar)
+    {
+        bar.VerticalOptions = LayoutOptions.End;
+        bar.Margin = new Thickness(12, 0, 12, 14);
+        Root.Add(bar, 0, 1);
+    }
+
+    protected override bool OnBackButtonPressed() => Sheets.CloseTop() || base.OnBackButtonPressed();
 
     protected override void OnAppearing()
     {
@@ -52,57 +168,65 @@ public abstract class AppPage : ContentPage
     {
     }
 
-    /// <summary>
-    /// The card listing the folders this page works in, with "Add folder…" (Android's folder
-    /// picker) and a way to take one off. changed: after the list changed.
-    /// </summary>
     private Action? showFolders;
 
-    protected View FoldersCard(string page, string intro, Action changed)
+    /// <summary>
+    /// The folders this page works in, as chips that scroll sideways: each with ✕ to stop using
+    /// it, and "+ Add folder" (Android's folder picker). changed: after the list changed.
+    /// </summary>
+    protected View FoldersChips(string page, Action changed)
     {
-        var list = new VerticalStackLayout { Spacing = 8 };
+        var row = new HorizontalStackLayout { Spacing = 8 };
         void Show()
         {
-            list.Children.Clear();
-            var folders = Folders.For(page);
-            if (folders.Count == 0)
-                list.Children.Add(Theme.BoxOf(Theme.Faint(Tr.T("No folder chosen yet."), 13)));
-            foreach (var tree in folders)
+            row.Children.Clear();
+            foreach (var tree in Folders.For(page))
             {
-                var remove = Theme.Plain("✕", async () =>
+                var name = new Label { Text = Folders.Label(tree), FontSize = 13.5, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.NoWrap };
+                var remove = Theme.IconButton("i_x_w.png", async () =>
                 {
                     if (!await Ask(Tr.T("Stop using {0} here? Nothing in it is changed.", Folders.Label(tree)), Tr.T("Remove")))
                         return;
                     Folders.Remove(page, tree);
                     Show();
                     changed();
+                }, Theme.SurfaceRaised, 28);
+                row.Children.Add(new Border
+                {
+                    BackgroundColor = Theme.Card, StrokeThickness = 0, StrokeShape = Theme.Round(19), HeightRequest = 38, Padding = new Thickness(12, 0, 5, 0),
+                    Content = new HorizontalStackLayout { Spacing = 8, Children = { Theme.Icon("i_folder_open_m.png", 16), name, remove } },
                 });
-                (remove.BackgroundColor, remove.TextColor, remove.Padding, remove.VerticalOptions) = (Colors.Transparent, Theme.Muted, new Thickness(12, 6), LayoutOptions.Center);
-                var name = new Label { Text = Folders.Label(tree), FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center, LineBreakMode = LineBreakMode.MiddleTruncation };
-                list.Children.Add(Theme.BoxOf(Theme.Line3(Theme.Tile(Theme.FolderTile, 34), name, remove), 8));
             }
+            var add = new Border
+            {
+                BackgroundColor = Colors.Transparent, Stroke = Theme.Primary, StrokeThickness = 1, StrokeDashArray = [4, 3], StrokeShape = Theme.Round(19),
+                HeightRequest = 38, Padding = new Thickness(12, 0),
+                Content = new HorizontalStackLayout
+                {
+                    Spacing = 6,
+                    Children = { Theme.Icon("i_plus_m.png", 16), new Label { Text = Tr.T("Add folder"), FontSize = 13.5, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, VerticalOptions = LayoutOptions.Center } },
+                },
+            };
+            add.Tapped(async () =>
+            {
+                if (!await Folders.Add(page))
+                    return;
+                Show();
+                changed();
+            });
+            row.Children.Add(add);
         }
         Show();
         showFolders = Show;
-        var shared = page == "sorter" ? "" : Tr.T("Duplicates and Storage use the same folders.");
-        return Theme.CardOf(new VerticalStackLayout
+        var shared = page == "sorter" ? "" : " " + Tr.T("Duplicates and Storage use the same folders.");
+        return new VerticalStackLayout
         {
-            Spacing = 10,
             Children =
             {
-                Theme.Header(Tr.T("Folders")),
-                Theme.Faint(Tr.T(intro) + (shared.Length > 0 ? " " + shared : "")),
-                list,
-                Theme.Plain(Tr.T("Add folder…"), async () =>
-                {
-                    if (!await Folders.Add(page))
-                        return;
-                    Show();
-                    changed();
-                }),
-                Theme.Faint(Tr.T("Android lets apps use only the folders you choose. It doesn't offer Download itself or the whole phone: choose the folders inside them instead."), 12),
+                new ScrollView { Orientation = ScrollOrientation.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Never, Content = row },
+                Theme.Hint(Tr.T("Android only lets PC Butler see folders you pick.") + shared),
             },
-        });
+        };
     }
 
     protected Task Say(string text) => DisplayAlert(Title, text, Tr.T("OK"));
@@ -144,7 +268,7 @@ public abstract class AppPage : ContentPage
     }
 
     /// <summary>A ticked row: the accent, a little see-through.</summary>
-    public static readonly Color TickedBack = Color.FromArgb("#132a22");
+    public static readonly Color TickedBack = Theme.PrimarySoft;
 
     /// <summary>A bar that shows how full something is.</summary>
     public static View Meter(double part, Color color) => Theme.Bar(part, color, 8);
