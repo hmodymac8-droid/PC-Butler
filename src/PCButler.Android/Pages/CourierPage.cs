@@ -49,6 +49,8 @@ public sealed class CourierPage : ContentPage
     private readonly Button savePassword;
     private readonly Label passwordNote = Theme.Faint("", 12.5);
     private bool pickingPassword;
+    private readonly HashSet<string> popped = [];
+    private bool popping;
     private string asksShown = "", targetsShown = "", transfersShown = "\0", savedShown = "\0";
     private bool pulsing, onScreen;
 
@@ -383,6 +385,8 @@ public sealed class CourierPage : ContentPage
         var passwords = node?.PasswordAsks ?? [];
         var key = string.Join("|", pairings.Select(pairing => pairing.PeerId + pairing.Code)) + "#" + string.Join("|", requests.Select(request => request.Id))
                   + "#" + string.Join("|", passwords.Select(item => item.Number + item.Ask));
+        if (node is not null)
+            PopUp(node);
         if (key == asksShown)
             return;
         asksShown = key;
@@ -415,6 +419,56 @@ public sealed class CourierPage : ContentPage
                                   Theme.Accent(Tr.T("Accept"), () => { node!.Accept(request.Id); Refresh(); }),
                                   Theme.Plain(Tr.T("Refuse"), () => { node!.Refuse(request.Id); Refresh(); })));
         }
+    }
+
+    /// <summary>
+    /// A PC that wants to connect, or to send files, is asked about in a pop-up, once each, one
+    /// at a time. Back or a question settled elsewhere leaves the card above, where it can still be answered.
+    /// </summary>
+    private async void PopUp(PortalNode node)
+    {
+        if (popping)
+            return;
+        var pairing = node.Pairings.FirstOrDefault(item => item is { Incoming: true, Code.Length: > 0 } && !popped.Contains("pair " + item.PeerId + item.Code));
+        var request = pairing is null ? node.Requests.FirstOrDefault(item => !popped.Contains("send " + item.Id)) : null;
+        if (pairing is null && request is null)
+            return;
+        popping = true;
+        try
+        {
+            var page = Shell.Current?.CurrentPage ?? this;
+            if (pairing is not null)
+            {
+                popped.Add("pair " + pairing.PeerId + pairing.Code);
+                var answer = await page.DisplayActionSheetAsync(
+                    Tr.T("{0} wants to connect to this phone", pairing.PeerName) + "\n\n" + Tr.T("Code: {0}", pairing.Code) + "\n"
+                    + Tr.T("Allow it only if you know that PC. The other PC shows this same code, if you want to check."),
+                    null, null, Tr.T("Allow"), Tr.T("Refuse"));
+                if (pairing.State == "waiting" && answer == Tr.T("Allow"))
+                    node.Confirm(pairing);
+                else if (pairing.State == "waiting" && answer == Tr.T("Refuse"))
+                    node.Refuse(pairing);
+            }
+            else
+            {
+                popped.Add("send " + request!.Id);
+                var answer = await page.DisplayActionSheetAsync(
+                    Tr.T("{0} wants to send {1} file(s)", request.PeerName, request.Files) + "\n\n" + $"{request.Name}  ·  {Size(request.Size)}",
+                    null, null, Tr.T("Accept"), Tr.T("Refuse"));
+                if (node.Requests.Any(item => item.Id == request.Id))
+                {
+                    if (answer == Tr.T("Accept"))
+                        node.Accept(request.Id);
+                    else if (answer == Tr.T("Refuse"))
+                        node.Refuse(request.Id);
+                }
+            }
+        }
+        finally
+        {
+            popping = false;
+        }
+        Refresh();
     }
 
     private static View Ask(string title, string detail, View? lead, Button yes, Button? no)
