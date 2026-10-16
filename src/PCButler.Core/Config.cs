@@ -23,10 +23,12 @@ public sealed class Category
     /// Files this program put there go to the Recycle Bin that many days after it moved them; 0 = never.
     /// </summary>
     [JsonPropertyName("recycle_after_days")] public int RecycleAfterDays { get; set; }
+    /// <summary>Files of these types are not moved but deleted (to the Recycle Bin, so History can bring them back). The folder is then not used.</summary>
+    [JsonPropertyName("delete")] public bool Delete { get; set; }
 
     public Category Clone() => new()
     {
-        Folder = Folder, Extensions = [.. Extensions], MinAgeDays = MinAgeDays, RecycleAfterDays = RecycleAfterDays,
+        Folder = Folder, Extensions = [.. Extensions], MinAgeDays = MinAgeDays, RecycleAfterDays = RecycleAfterDays, Delete = Delete,
     };
 }
 
@@ -141,6 +143,7 @@ public sealed class Config
     [JsonPropertyName("clipboard")] public ClipboardSettings Clipboard { get; set; } = new();
 #if WINDOWS
     [JsonPropertyName("overlay")] public OverlaySettings Overlay { get; set; } = new();
+    [JsonPropertyName("usage")] public UsageSettings Usage { get; set; } = new();
 #endif
     /// <summary>Keyboard shortcuts that work in any program: action -> keys ("Ctrl+Alt+B"). An action without one is not listed.</summary>
     [JsonPropertyName("hotkeys")] public Dictionary<string, string> Hotkeys { get; set; } = [];

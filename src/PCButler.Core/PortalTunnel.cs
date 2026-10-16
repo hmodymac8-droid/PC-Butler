@@ -412,7 +412,10 @@ public sealed class ReliableStream : Stream
 public sealed class PortalLink : IDisposable
 {
     private const byte Magic = 0xB7;
-    private const byte Punch = 1, PunchBack = 2, Open = 3, Opened = 4, Ping = 9;
+    // 5 to 8 are the streams' own (ReliableStream).
+    private const byte Punch = 1, PunchBack = 2, Open = 3, Opened = 4, Ping = 9, Bye = 10;
+    /// <summary>A path nothing is heard on for this long is taken as gone (a Ping goes every 10 seconds).</summary>
+    private const long Silence = 45_000;
     private const int MaxStreamsPerPath = 24;
 
     private sealed class Path
@@ -438,6 +441,8 @@ public sealed class PortalLink : IDisposable
     public Func<ReliableStream, IPEndPoint, Task>? Accepted { get; set; }
     /// <summary>Whether a PC that this one did not contact first may open a path (the "reachable" switch).</summary>
     public Func<IPEndPoint, bool> AllowPath { get; set; } = _ => false;
+    /// <summary>A path closed: the other PC said goodbye, or went silent. Runs on a background thread.</summary>
+    public Action<IPEndPoint>? Closed { get; set; }
 
     public PortalLink(IPAddress address, int port = 0)
     {
@@ -484,6 +489,29 @@ public sealed class PortalLink : IDisposable
     }
 
     public bool IsOpen(IPEndPoint endpoint) => paths.TryGetValue(endpoint, out var path) && path.Confirmed;
+
+    /// <summary>
+    /// Close the path to a PC: it is told (a few times, a packet can be lost on the way), so it
+    /// sees this PC gone at once instead of when the path falls silent, and the streams on it end.
+    /// </summary>
+    public void Close(IPEndPoint endpoint)
+    {
+        for (var times = 0; times < 3; times++)
+            SendControl(Bye, 0, endpoint);
+        Drop(endpoint);
+    }
+
+    private void Drop(IPEndPoint endpoint)
+    {
+        if (!paths.TryRemove(endpoint, out _))
+            return;
+        foreach (var (key, stream) in streams.Where(item => item.Key.Item1.Equals(endpoint)).ToList())
+        {
+            streams.TryRemove(key, out _);
+            stream.Dispose();
+        }
+        Closed?.Invoke(endpoint);
+    }
 
     /// <summary>Paths that are open right now.</summary>
     public List<IPEndPoint> OpenPaths => paths.Where(item => item.Value.Confirmed).Select(item => item.Key).ToList();
@@ -614,6 +642,9 @@ public sealed class PortalLink : IDisposable
             {
                 case Ping:
                     break;
+                case Bye:
+                    Drop(from);
+                    break;
                 case Open:
                     if (!streams.ContainsKey((from, id)))
                     {
@@ -651,8 +682,8 @@ public sealed class PortalLink : IDisposable
                 {
                     if (!path.Confirmed)
                         continue;
-                    if (now - path.LastHeard > 75_000)
-                        paths.TryRemove(endpoint, out _);
+                    if (now - path.LastHeard > Silence)
+                        Drop(endpoint);
                     else
                         SendControl(Ping, 0, endpoint);
                 }
@@ -668,8 +699,14 @@ public sealed class PortalLink : IDisposable
         }
     }
 
+    /// <summary>Close the socket. The PCs with a path open are told first, so they see this one gone at once.</summary>
     public void Dispose()
     {
+        foreach (var endpoint in OpenPaths)
+        {
+            for (var times = 0; times < 3; times++)
+                SendControl(Bye, 0, endpoint);
+        }
         stopping.Cancel();
         foreach (var stream in streams.Values)
             stream.Dispose();

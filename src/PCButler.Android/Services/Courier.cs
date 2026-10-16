@@ -6,8 +6,8 @@ using PCButler.Core;
 namespace PCButler.Android;
 
 /// <summary>
-/// Courier on the phone: started with the app once its role is chosen, the PCs files can go
-/// to, and the files shared to PC Butler from other apps, waiting until a PC is connected.
+/// Courier on the phone: started with the app once it has been switched on, the PCs files
+/// can go to, and the files shared to PC Butler from other apps, waiting until a PC is connected.
 /// </summary>
 public static class Courier
 {
@@ -45,7 +45,26 @@ public static class Courier
     /// <summary>Started, stopped, or files shared from another app arrived.</summary>
     public static event Action? Changed;
 
-    public sealed record Target(string Name, object Tag, bool Ready);
+    public sealed record Target(string Name, PortalPeer Tag, bool Ready);
+
+    /// <summary>This phone's own ID, whether Courier runs or not: it comes from the phone's certificate, made once and kept.</summary>
+    public static string OwnNumber => ownNumber ??= Node?.Number ?? Portal.NumberOf(Portal.Fingerprint(Portal.Certificate()));
+    private static string? ownNumber;
+
+    /// <summary>Where a PC on the list stands, in words.</summary>
+    public static string Describe(PortalState state, string name) => Tr.T(state switch
+    {
+        PortalState.Connected => "Connected",
+        PortalState.Connecting => "Connecting…",
+        PortalState.Asking => "Asking {0} to let this phone in…",
+        PortalState.WaitingForThem => "Waiting for {0} to allow this phone",
+        PortalState.NeedsPassword => "{0} asks for a password.",
+        PortalState.WrongPassword => "That password was not right. Type it again.",
+        PortalState.NoDirectory => "This network blocks the public directory that IDs are looked up in.",
+        PortalState.NotFound => "Not found: Courier is not running on {0}, or the ID is wrong. It tries again by itself.",
+        PortalState.NoPath => "{0} was found, but the two networks would not let a link through. It tries again by itself.",
+        _ => "Not connected",
+    }, name);
 
     public static PortalSettings Settings => ConfigStore.Load().Portal;
 
@@ -61,14 +80,16 @@ public static class Courier
     {
         if (Node is not null || starting)
             return null;
-        var settings = Settings;
-        if (settings.Role is not (PortalSettings.Host or PortalSettings.Client))
-            return Tr.T("Choose first whether this phone shares (the host) or connects to another PC (a client).");
         starting = true;
+        // Switched on once, it starts with the app from then on (unless that setting is off).
+        Update(saved => saved.Used = true);
+        var settings = Settings;
         try
         {
             Portal.ClearParts(Portal.ReceiveFolder(settings));
-            var node = await PortalNode.Start(settings, () => Update(saved => { saved.Devices = settings.Devices.ToList(); saved.HostNumber = settings.HostNumber; saved.Saved = settings.Saved.ToList(); }));
+            var node = await PortalNode.Start(settings, () => Update(saved => (saved.Devices, saved.Saved, saved.Role, saved.HostNumber)
+                                                                                 = (settings.Devices.ToList(), settings.Saved.ToList(), "", "")));
+            node.Received += CourierService.Received;
             Portal.Current = node;
             CourierService.Begin();
             return null;
@@ -94,28 +115,16 @@ public static class Courier
         Changed?.Invoke();
     }
 
+    /// <summary>The paired PCs, and whether each can take files right now (connected, and it has let this phone in).</summary>
     public static List<Target> Targets(PortalNode? node)
     {
         if (node is null)
             return [];
-        if (node.IsHost)
-            return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, peer.Online)).ToList();
-        var host = node.HostPeer;
-        var list = new List<Target>();
-        // Paired on this side is not enough: the host has to have let this PC in too.
-        var allowed = host is { Online: true, Trusted: true } && !node.WaitingForHost;
-        if (host is not null)
-            list.Add(new Target(host.Name, host, allowed));
-        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && allowed)));
-        return list;
+        var ready = node.Ready;
+        return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, ready.Contains(peer))).ToList();
     }
 
-    public static PortalTransfer? Send(PortalNode node, object target, IReadOnlyList<string> paths) => target switch
-    {
-        PortalPeer peer => node.Send(peer, paths),
-        PortalClient client when node.HostPeer is { } host => node.Send(host, paths, client),
-        _ => null,
-    };
+    public static PortalTransfer? Send(PortalNode node, PortalPeer target, IReadOnlyList<string> paths) => node.Send(target, paths);
 
     /// <summary>Files shared from another app: kept until a PC is chosen to send them to.</summary>
     public static IReadOnlyList<string> Waiting => waiting;

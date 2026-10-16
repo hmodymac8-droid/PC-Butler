@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -22,8 +24,21 @@ public sealed class ClipEntry
     [JsonPropertyName("pinned")] public bool Pinned { get; set; }
     /// <summary>Words the user gave it ("work", "address"), to find it again: searching for one finds it, and "#work" finds only items tagged so.</summary>
     [JsonPropertyName("tags")] public List<string> Tags { get; set; } = [];
+    /// <summary>
+    /// A locked item: its content (text, files or picture), encrypted with a password of its
+    /// own. Nothing else of the content is kept, on disk or in the list, until it is unlocked.
+    /// </summary>
+    [JsonPropertyName("sealed")] public string Sealed { get; set; } = "";
 
     [JsonIgnore] public string ImageFile => Path.Combine(ClipboardHistory.ImageFolder, Id + ".png");
+    /// <summary>True for an item with a password.</summary>
+    [JsonIgnore] public bool Locked => Sealed.Length > 0;
+    /// <summary>A locked item unlocked for now: its content is in memory (never written out) until it is locked again or PC Butler closes.</summary>
+    [JsonIgnore] public bool Open { get; internal set; }
+    /// <summary>True when the content can't be seen or used without the password.</summary>
+    [JsonIgnore] public bool Hidden => Locked && !Open;
+    /// <summary>An unlocked picture of a locked item: its PNG, in memory only.</summary>
+    [JsonIgnore] public byte[]? Picture { get; internal set; }
 
     /// <summary>One line for lists.</summary>
     [JsonIgnore]
@@ -31,6 +46,8 @@ public sealed class ClipEntry
     {
         get
         {
+            if (Hidden)
+                return Tr.T("Locked");
             if (Kind == "files")
                 return Files.Count == 1 ? Files[0] : $"{Path.GetFileName(Files[0])} (+{Files.Count - 1})";
             if (Kind == "image")
@@ -40,7 +57,7 @@ public sealed class ClipEntry
         }
     }
 
-    public bool SameContent(ClipEntry other) => Kind == other.Kind && Kind switch
+    public bool SameContent(ClipEntry other) => !Hidden && !other.Hidden && Kind == other.Kind && Kind switch
     {
         "files" => Files.SequenceEqual(other.Files, StringComparer.OrdinalIgnoreCase),
         "image" => Hash == other.Hash,
@@ -54,6 +71,9 @@ public sealed class ClipEntry
         // "#work": only what is tagged "work".
         if (search.StartsWith('#'))
             return Tags.Any(tag => tag.Equals(search[1..].Trim(), StringComparison.CurrentCultureIgnoreCase));
+        // A locked item gives nothing away to a search but its tags.
+        if (Hidden)
+            return Tags.Any(tag => tag.Contains(search, StringComparison.CurrentCultureIgnoreCase));
         return Text.Contains(search, StringComparison.CurrentCultureIgnoreCase)
                || Files.Any(file => file.Contains(search, StringComparison.CurrentCultureIgnoreCase))
                || Tags.Any(tag => tag.Contains(search, StringComparison.CurrentCultureIgnoreCase));
@@ -128,7 +148,15 @@ public static class ClipboardHistory
             }
             Directory.CreateDirectory(Folder);
             var temporary = File_ + ".tmp";
-            File.WriteAllText(temporary, JsonSerializer.Serialize(Entries, Options));
+            // What a locked item holds while it is unlocked stays in memory: only its sealed copy is written.
+            var written = Entries.Select(entry => entry.Locked
+                ? new ClipEntry
+                {
+                    Id = entry.Id, Kind = entry.Kind, Width = entry.Width, Height = entry.Height, Time = entry.Time, Pinned = entry.Pinned, Tags = entry.Tags,
+                    Sealed = entry.Sealed,
+                }
+                : entry).ToList();
+            File.WriteAllText(temporary, JsonSerializer.Serialize(written, Options));
             File.Move(temporary, File_, overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -225,6 +253,147 @@ public static class ClipboardHistory
         Trim(settings.Limit);
         Save();
         Changed?.Invoke();
+    }
+
+    // --- items with a password ---
+
+    private const int Rounds = 210_000;
+
+    /// <summary>What a locked item holds, as it is sealed.</summary>
+    private sealed record Content(
+        [property: JsonPropertyName("text")] string Text, [property: JsonPropertyName("files")] List<string> Files,
+        [property: JsonPropertyName("picture")] string Picture);
+
+    /// <summary>
+    /// Put a password on an item. Its content is encrypted (AES-256-GCM, with a key stretched
+    /// from the password) and taken out of the list and off the disk; a picture's file is
+    /// removed. False when it can't be done (the picture's file is gone, or the password is empty).
+    /// </summary>
+    public static bool Lock(ClipEntry entry, string password)
+    {
+        if (password.Length == 0 || entry.Locked)
+            return false;
+        byte[] picture = [];
+        if (entry.Kind == "image")
+        {
+            try
+            {
+                picture = File.ReadAllBytes(entry.ImageFile);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+        var content = JsonSerializer.SerializeToUtf8Bytes(new Content(entry.Text, entry.Files, Convert.ToBase64String(picture)));
+        var salt = RandomNumberGenerator.GetBytes(16);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var tag = new byte[16];
+        var sealedBytes = new byte[content.Length];
+        using (var aes = new AesGcm(Key(password, salt, Rounds), tag.Length))
+            aes.Encrypt(nonce, content, sealedBytes, tag);
+        CryptographicOperations.ZeroMemory(content);
+        entry.Sealed = string.Join('$', "aesgcm", Rounds, Convert.ToBase64String(salt), Convert.ToBase64String(nonce), Convert.ToBase64String(sealedBytes),
+                                   Convert.ToBase64String(tag));
+        (entry.Text, entry.Files, entry.Hash, entry.Picture, entry.Open) = ("", [], "", null, false);
+        if (entry.Kind == "image")
+            TryDelete(entry.ImageFile);
+        Save();
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// Unlock a locked item with its password, until Relock (or until PC Butler closes): it can
+    /// then be pasted again and again without the password. False for a wrong password.
+    /// </summary>
+    public static bool Unlock(ClipEntry entry, string password)
+    {
+        if (!entry.Locked)
+            return true;
+        if (Unseal(entry.Sealed, password) is not { } content)
+            return false;
+        (entry.Text, entry.Files, entry.Open) = (content.Text, content.Files, true);
+        entry.Picture = content.Picture.Length > 0 ? Convert.FromBase64String(content.Picture) : null;
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>Lock an unlocked item again: its content leaves memory, and the password is asked again.</summary>
+    public static void Relock(ClipEntry entry)
+    {
+        if (!entry.Locked)
+            return;
+        (entry.Text, entry.Files, entry.Picture, entry.Open) = ("", [], null, false);
+        Changed?.Invoke();
+    }
+
+    /// <summary>Lock every unlocked item again (when PC Butler is locked away, say).</summary>
+    public static void RelockAll()
+    {
+        foreach (var entry in Entries.Where(entry => entry.Open))
+            (entry.Text, entry.Files, entry.Picture, entry.Open) = ("", [], null, false);
+        Changed?.Invoke();
+    }
+
+    /// <summary>Take the password off for good: the item is an ordinary one again. False for a wrong password.</summary>
+    public static bool RemoveLock(ClipEntry entry, string password)
+    {
+        if (!Unlock(entry, password))
+            return false;
+        if (entry.Kind == "image" && entry.Picture is { } picture)
+        {
+            try
+            {
+                Directory.CreateDirectory(ImageFolder);
+                File.WriteAllBytes(entry.ImageFile, picture);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Relock(entry);
+                return false;
+            }
+        }
+        (entry.Sealed, entry.Picture, entry.Open) = ("", null, false);
+        Save();
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>The content of a locked item, for one paste, without unlocking it. Null for a wrong password.</summary>
+    public static ClipEntry? Peek(ClipEntry entry, string password)
+    {
+        if (Unseal(entry.Sealed, password) is not { } content)
+            return null;
+        return new ClipEntry
+        {
+            Id = entry.Id, Kind = entry.Kind, Text = content.Text, Files = content.Files, Width = entry.Width, Height = entry.Height,
+            Picture = content.Picture.Length > 0 ? Convert.FromBase64String(content.Picture) : null,
+        };
+    }
+
+    private static byte[] Key(string password, byte[] salt, int rounds) =>
+        Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, rounds, HashAlgorithmName.SHA256, 32);
+
+    private static Content? Unseal(string sealedText, string password)
+    {
+        var parts = sealedText.Split('$');
+        if (parts is not ["aesgcm", var roundsText, var salt, var nonce, var data, var tag] || !int.TryParse(roundsText, out var rounds) || rounds is < 10_000 or > 10_000_000)
+            return null;
+        try
+        {
+            var sealedBytes = Convert.FromBase64String(data);
+            var plain = new byte[sealedBytes.Length];
+            using (var aes = new AesGcm(Key(password, Convert.FromBase64String(salt), rounds), 16))
+                aes.Decrypt(Convert.FromBase64String(nonce), sealedBytes, Convert.FromBase64String(tag), plain);
+            var content = JsonSerializer.Deserialize<Content>(plain);
+            CryptographicOperations.ZeroMemory(plain);
+            return content;
+        }
+        catch (Exception error) when (error is CryptographicException or FormatException or JsonException or ArgumentException)
+        {
+            return null; // a wrong password fails the check that GCM makes
+        }
     }
 
     private static void Forget(ClipEntry entry)

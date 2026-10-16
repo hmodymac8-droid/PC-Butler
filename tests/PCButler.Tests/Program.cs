@@ -141,6 +141,19 @@ var undoAll = Sorter.UndoLast();
 Check(undoAll.Errors.Count == 0 && File.Exists(Path.Combine(downloads, "b.jpg")) && !Directory.Exists(Path.Combine(downloads, "Pictures"))
       && History.LastActiveRun() is null, $"undo the whole run, removing emptied folders ({string.Join("; ", undoAll.Errors)})");
 
+// a category that deletes its files instead of moving them
+config.Categories.Add(new Category { Folder = "", Extensions = [".nfo"], Delete = true });
+var nfo = Make(downloads, "scene.nfo", "release notes", ageDays: 10);
+var nfoPlan = Sorter.PlanMoves(config).Where(move => move.Name == "scene.nfo").ToList();
+Check(nfoPlan is [{ Delete: true }], "a file of a type set to be deleted is planned for deleting, not moving");
+var nfoRun = Sorter.MoveFiles(nfoPlan);
+Check(nfoRun is { Count: 1, Deleted: 1, Errors.Count: 0 } && !File.Exists(nfo) && History.Load()[^1].Moves[0] is [_, "", "deleted"],
+      "it goes to the Recycle Bin, and History lists it");
+Check(Sorter.UndoMoves([(History.Load()[^1].Time, 0)]).Count == 1 && File.Exists(nfo) && !Sorter.PlanMoves(config).Any(move => move.Name == "scene.nfo"),
+      "brought back, it is not deleted again by itself");
+config.Categories.RemoveAt(config.Categories.Count - 1);
+File.Delete(nfo);
+
 // ---------------------------------------------------------------- duplicates
 Section("duplicates");
 string Key(string name) => Duplicates.SimilarNameKey(name);
@@ -313,6 +326,35 @@ Check(found.Count == 3 && found[0] == new ProgramUpdate("Mozilla Firefox (x64)",
 var oneSource = Programs.ParseUpdates(string.Join('\n', "Name      Id                    Version Available",
     "---------------------------------------------", "AviSynth+ AviSynth.AviSynthPlus 3.7.3   3.7.3.4003", "1 upgrades available.", ""));
 Check(oneSource.Count == 1 && oneSource[0] == new ProgramUpdate("AviSynth+", "AviSynth.AviSynthPlus", "3.7.3", "3.7.3.4003"), "also without the source column");
+{
+    // An app that is its repository: the zip GitHub makes holds one folder, whose contents become the app's folder.
+    var repo = Path.Combine(temp, "zipped", "someapp-main");
+    Make(Path.Combine(repo, "tools"), "run.ps1", "new");
+    Make(repo, "app.vbs", "new launcher");
+    var zipFile = Path.Combine(temp, "someapp.zip");
+    System.IO.Compression.ZipFile.CreateFromDirectory(Path.Combine(temp, "zipped"), zipFile);
+    var appFolder = Path.Combine(temp, "Programs", "SomeApp");
+    Make(appFolder, "app.vbs", "old launcher");
+    Make(appFolder, "settings.json", "mine");
+    Programs.Unpack(zipFile, appFolder);
+    Check(File.ReadAllText(Path.Combine(appFolder, "app.vbs")) == "new launcher" && File.ReadAllText(Path.Combine(appFolder, "tools", "run.ps1")) == "new"
+          && File.ReadAllText(Path.Combine(appFolder, "settings.json")) == "mine" && !Directory.Exists(Path.Combine(appFolder, "someapp-main"))
+          && !Directory.Exists(zipFile + ".unpacked"), "an app unpacked from its repository's zip replaces its files and keeps what it made itself");
+    var appDc = Programs.RecommendedApps.Single(app => app.Name == "AndroidDC");
+    Check(appDc is { Source: AppSource.Archive, Archive: "https://github.com/mPhpMaster/androiddc/archive/refs/heads/main.zip" } && appDc.Steps.Length == 2
+          && Programs.FindInstalled(appDc, []) is null, "AndroidDC is installed from its repository's zip, then its own setup steps");
+}
+InstalledProgram Listed(string name, string version) => new() { Name = name, Version = version, Hive = "HKCU", Key = name };
+List<InstalledProgram> some = [Listed("Microsoft Edge", "130.0"), Listed("Microsoft Edge WebView2 Runtime", "130.0"),
+                               Listed("Microsoft Visual C++ 2015-2022 Redistributable (x64) - 14.38", "14.38"),
+                               Listed("Microsoft Visual C++ 2015-2022 Redistributable (x86) - 14.36", "14.36")];
+Check(Programs.FindInstalled(new ProgramUpdate("Microsoft Edge WebView2 Runtime", "Microsoft.EdgeWebView2Runtime", "130.0", "131.0"), some)?.Name == "Microsoft Edge WebView2 Runtime"
+      && Programs.FindInstalled(new ProgramUpdate("Microsoft Edge", "Microsoft.Edge", "130.0", "131.0"), some)?.Name == "Microsoft Edge"
+      && Programs.FindInstalled(new ProgramUpdate("Microsoft Ed", "X.Y", "1", "2"), some) is null,
+      "an update is for the program of that very name, not one whose name starts the same");
+Check(Programs.FindInstalled(new ProgramUpdate("Microsoft Visual C++ 2015-2022 Redistrib…", "Microsoft.VCRedist.2015+.x86", "14.36", "14.40"), some)?.Version == "14.36"
+      && Programs.FindInstalled(new ProgramUpdate("Microsoft Visual C++ 2015-2022 Redistrib…", "Microsoft.VCRedist.2015+.x64", "14.20", "14.40"), some) is null,
+      "a name winget cut short is matched by its start, and by its version when several start the same");
 
 var onD = new InstalledProgram { Name = "Somewhere", Hive = "HKCU", Key = "s", UninstallCommand = "\"D:\\Apps\\Some\\unins000.exe\" /S" };
 Check(onD.Drive == "D:" && new InstalledProgram { Name = "Msi", Hive = "HKLM", Key = "{1}", UninstallCommand = "MsiExec.exe /X{1}" }.Drive == ""
@@ -358,12 +400,15 @@ Check(ExplorerMenu.Sync(true, @"C:\Apps\PC Butler\PCButler.exe", english => engl
       && ExplorerMenu.CommandFor("P.exe", "sort") == "\"P.exe\" --act sort \"%1\"", "each submenu item runs the program with its action");
 using (var fileMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\*\shell\PCButler"))
     Check(fileMenu?.GetValue("MUIVerb") as string == "PC Butler" && fileMenu.GetValue("SubCommands") as string == ""
-          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2vault", "3courier", "4shred"]),
-          "files get the submenu, in order");
+          && fileMenu.OpenSubKey("command") is null && fileMenu.OpenSubKey(@"shell")!.GetSubKeyNames().SequenceEqual(["1sort", "2courier", "3vault", "4shred"])
+          && fileMenu.OpenSubKey(@"shell\3vault")!.GetValue("CommandFlags") is ExplorerMenu.SeparatorBefore
+          && fileMenu.OpenSubKey(@"shell\4shred")!.GetValue("CommandFlags") is ExplorerMenu.SeparatorBefore
+          && fileMenu.OpenSubKey(@"shell\2courier")!.GetValue("CommandFlags") is null,
+          "files get the submenu, in order, in groups with a line between them");
 using (var folderMenu = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell"))
-    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("2vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "3courier", "4shred"]),
+    Check(folderMenu is not null && !folderMenu.GetSubKeyNames().Contains("3vault") && folderMenu.GetSubKeyNames().SequenceEqual(["1sort", "2courier", "4shred"]),
           "folders get it too, without the Vault");
-using (var share = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell\3courier"))
+using (var share = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\PCButlerTest\Classes\Directory\shell\PCButler\shell\2courier"))
     Check(share?.GetValue("MUIVerb") as string == "Share with Courier" && share.GetValue("MultiSelectModel") as string == "Player",
           "files and folders can be shared with Courier, several at once");
 using (var real = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Classes\*\shell\PCButler\shellsort\command"))
@@ -467,42 +512,35 @@ async Task<bool> Until(Func<bool> condition, int seconds = 15)
     return condition();
 }
 
-// ---------------------------------------------------------------- courier: a host and its clients (all pretended on this PC, over loopback)
-Section("courier host and clients");
+// ---------------------------------------------------------------- courier: PCs that are all alike (all pretended on this PC, over loopback)
+Section("courier PCs");
 {
-    var noRole = false;
-    try
-    {
-        await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "CourierNone") }, local: true);
-    }
-    catch (IOException)
-    {
-        noRole = true;
-    }
-    Check(noRole, "Courier does not start before the PC is a host or a client");
-
-    var hostSettings = new PortalSettings { Folder = Path.Combine(temp, "CourierHost"), Role = PortalSettings.Host };
-    var hostSaved = 0;
-    var host = await PortalNode.Start(hostSettings, () => hostSaved++, Identity(), local: true);
-    var hostAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, host.LinkPort);
-    PortalSettings ClientSettings(string name) => new() { Folder = Path.Combine(temp, name), Role = PortalSettings.Client, HostNumber = host.Number };
-    var (aliceSettings, bobSettings) = (ClientSettings("CourierAlice"), ClientSettings("CourierBob"));
+    var officeSettings = new PortalSettings { Folder = Path.Combine(temp, "CourierOffice") };
+    var officeSaved = 0;
+    var office = await PortalNode.Start(officeSettings, () => officeSaved++, Identity(), local: true);
+    var officeAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, office.LinkPort);
+    var (aliceSettings, bobSettings) = (new PortalSettings { Folder = Path.Combine(temp, "CourierAlice") }, new PortalSettings { Folder = Path.Combine(temp, "CourierBob") });
     var alice = await PortalNode.Start(aliceSettings, certificate: Identity(), local: true);
     var bob = await PortalNode.Start(bobSettings, certificate: Identity(), local: true);
-    var stranger = await PortalNode.Start(ClientSettings("CourierStranger"), certificate: Identity(), local: true);
-    var hostAsked = 0;
-    host.Attention += _ => Interlocked.Increment(ref hostAsked);
-    Check(host.IsHost && !alice.IsHost && Portal.IsNumber(host.Number) && host.Number != alice.Number && host.LinkPort > 0, "each PC has its ID and its role");
+    var stranger = await PortalNode.Start(new PortalSettings { Folder = Path.Combine(temp, "CourierStranger") }, certificate: Identity(), local: true);
+    var strangerAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, stranger.LinkPort);
+    var bobAt = new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, bob.LinkPort);
+    var officeAsked = 0;
+    office.Attention += _ => Interlocked.Increment(ref officeAsked);
+    var officeGot = new List<PortalTransfer>();
+    office.Received += transfer => { lock (officeGot) officeGot.Add(transfer); };
+    Check(Portal.IsNumber(office.Number) && office.Number != alice.Number && alice.Number != bob.Number && office.LinkPort > 0 && alice.LinkPort > 0,
+          "each PC has its own ID, with nothing to choose first");
 
     {
-        // Over a real path to the host, a caller that shows no certificate of its own gets nothing.
+        // Over a real path, a caller that shows no certificate of its own gets nothing.
         using var bare = new PortalLink(System.Net.IPAddress.Loopback);
-        var turnedAway = !await bare.PunchTo(hostAt, TimeSpan.FromSeconds(5));
+        var turnedAway = !await bare.PunchTo(officeAt, TimeSpan.FromSeconds(5));
         if (!turnedAway)
         {
             try
             {
-                await using var line = await bare.Connect(hostAt);
+                await using var line = await bare.Connect(officeAt);
                 await using var tls = new System.Net.Security.SslStream(line, false, (_, _, _, _) => true);
                 await tls.AuthenticateAsClientAsync("portal.direct");
                 await tls.WriteAsync(Encoding.ASCII.GetBytes("GET /portal/v1/who HTTP/1.1\r\nHost: x\r\n\r\n"));
@@ -518,75 +556,78 @@ Section("courier host and clients");
         Check(turnedAway, "a caller that shows no certificate gets nothing");
     }
 
-    // The clients reach the host across the path; the host reaches nobody first.
-    var aliceHost = await alice.ConnectDirect(hostAt, host.Number);
-    Check(aliceHost is { Online: true, Trusted: false } && aliceHost.Id == host.Id && alice.HostPeer == aliceHost, "a client finds the host by its address and ID");
-    Check(await alice.ConnectDirect(hostAt, "000000000000") is null, "a host that answers under another ID than the one expected is not taken");
-    Check(await host.ConnectDirect(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, stranger.LinkPort)) is null, "a client takes no path it did not open itself");
+    // Any PC reaches any other by its address and ID.
+    var aliceOffice = await alice.ConnectDirect(officeAt, office.Number);
+    Check(aliceOffice is { Online: true, Trusted: false } && aliceOffice.Id == office.Id && alice.PeerOf(office.Number) == aliceOffice, "a PC finds another by its address and ID");
+    Check(await alice.ConnectDirect(officeAt, "000000000") is null, "a PC that answers under another ID than the one expected is not taken");
+    Check(await office.ConnectDirect(strangerAt, stranger.Number) is { } reached && reached.Id == stranger.Id, "every PC can be reached, not only one");
     Check((await alice.ConnectById("K7M")).Problem == PortalConnectProblem.BadNumber && (await alice.ConnectById(alice.Number)).Problem == PortalConnectProblem.BadNumber
           && (await alice.ConnectById("418 205 937")).Problem == PortalConnectProblem.NoDirectory, "a wrong ID, or no directory, is said plainly");
-    var early = alice.Send(aliceHost!, [Make(Path.Combine(temp, "CourierOut"), "early.txt", "too early")])!;
-    Check(await Until(() => early.State == "failed") && !Directory.EnumerateFiles(hostSettings.Folder).Any(), "nothing can be sent before pairing");
+    var early = alice.Send(aliceOffice!, [Make(Path.Combine(temp, "CourierOut"), "early.txt", "too early")])!;
+    Check(await Until(() => early.State == "failed") && !Directory.EnumerateFiles(officeSettings.Folder).Any(), "nothing can be sent before pairing");
 
-    // Pairing: both sides show the same code, each user confirms on their own PC.
-    async Task<PortalPeer> Join(PortalNode client)
+    // Pairing: both sides show the same code; the PC asked confirms.
+    async Task<PortalPeer> Join(PortalNode from, PortalNode to, System.Net.IPEndPoint toAt)
     {
-        var found = client.HostPeer ?? await client.ConnectDirect(hostAt, host.Number);
-        var asked = await client.Pair(found!);
-        Check(asked is { Code.Length: 7 } && await Until(() => host.Pairings.Any(pairing => pairing.PeerId == client.Id && pairing.Code == asked.Code)),
-              "a client's pairing reaches the host with the same code");
-        client.Confirm(asked!);
-        host.Confirm(host.Pairings.Single(pairing => pairing.PeerId == client.Id));
+        var found = from.PeerOf(to.Number) is { Online: true } known ? known : await from.ConnectDirect(toAt, to.Number);
+        var asked = await from.Pair(found!);
+        Check(asked is { Code.Length: 7 } && await Until(() => to.Pairings.Any(pairing => pairing.PeerId == from.Id && pairing.Code == asked.Code)),
+              "a pairing reaches the other PC with the same code");
+        to.Confirm(to.Pairings.Single(pairing => pairing.PeerId == from.Id));
         return found!;
     }
-    var aliceToHost = await Join(alice);
-    Check(host.Peers.Single(peer => peer.Id == alice.Id) is { Trusted: true, Online: true } && hostSettings.Devices.Count == 1 && hostSaved >= 1
-          && aliceSettings.Devices is [{ }] && aliceSettings.Devices[0].Id == host.Id && hostAsked == 1, "the host and the client trust each other, and both save it");
-    var bobToHost = await Join(bob);
-    Check(hostSettings.Devices.Count == 2, "a host has as many clients as join it");
+    var aliceToOffice = await Join(alice, office, officeAt);
+    Check(office.Peers.Single(peer => peer.Id == alice.Id) is { Trusted: true, Online: true } && officeSettings.Devices.Count == 1 && officeSaved >= 1
+          && aliceSettings.Devices is [{ }] && aliceSettings.Devices[0].Id == office.Id && officeAsked == 1, "the two PCs trust each other, and both save it");
+    Check(PortalSavedList.Find(officeSettings, alice.Number) is { } aliceOnList && PortalSavedList.Find(aliceSettings, office.Number) is not null && !aliceOnList.Stay,
+          "both PCs have the other on their list, whichever side asked");
+    var bobToOffice = await Join(bob, office, officeAt);
+    Check(officeSettings.Devices.Count == 2, "a PC has as many PCs connected as join it");
 
-    // Client to host, host to client.
+    // One way, and the other.
     var payload = new byte[20_000_000];
     Random.Shared.NextBytes(payload);
     var payloadFile = Path.Combine(temp, "CourierOut", "holiday video.mp4");
     File.WriteAllBytes(payloadFile, payload);
-    Check(host.Peers.Single(peer => peer.Id == alice.Id).AutoAccept && aliceSettings.Devices[0].AutoAccept, "a paired PC's files are taken without a click");
-    host.SetAutoAccept(alice.Id, false);
-    var upward = alice.Send(aliceToHost, [payloadFile])!;
-    Check(await Until(() => host.Requests.Count == 1) && upward.State == "waiting" && host.Requests[0] is { Files: 1, Size: 20_000_000 }, "the host is asked before anything is taken");
-    host.Accept(host.Requests[0].Id);
-    Check(await Until(() => !upward.Running, 60) && upward.State == "done" && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "holiday video.mp4")).SequenceEqual(payload),
-          $"a file of several pieces reaches the host whole ({upward.State} {upward.Note})");
+    Check(office.Peers.Single(peer => peer.Id == alice.Id).AutoAccept && aliceSettings.Devices[0].AutoAccept, "a paired PC's files are taken without a click");
+    office.SetAutoAccept(alice.Id, false);
+    var upward = alice.Send(aliceToOffice, [payloadFile])!;
+    Check(await Until(() => office.Requests.Count == 1) && upward.State == "waiting" && office.Requests[0] is { Files: 1, Size: 20_000_000 }, "asking first, nothing is taken before Accept");
+    office.Accept(office.Requests[0].Id);
+    Check(await Until(() => !upward.Running, 60) && upward.State == "done" && File.ReadAllBytes(Path.Combine(officeSettings.Folder, "holiday video.mp4")).SequenceEqual(payload),
+          $"a file of several pieces arrives whole ({upward.State} {upward.Note})");
+    Check(await Until(() => officeGot.Count == 1) && officeGot[0].Name == "holiday video.mp4" && officeGot[0].Path == Path.Combine(officeSettings.Folder, "holiday video.mp4"),
+          "the PC that received it is told, with where the file is");
     var album = Path.Combine(temp, "CourierOut", "Album");
     Make(Path.Combine(album, "inner", "deep"), "three.txt", "three");
     Make(album, "empty.txt", "");
-    alice.SetAutoAccept(host.Id, true);
-    var downward = host.Send(host.Peers.Single(peer => peer.Id == alice.Id), [album])!;
+    alice.SetAutoAccept(office.Id, true);
+    var downward = office.Send(office.Peers.Single(peer => peer.Id == alice.Id), [album])!;
     Check(await Until(() => !downward.Running, 30) && downward.State == "done" && File.ReadAllText(Path.Combine(aliceSettings.Folder, "Album", "inner", "deep", "three.txt")) == "three"
-          && new FileInfo(Path.Combine(aliceSettings.Folder, "Album", "empty.txt")).Length == 0, $"a folder goes from the host to a client, structure and all ({downward.State} {downward.Note})");
+          && new FileInfo(Path.Combine(aliceSettings.Folder, "Album", "empty.txt")).Length == 0, $"a folder goes back the other way, structure and all ({downward.State} {downward.Note})");
 
     // Pause and resume, from the sending PC and from the receiving one.
     var bigFilm = new byte[90_000_000];
     Random.Shared.NextBytes(bigFilm);
     var bigFile = Path.Combine(temp, "CourierOut", "bigFilm film.mkv");
     File.WriteAllBytes(bigFile, bigFilm);
-    host.SetAutoAccept(alice.Id, true);
-    var held = alice.Send(aliceToHost, [bigFile])!;
-    Check(await Until(() => held.Done > 0, 30), "a bigFilm file starts moving");
+    office.SetAutoAccept(alice.Id, true);
+    var held = alice.Send(aliceToOffice, [bigFile])!;
+    Check(await Until(() => held.Done > 0, 30), "a big file starts moving");
     held.Pause();
     await Task.Delay(1200);
     var (heldAt, heldFor) = (held.Done, held.Elapsed);
-    var heldThere = host.Transfers.Last(transfer => transfer.Incoming);
+    var heldThere = office.Transfers.Last(transfer => transfer.Incoming);
     await Task.Delay(1200);
     Check(held is { Paused: true, State: "active" } && held.Done == heldAt && heldAt < bigFilm.Length && held.Elapsed == heldFor && held.Remaining is null,
           $"Pause holds a transfer where it is, and its clock too ({held.Done} of {bigFilm.Length})");
     Check(heldThere.PausedThere && heldThere.State == "active", "the receiving PC is told the sender paused");
     held.Resume();
-    Check(await Until(() => !held.Running, 60) && held.State == "done" && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "bigFilm film.mkv")).SequenceEqual(bigFilm)
+    Check(await Until(() => !held.Running, 60) && held.State == "done" && File.ReadAllBytes(Path.Combine(officeSettings.Folder, "bigFilm film.mkv")).SequenceEqual(bigFilm)
           && held.Elapsed > heldFor, $"Resume carries on from there, and the file arrives whole ({held.State} {held.Note})");
-    var heldBack = alice.Send(aliceToHost, [bigFile])!;
-    Check(await Until(() => host.Transfers.Last(transfer => transfer.Incoming) is var arriving && arriving != heldThere && arriving.Done > 0, 30), "another one starts");
-    var arrivingHere = host.Transfers.Last(transfer => transfer.Incoming);
+    var heldBack = alice.Send(aliceToOffice, [bigFile])!;
+    Check(await Until(() => office.Transfers.Last(transfer => transfer.Incoming) is var arriving && arriving != heldThere && arriving.Done > 0, 30), "another one starts");
+    var arrivingHere = office.Transfers.Last(transfer => transfer.Incoming);
     arrivingHere.Pause();
     Check(await Until(() => heldBack.PausedThere, 20) && heldBack.State == "active", "paused on the receiving PC, the sender waits and says so");
     var arrivedSoFar = arrivingHere.Done;
@@ -594,60 +635,70 @@ Section("courier host and clients");
     Check(arrivingHere.Done == arrivedSoFar && arrivedSoFar < bigFilm.Length, "and nothing more arrives meanwhile");
     arrivingHere.Resume();
     Check(await Until(() => !heldBack.Running, 60) && heldBack.State == "done" && !heldBack.PausedThere
-          && File.ReadAllBytes(Path.Combine(hostSettings.Folder, "bigFilm film (1).mkv")).SequenceEqual(bigFilm), $"and goes on when the receiver resumes ({heldBack.State} {heldBack.Note})");
-    host.SetAutoAccept(alice.Id, false);
+          && File.ReadAllBytes(Path.Combine(officeSettings.Folder, "bigFilm film (1).mkv")).SequenceEqual(bigFilm), $"and goes on when the receiver resumes ({heldBack.State} {heldBack.Note})");
+    office.SetAutoAccept(alice.Id, false);
 
-    // Client to client, through the host.
-    Check(await Until(() => alice.OtherClients.Any(client => client.Id == bob.Id && client.Online), 25) && alice.OtherClients.All(client => client.Id != alice.Id),
-          "a client learns from the host which other clients there are");
-    var forBob = alice.OtherClients.Single(client => client.Id == bob.Id);
-    bob.SetAutoAccept(host.Id, false);
+    // Two PCs that both connected to the office connect to each other straight away: there is no host in between.
+    var aliceToBob = await Join(alice, bob, bobAt);
+    bob.SetAutoAccept(alice.Id, false);
     var note = Make(Path.Combine(temp, "CourierOut", "Letters"), "for bob.txt", "hello Bob, from Alice");
-    var across = alice.Send(aliceToHost, [note], forBob)!;
-    Check(await Until(() => bob.Requests.Count == 1, 30) && bob.Requests[0].PeerName.Contains(alice.Name) && host.Requests.Count == 0,
-          "files for another client pass the host without asking its user, and the client they are for is asked");
+    var across = alice.Send(aliceToBob, [note])!;
+    Check(await Until(() => bob.Requests.Count == 1, 30) && bob.Requests[0].PeerName == alice.Name && office.Requests.Count == 0, "files go straight to the PC they are for");
     bob.Accept(bob.Requests[0].Id);
-    Check(await Until(() => File.Exists(Path.Combine(bobSettings.Folder, "for bob.txt")), 30) && File.ReadAllText(Path.Combine(bobSettings.Folder, "for bob.txt")) == "hello Bob, from Alice"
-          && across.State == "done", $"and arrive there ({across.State} {across.Note})");
-    Check(await Until(() => !Directory.Exists(Portal.RelayFolder) || !Directory.EnumerateFileSystemEntries(Portal.RelayFolder).Any(), 10)
-          && !File.Exists(Path.Combine(hostSettings.Folder, "for bob.txt")), "the host keeps no copy");
-    var refusedAcross = alice.Send(aliceToHost, [note], forBob)!;
-    Check(await Until(() => bob.Requests.Count == 1, 30), "another one waits on the client it is for");
-    bob.Refuse(bob.Requests[0].Id);
-    Check(await Until(() => !Directory.Exists(Portal.RelayFolder) || !Directory.EnumerateFileSystemEntries(Portal.RelayFolder).Any(), 15)
-          && !File.Exists(Path.Combine(bobSettings.Folder, "for bob (1).txt")), "refused on the way, it never arrives and the host lets it go");
-    var nobody = alice.Send(aliceToHost, [note], new PortalClient(new string('A', 64), "Nobody", true))!;
-    Check(await Until(() => nobody.State == "failed") && nobody.Note.Length > 0, "a client the host does not have is said plainly");
+    Check(await Until(() => !across.Running, 30) && File.ReadAllText(Path.Combine(bobSettings.Folder, "for bob.txt")) == "hello Bob, from Alice"
+          && across.State == "done" && !File.Exists(Path.Combine(officeSettings.Folder, "for bob.txt")), $"and arrive there, through nobody ({across.State} {across.Note})");
 
-    // A PC that was never paired, and a client asked to pair by someone.
-    var strangerHost = await stranger.ConnectDirect(hostAt, host.Number);
-    var intruding = stranger.Send(strangerHost!, [payloadFile])!;
-    Check(await Until(() => intruding.State == "failed") && host.Requests.Count == 0, "a PC that was never paired can not even ask");
-    host.Forget(bob.Id);
-    var afterForget = bob.Send(bobToHost, [note])!;
-    Check(await Until(() => afterForget.State == "failed") && hostSettings.Devices.Count == 1, "a forgotten client must pair again");
+    // Kept connected: Connect marks a PC, Disconnect ends it on both sides and neither connects back by itself.
+    alice.Connect(office.Number);
+    Check(PortalSavedList.Find(aliceSettings, office.Number) is { Stay: true } && await Until(() => alice.StateOf(office.Number) == PortalState.Connected, 20),
+          "a PC connected to stays connected");
+    await alice.Disconnect(office.Number);
+    Check(await Until(() => office.Peers.Single(peer => peer.Id == alice.Id) is { Online: false }, 6) && alice.StateOf(office.Number) == PortalState.NotConnected
+          && office.StateOf(alice.Number) == PortalState.NotConnected, "Disconnect ends it on both PCs at once");
+    await Task.Delay(3000);
+    Check(alice.PeerOf(office.Number) is { Online: false } && office.Peers.Single(peer => peer.Id == alice.Id) is { Online: false, Trusted: true }
+          && PortalSavedList.Find(aliceSettings, office.Number) is { Stay: false }, "and neither connects back by itself; they stay paired");
+    alice.Connect(office.Number);
+    Check(await Until(() => alice.StateOf(office.Number) == PortalState.Connected && office.Peers.Single(peer => peer.Id == alice.Id).Online, 20),
+          "Connect again, and it is back without pairing again");
 
-    // A host that asks for a password: none, or a wrong one, is turned away; the right one lets the PC in without a click.
-    host.UseIncoming(PortalSettings.WithPassword, Portal.HashPassword("open sesame"));
-    var asksBefore = hostAsked;
-    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Needed && !host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted),
-          "a host with a password turns away a PC that gives none, and the PC is told a password is needed");
-    stranger.GivePassword("open says me");
-    Check(await stranger.Pair(strangerHost!) is null && stranger.PasswordWanted == PortalPasswordAsk.Wrong, "a wrong password is turned away, and said so");
-    stranger.GivePassword("open sesame");
-    var letIn = await stranger.Pair(strangerHost!);
-    Check(letIn is not null && stranger.PasswordWanted == PortalPasswordAsk.None && !stranger.WaitingForHost
-          && host.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted) && stranger.HostPeer is { Trusted: true } && hostAsked == asksBefore,
-          "the right password lets the PC in at once, on both sides, without asking the host's user");
-    var withPassword = stranger.Send(strangerHost!, [note])!;
-    Check(await Until(() => !withPassword.Running, 30) && withPassword.State == "done", $"and it can send at once ({withPassword.State} {withPassword.Note})");
-    host.UseIncoming(PortalSettings.Ask, "");
-
-    await host.Stop();
-    await alice.Stop();
+    // A PC that stops is seen gone at once by the PCs connected to it, not a minute later.
     await bob.Stop();
+    Check(await Until(() => alice.PeerOf(bob.Number) is { Online: false } && office.Peers.Single(peer => peer.Id == bob.Id) is { Online: false }, 6),
+          "a PC that stops Courier shows as disconnected on the others at once");
+
+    // Kicked out: removed on one side, the other no longer trusted and off the list.
+    await office.Disconnect(alice.Number, forget: true);
+    Check(await Until(() => alice.PeerOf(office.Number) is { Trusted: false, Online: false }, 6) && PortalSavedList.Find(officeSettings, alice.Number) is null
+          && !officeSettings.Devices.Any(device => device.Id == alice.Id) && PortalSavedList.Find(aliceSettings, office.Number) is { Stay: false },
+          "Remove kicks a PC out: both stop trusting each other, and the one kicked keeps the other on its list to ask again");
+    var afterKick = alice.Send(aliceToOffice, [note])!;
+    Check(await Until(() => afterKick.State == "failed"), "a PC kicked out can send nothing");
+
+    // A PC that was never paired.
+    var strangerOffice = await stranger.ConnectDirect(officeAt, office.Number);
+    var intruding = stranger.Send(strangerOffice!, [payloadFile])!;
+    Check(await Until(() => intruding.State == "failed") && office.Requests.Count == 0, "a PC that was never paired can not even ask");
+
+    // A PC that asks for a password: none, or a wrong one, is turned away; the right one lets the PC in without a click.
+    office.UseIncoming(PortalSettings.WithPassword, Portal.HashPassword("open sesame"));
+    var asksBefore = officeAsked;
+    Check(await stranger.Pair(strangerOffice!) is null && stranger.StateOf(office.Number) == PortalState.NeedsPassword
+          && !office.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted), "a PC with a password turns away a PC that gives none, and that PC is told a password is needed");
+    stranger.GivePassword(office.Number, "open says me");
+    Check(await stranger.Pair(strangerOffice!) is null && stranger.StateOf(office.Number) == PortalState.WrongPassword, "a wrong password is turned away, and said so");
+    stranger.GivePassword(office.Number, "open sesame");
+    var letIn = await stranger.Pair(strangerOffice!);
+    Check(letIn is not null && stranger.StateOf(office.Number) == PortalState.Connected && office.Peers.Any(peer => peer.Id == stranger.Id && peer.Trusted) && officeAsked == asksBefore,
+          "the right password lets the PC in at once, on both sides, without asking");
+    var withPassword = stranger.Send(strangerOffice!, [note])!;
+    Check(await Until(() => !withPassword.Running, 30) && withPassword.State == "done", $"and it can send at once ({withPassword.State} {withPassword.Note})");
+    office.UseIncoming(PortalSettings.Ask, "");
+
+    await office.Stop();
+    await alice.Stop();
     await stranger.Stop();
-    Check(host.Stopped, "Courier stops");
+    Check(office.Stopped, "Courier stops");
 }
 var allowed = 0;
 File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"p1","action":"allow_portal","services":["Spooler"]}""");
@@ -1127,30 +1178,88 @@ Check(WebSearch.Google("  what   is" + Environment.NewLine + "PC Butler ") == "h
 Check(new ClipEntry { Kind = "files", Files = [Path.Combine(temp, "a.txt"), Path.Combine(temp, "b.txt")] }.Preview == "a.txt (+1)"
       && new ClipEntry { Text = "one" + Environment.NewLine + "two" }.Preview == "one two", "list previews");
 
+// an item with a password of its own
+ClipboardHistory.Apply(new ClipboardSettings { KeepOnDisk = true });
+ClipboardHistory.Add(new ClipEntry { Text = "IBAN SA03 8000 0000 6080 1016 7519" }, 50);
+var lockedClip = ClipboardHistory.Entries[0];
+ClipboardHistory.SetTag(lockedClip, "bank", true);
+Check(!ClipboardHistory.Lock(lockedClip, "") && ClipboardHistory.Lock(lockedClip, "s3cret!") && lockedClip is { Hidden: true, Text: "", Locked: true }
+      && lockedClip.Preview != "" && !lockedClip.Preview.Contains("IBAN"), "a locked item shows nothing of what it holds");
+var onDisk = File.ReadAllText(Path.Combine(ClipboardHistory.Folder, "history.json"));
+Check(!onDisk.Contains("IBAN") && !onDisk.Contains("6080") && onDisk.Contains("aesgcm"), "and nothing of it is on the disk, only its encrypted form");
+Check(ClipboardHistory.Ordered("IBAN").Count == 0 && ClipboardHistory.Ordered("#bank").Single() == lockedClip, "a search finds it by its tags only");
+Check(ClipboardHistory.Peek(lockedClip, "wrong") is null && ClipboardHistory.Peek(lockedClip, "s3cret!")?.Text == "IBAN SA03 8000 0000 6080 1016 7519" && lockedClip.Hidden,
+      "the right password gives its content for one paste, and it stays locked");
+Check(!ClipboardHistory.Unlock(lockedClip, "wrong") && lockedClip.Hidden && ClipboardHistory.Unlock(lockedClip, "s3cret!") && lockedClip is { Open: true, Hidden: false }
+      && lockedClip.Text.StartsWith("IBAN"), "unlocked, it can be used again and again");
+ClipboardHistory.Save();
+Check(!File.ReadAllText(Path.Combine(ClipboardHistory.Folder, "history.json")).Contains("IBAN"), "even unlocked, what it holds is never written out");
+ClipboardHistory.Relock(lockedClip);
+Check(lockedClip is { Hidden: true, Text: "" }, "locked again, the password is asked again");
+ClipboardHistory.Add(new ClipEntry { Text = "IBAN SA03 8000 0000 6080 1016 7519" }, 50);
+Check(ClipboardHistory.Entries.Count(entry => entry.Locked) == 1 && ClipboardHistory.Entries.Count == 2, "copying the same text again does not open the locked one");
+Check(!ClipboardHistory.RemoveLock(lockedClip, "nope") && ClipboardHistory.RemoveLock(lockedClip, "s3cret!") && lockedClip is { Locked: false, Hidden: false }
+      && lockedClip.Text.StartsWith("IBAN") && File.ReadAllText(Path.Combine(ClipboardHistory.Folder, "history.json")).Contains("IBAN"),
+      "with its password taken off, it is an ordinary item again");
+ClipboardHistory.Clear(keepPinned: false);
+ClipboardHistory.Apply(new ClipboardSettings { KeepOnDisk = false });
+
+Section("app usage");
+{
+    AppUsageLog.Clear();
+    var usageMorning = DateTime.Today.AddHours(9);
+    AppUsageLog.Record(usageMorning, new Dictionary<string, AppUse>
+    {
+        ["chrome"] = new() { Seconds = 5, CpuSeconds = 2, GpuSeconds = 1, Read = 1000, Written = 10, MemoryPeak = 400 << 20, MemorySeconds = 5.0 * (400 << 20) },
+        ["game"] = new() { Seconds = 5, CpuSeconds = 10, GpuSeconds = 5, MemoryPeak = 2L << 30, MemorySeconds = 5.0 * (2L << 30), Sent = 300, Received = 9000, NetSeconds = 5 },
+    });
+    AppUsageLog.Record(usageMorning.AddSeconds(5), new Dictionary<string, AppUse> { ["Chrome"] = new() { Seconds = 5, CpuSeconds = 1, Read = 500, MemoryPeak = 200 << 20, MemorySeconds = 5.0 * (200 << 20) } });
+    AppUsageLog.Record(usageMorning.AddDays(-3), new Dictionary<string, AppUse> { ["chrome"] = new() { Seconds = 100, CpuSeconds = 50 } });
+    var today = AppUsageLog.Report(DateTime.Today, DateTime.Today);
+    var chrome = today.Single(row => row.App.Equals("chrome", StringComparison.OrdinalIgnoreCase)).Use;
+    Check(today.Count == 2 && today[0].App == "game" && chrome is { Seconds: 10, CpuSeconds: 3, Read: 1500, MemoryPeak: 400 << 20 } && chrome.AverageMemory == 300 << 20,
+          "what each app uses adds up per day, by app, with its peak and average memory");
+    Check(Math.Abs(chrome.CpuPercent(2) - 15) < 0.01 && Math.Abs(today[0].Use.GpuPercent - 100) < 0.01 && chrome.CpuPercent(1) <= 100,
+          "and its share of the processor and the graphics card while it ran");
+    var week = AppUsageLog.Report(DateTime.Today.AddDays(-6), DateTime.Today);
+    Check(week.Single(row => row.App.Equals("chrome", StringComparison.OrdinalIgnoreCase)).Use.CpuSeconds == 53 && week[0].App.Equals("chrome", StringComparison.OrdinalIgnoreCase),
+          "a longer period adds the days up");
+    AppUsageLog.Save();
+    AppUsageLog.Reload();
+    Check(AppUsageLog.Report(DateTime.Today, DateTime.Today).Count == 2 && AppUsageLog.FirstDay == DateTime.Today.AddDays(-3), "the record is kept on disk");
+    var csv = AppUsageLog.Csv([new AppUseRow("a, \"quoted\" app", today[0].Use)], 4).Split("\r\n");
+    Check(csv[0].StartsWith("App,Time running") && csv[1].StartsWith("\"a, \"\"quoted\"\" app\",") && csv[1].Contains(",2048,") && csv.Length == 3,
+          "the report is a spreadsheet, names quoted where they must be");
+    AppUsageLog.Clear();
+    Check(AppUsageLog.FirstDay is null && AppUsageLog.Report(DateTime.Today.AddDays(-90), DateTime.Today).Count == 0, "and it can be cleared");
+}
+
 Section("courier saved PCs and passwords");
 {
     var kept = Portal.HashPassword("correct horse");
     Check(Portal.CheckPassword("correct horse", kept) && !Portal.CheckPassword("Correct horse", kept) && !Portal.CheckPassword("", kept)
           && !Portal.CheckPassword("correct horse", "") && !kept.Contains("correct") && kept != Portal.HashPassword("correct horse"),
           "a password is kept salted and stretched, and only the same one matches");
-    var saved = new PortalSettings { Role = PortalSettings.Client, HostNumber = "111222333",
-                                     Devices = [new PortalDevice { Id = "AA", Name = "Old host" }] };
+    var someHost = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a host")));
+    var saved = new PortalSettings { Role = "client", HostNumber = "111222333",
+                                     Devices = [new PortalDevice { Id = someHost, Name = "Old host" }, new PortalDevice { Id = "AA", Name = "Broken" }] };
     PortalSavedList.Start(saved);
-    Check(saved.Saved is [{ Number: "111222333" }], "the host of before is on the list");
-    Check(PortalSavedList.Add(saved, "444 555 666", "Office") && !PortalSavedList.Add(saved, "12", "") && saved.Saved.Count == 2
+    Check(PortalSavedList.Find(saved, "111222333") is { Stay: true } && PortalSavedList.Find(saved, Portal.NumberOf(someHost)) is { Name: "Old host", Stay: false }
+          && saved.Saved.Count == 2 && saved.Role == "" && saved.HostNumber == "" && saved.Used,
+          "a PC of before brings its host (kept connected) and its paired PCs onto the list");
+    var oldHost = new PortalSettings { Role = "host", Devices = [new PortalDevice { Id = someHost, Name = "Laptop" }] };
+    PortalSavedList.Start(oldHost);
+    Check(oldHost.Saved is [{ Name: "Laptop", Stay: false }] && oldHost.Used, "a host of before has its clients on the list");
+    Check(PortalSavedList.Add(saved, "444 555 666", "Office") && !PortalSavedList.Add(saved, "12", "") && saved.Saved.Count == 3
           && PortalSavedList.Add(saved, "444555666", "") && PortalSavedList.Find(saved, "444555666")!.Name == "Office", "PCs are added by their ID, once each");
     PortalSavedList.Rename(saved, "444555666", "  Work PC ");
     Check(PortalSavedList.Find(saved, "444555666")!.Name == "Work PC" && PortalSavedList.Remember(saved, "444555666", "DESKTOP-1") == "Work PC"
-          && PortalSavedList.Remember(saved, "777888999", "Laptop") == "Laptop" && saved.Saved.Count == 3, "a name given stays; a PC connected to is added under its own");
-    PortalSavedList.ToggleFavorite(saved, "444555666");
-    PortalSavedList.ToggleFavorite(saved, "777888999");
-    Check(saved.Saved.Count(item => item.Favorite) == 1 && PortalSavedList.Find(saved, "777888999")!.Favorite, "one favourite at most");
-    PortalSavedList.Start(saved);
-    Check(saved.HostNumber == "777888999", "the favourite is the PC connected to at start");
-    PortalSavedList.ToggleFavorite(saved, "777888999");
-    Check(!saved.Saved.Any(item => item.Favorite), "the same one again is no longer the favourite");
-    PortalSavedList.Remove(saved, "777888999");
-    Check(PortalSavedList.Find(saved, "777888999") is null && saved.HostNumber.Length == 9 && saved.HostNumber != "777888999", "removed, and the PC connected to moves to another");
+          && PortalSavedList.Remember(saved, "777888999", "Laptop") == "Laptop" && saved.Saved.Count == 4, "a name given stays; a PC connected to is added under its own");
+    var oldFavourite = new PortalSettings { Saved = [new PortalSaved { Number = "123456789", Favorite = true }] };
+    PortalSavedList.Start(oldFavourite);
+    Check(oldFavourite.Saved is [{ Stay: true, Favorite: false }], "the favourite of before stays connected");
+    PortalSavedList.Remove(saved, Portal.NumberOf(someHost));
+    Check(PortalSavedList.Find(saved, Portal.NumberOf(someHost)) is null && !saved.Devices.Any(device => device.Id == someHost), "removed: off the list and no longer trusted");
 }
 
 Section("translations, updates");

@@ -165,6 +165,7 @@ public static class Sensors
         AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
         CpuSensor.Close();
         FpsMeter.Stop();
+        NetMeter.Stop();
         try
         {
             File.Delete(file);

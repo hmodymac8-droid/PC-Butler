@@ -164,7 +164,7 @@ public sealed partial class SettingsPage : Page
         var section = Ui.Text(Ui.T("Destination folders"), 16, weight: FontWeights.Bold).Margin(0, 18, 0, 8);
         section.FontFamily = Ui.DisplayFont;
         grid.Children.Add(section.At(7, 0, 3));
-        categories = Ui.List(("Destination folder", 220, "FileCell"), ("Extensions", 430), ("Move after", 110), ("Clean up after", 130));
+        categories = Ui.List(("Destination folder", 220, "FileCell"), ("Extensions", 400), ("What happens", 120), ("After", 100), ("Clean up after", 130));
         categories.SelectionMode = SelectionMode.Single;
         categories.MouseDoubleClick += (_, e) =>
         {
@@ -434,10 +434,10 @@ public sealed partial class SettingsPage : Page
 
     private static Row CategoryRow(Category category) => new Row
     {
-        Name = category.Folder, Tag = category,
-        Cells = [string.Join(" ", category.Extensions),
+        Name = category.Delete && category.Folder.Length == 0 ? Ui.T("(deleted)") : category.Folder, Tag = category,
+        Cells = [string.Join(" ", category.Extensions), Ui.T(category.Delete ? "Deleted" : "Moved"),
                  category.MinAgeDays is { } days ? Ui.T("{0} days", days) : Ui.T("general"),
-                 category.RecycleAfterDays > 0 ? Ui.T("{0} days", category.RecycleAfterDays) : Ui.T("never")],
+                 category.Delete ? "" : category.RecycleAfterDays > 0 ? Ui.T("{0} days", category.RecycleAfterDays) : Ui.T("never")],
     }.WithTile("", Path.GetFileName(category.Folder));
 
     /// <summary>The never-move list changed elsewhere (the Sorter page's "Never move this file").</summary>
