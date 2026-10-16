@@ -37,7 +37,7 @@ public sealed class CourierPage : ContentPage
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
-    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, long Done, DateTime At, double Speed)> rows = [];
+    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, long Done, DateTime At, double Speed)> rows = [];
     private string asksShown = "", targetsShown = "", transfersShown = "\0";
     private bool pulsing;
 
@@ -454,16 +454,17 @@ public sealed class CourierPage : ContentPage
                 var name = new Label { Text = (transfer.Incoming ? "↓ " : "↑ ") + transfer.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
                 var head = Theme.Line3(Theme.Tile(Theme.TileFor(transfer.Name), 36), Theme.TwoLines(name, detail), cancel);
                 transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar } }, 12));
-                rows[transfer] = rows.TryGetValue(transfer, out var old) ? (bar, detail, old.Done, old.At, old.Speed) : (bar, detail, transfer.Done, DateTime.UtcNow, 0);
+                rows[transfer] = rows.TryGetValue(transfer, out var old) ? (bar, detail, cancel, old.Done, old.At, old.Speed) : (bar, detail, cancel, transfer.Done, DateTime.UtcNow, 0);
             }
         }
         var clock = DateTime.UtcNow;
         foreach (var transfer in shown)
         {
-            var (bar, detail, done, at, speed) = rows[transfer];
+            var (bar, detail, cancel, done, at, speed) = rows[transfer];
             if ((clock - at).TotalSeconds >= 0.9)
                 (done, at, speed) = (transfer.Done, clock, Math.Max(0, (transfer.Done - done) / (clock - at).TotalSeconds));
-            rows[transfer] = (bar, detail, done, at, speed);
+            rows[transfer] = (bar, detail, cancel, done, at, speed);
+            cancel.IsVisible = transfer.State is "active" or "waiting"; // a finished one has nothing left to stop
             var part = transfer.Size > 0 ? (double)transfer.Done / transfer.Size : 1;
             bar.Progress = transfer.State == "done" ? 1 : part;
             var direction = Tr.T(transfer.Incoming ? "From {0}" : "To {0}", transfer.Peer);

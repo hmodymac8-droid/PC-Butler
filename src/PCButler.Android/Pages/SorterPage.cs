@@ -20,7 +20,7 @@ public sealed class SorterPage : AppPage
     private readonly Button undo;
     private readonly Button sort;
     private List<PhoneMove> planned = [];
-    private bool busy;
+    private bool busy, again;
 
     public SorterPage() : base("Sorter", "Your folders sorted by type, after the files have sat there a while.")
     {
@@ -76,8 +76,12 @@ public sealed class SorterPage : AppPage
     private async Task Plan()
     {
         if (busy)
+        {
+            again = true; // a folder was added while looking: look once more after
             return;
+        }
         busy = true;
+        again = false;
         var trees = Folders.For("sorter");
         summary.Text = trees.Count == 0 ? Tr.T("Choose a folder to sort first.") : Tr.T("Looking at your folders…");
         try
@@ -88,6 +92,11 @@ public sealed class SorterPage : AppPage
         finally
         {
             busy = false;
+        }
+        if (again)
+        {
+            await Plan();
+            return;
         }
         if (trees.Count > 0)
             summary.Text = planned.Count == 0 ? Tr.T("Nothing to sort right now.") : Tr.T("{0} file(s)", planned.Count);

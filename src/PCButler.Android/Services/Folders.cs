@@ -148,6 +148,14 @@ public static class Folders
         return list;
     }
 
+    /// <summary>True when the folder holds nothing at all, hidden files included (deleting a folder takes everything in it).</summary>
+    public static bool IsEmpty(Doc folder)
+    {
+        var uri = DocumentsContract.BuildChildDocumentsUriUsingTree(folder.Tree, folder.Id)!;
+        using var cursor = Resolver.Query(uri, [DocumentsContract.Document.ColumnDocumentId], null, null, null);
+        return cursor is not null && cursor.Count == 0;
+    }
+
     /// <summary>Every file in the folder, at any depth.</summary>
     public static List<Doc> Files(Doc folder, CancellationToken cancel, Action<Doc>? progress = null)
     {
@@ -303,6 +311,7 @@ public static class Results
             Waiting[code] = answer;
         try
         {
+            App.LeavingOnPurpose();
             activity.StartActivityForResult(intent, code);
         }
         catch (ActivityNotFoundException)

@@ -11,6 +11,7 @@ public static class MauiProgram
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
         Tr.Language = ConfigStore.Load().EffectiveLanguage();
+        SharedFiles.ClearOld();
         return builder.Build();
     }
 }
@@ -28,9 +29,30 @@ public sealed class App : Application
     {
         var window = new Window(new Shell());
         // The vault never stays open behind the user's back: going to the background locks it.
-        window.Stopped += (_, _) => Pages.VaultPage.Current?.Lock();
+        // Android's own screens that the app opens itself (a picker, the viewer of a file) don't
+        // count, unless the user stays away from the app for long.
+        window.Stopped += (_, _) =>
+        {
+            if (leaving)
+                awaySince = DateTime.UtcNow;
+            else
+                Pages.VaultPage.Current?.Lock();
+            leaving = false;
+        };
+        window.Activated += (_, _) =>
+        {
+            if (awaySince is { } since && DateTime.UtcNow - since > TimeSpan.FromMinutes(10))
+                Pages.VaultPage.Current?.Lock();
+            (leaving, awaySince) = (false, null);
+        };
         return window;
     }
+
+    private static bool leaving;
+    private static DateTime? awaySince;
+
+    /// <summary>The app is about to open one of Android's own screens (a picker, a viewer): that is no reason to lock the vault.</summary>
+    public static void LeavingOnPurpose() => leaving = true;
 }
 
 /// <summary>The program's colours (the same as on Windows), and the looks of the controls that use them.</summary>
