@@ -11,22 +11,17 @@ namespace PCButler.Android.Pages;
 /// removed. Files shared to PC Butler from any app wait here and go to the PC with one tap;
 /// what moves shows with a progress bar.
 /// </summary>
-public sealed class CourierPage : ContentPage
+public sealed class CourierPage : AppPage
 {
     private readonly VerticalStackLayout running = new() { Spacing = 0 };
     private readonly IdPad connectId = new();
-    // The status card: a round badge (a pulsing dot while waiting, a monitor once connected), two lines, a pill.
-    private readonly Border statusBadge = new() { WidthRequest = 42, HeightRequest = 42, StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), VerticalOptions = LayoutOptions.Center };
-    private readonly BoxView statusDot = new() { WidthRequest = 11, HeightRequest = 11, CornerRadius = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-    private readonly Image statusMonitor = new() { Source = "ic_monitor.png", WidthRequest = 22, HeightRequest = 22, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
-    private readonly Label statusText = new() { FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
-    private readonly Label statusDetail = Theme.Faint("", 12.5);
     private readonly Border statusPill = Theme.Pill("", Theme.Amber, Theme.AmberSoft);
-    private readonly Label idText = new() { FontSize = 27, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, FontFamily = "monospace", LineBreakMode = LineBreakMode.NoWrap, VerticalOptions = LayoutOptions.Center };
-    private readonly Label idCaption = Theme.Caps("");
+    private readonly Label idText = new() { FontSize = 38, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, FontFamily = "monospace", CharacterSpacing = 2, LineBreakMode = LineBreakMode.NoWrap, VerticalOptions = LayoutOptions.Center };
+    private readonly Label idCaption = Theme.Faint("", 12.5);
     private readonly Label idHelp = Theme.Faint("", 12.5);
-    private readonly Label copyText = new() { FontSize = 13.5, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
-    private readonly Image copyIcon = new() { Source = "ic_copy.png", WidthRequest = 16, HeightRequest = 16, VerticalOptions = LayoutOptions.Center };
+    private readonly Border copyButton;
+    private readonly Border idCard;
+    private readonly Button startButton;
     private readonly VerticalStackLayout asks = new();
     private readonly Border sendPill = Theme.Pill("", Theme.Primary, Theme.PrimarySoft);
     private readonly Label sharedText = new() { FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, LineBreakMode = LineBreakMode.WordWrap };
@@ -40,130 +35,99 @@ public sealed class CourierPage : ContentPage
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
-    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Button Cancel, Button Pause, Label Times)> rows = [];
-    private readonly Label savedTitle = Theme.Title("", 18);
-    private readonly VerticalStackLayout savedRows = new() { Spacing = 8 };
+    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Border Cancel, Button Pause, Label Times)> rows = [];
+    private readonly Label savedCount = Theme.Faint("", 12.5);
+    private readonly VerticalStackLayout savedRows = new() { Spacing = 0 };
     private readonly VerticalStackLayout incomingBox = new() { Spacing = 10 };
+    private readonly VerticalStackLayout settingsBox;
     private readonly Button askButton, passwordRuleButton;
-    private readonly Entry newPassword = new() { IsPassword = true, Placeholder = "••••", TextColor = Theme.Text };
+    private readonly Entry newPassword = new() { IsPassword = true, Placeholder = "••••" };
     private readonly Button savePassword;
     private readonly Label passwordNote = Theme.Faint("", 12.5);
     private bool pickingPassword;
     private readonly HashSet<string> popped = [];
     private bool popping;
     private string asksShown = "", targetsShown = "", transfersShown = "\0", savedShown = "\0";
-    private bool pulsing, onScreen;
+    private bool onScreen;
 
-    public CourierPage()
+    public CourierPage() : base("Courier")
     {
-        Title = Tr.T("Courier");
-        // --- this phone: where it stands, and its own ID ---
-        var copy = new Border
-        {
-            BackgroundColor = Theme.SurfaceRaised, StrokeThickness = 0, Padding = new Thickness(14, 9), StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
-            VerticalOptions = LayoutOptions.Center,
-            Content = new HorizontalStackLayout { Spacing = 6, Children = { copyIcon, copyText } },
-        };
-        copy.Tapped(CopyId);
+        SetSub(statusPill);
+        HeaderRight.Content = Theme.IconButton("i_settings_2_w.png", OpenSettings);
+
+        // --- this phone's own ID, big, with a round copy button ---
+        copyButton = Theme.IconButton("i_copy_m.png", CopyId, Theme.PrimarySoft, 48);
         idText.Tapped(CopyId);
-        copyText.Text = Tr.T("Copy");
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        idCard = Theme.CardOf(new VerticalStackLayout
         {
-            Spacing = 6,
-            Children =
-            {
-                Theme.Line3(statusBadge, Theme.TwoLines(statusText, statusDetail), statusPill),
-                idCaption.Margin(0, 14, 0, 0),
-                Theme.Line3(null, idText, copy, 0),
-                idHelp,
-            },
-        }));
-        // --- connecting to a PC by its ID: it joins the list and stays connected ---
-        var connectButton = Theme.Accent(Tr.T("Connect"), () => _ = ConnectTyped());
-        connectButton.IsEnabled = false;
-        connectId.Changed += () => connectButton.IsEnabled = Portal.IsNumber(connectId.Digits);
-        connectId.Submitted += () => _ = ConnectTyped();
-        // A real keyboard types into the pad while this page is on the screen.
-        KeyInput.Handler = key => onScreen && connectId.Key(key);
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+            Spacing = 4,
+            Children = { idCaption, Theme.Line3(null, idText, copyButton, 8), idHelp },
+        }, 20);
+        idCard.Margin = new Thickness(0);
+        running.Children.Add(idCard);
+        startButton = Theme.Accent(Tr.T("Start Courier"), () => _ = StartNow(), "i_power_k.png");
+        startButton.Margin = new Thickness(0, 12, 0, 0);
+        running.Children.Add(startButton);
+        running.Children.Add(asks.Margin(0, 12, 0, 0));
+
+        // --- what moves, and sending: only once a PC is connected ---
+        transfersCard = Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
-            Children =
-            {
-                Theme.Line3(Theme.Tile(("ic_monitor.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Connect to a PC"), 19).Centered()),
-                Theme.Faint(Tr.T("Type the ID the PC shows in its Courier. It joins your list and stays connected.")),
-                connectId, connectButton,
-            },
-        }));
-        running.Children.Add(asks);
-        sharedNote = Theme.BoxOf(Theme.Line3(new Image { Source = "ic_share.png", WidthRequest = 17, HeightRequest = 17, VerticalOptions = LayoutOptions.Start, Margin = new Thickness(0, 2, 0, 0) }, sharedText, null, 10),
-                                 12, Theme.PrimarySoft);
-        var send = Theme.Accent(Tr.T("Send files…"), () => _ = PickAndSend());
+            Children = { Theme.Header(Tr.T("Transfers"), transfersPill), transfers, Theme.Hint(Tr.T("Transfers keep going in the background — check the notification.")) },
+        }, 16);
+        running.Children.Add(transfersCard);
+        sharedNote = Theme.BoxOf(Theme.Line3(Theme.Icon("i_share_2_m.png", 17), sharedText, null, 10), 12, Theme.PrimarySoft);
+        var send = Theme.Accent(Tr.T("Send files…"), () => _ = PickAndSend(), "i_send_k.png");
         sendCard = Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
             Children = { Theme.Header(Tr.T("Send"), sendPill), sharedNote, waitingText, targets, send },
-        });
+        }, 16);
         running.Children.Add(sendCard);
-        transfersCard = Theme.CardOf(new VerticalStackLayout
-        {
-            Spacing = 12,
-            Children =
-            {
-                Theme.Header(Tr.T("Transfers"), transfersPill), transfers,
-                Theme.Hint("ic_bell.png", Tr.T("Transfers keep going in the background — check the notification.")),
-            },
-        });
-        running.Children.Add(transfersCard);
+
+        // --- connecting to a PC by its ID: one box, paste at its end, Connect next to it ---
+        var connectButton = Theme.Accent(Tr.T("Connect"), () => _ = ConnectTyped());
+        (connectButton.IsEnabled, connectButton.HeightRequest, connectButton.CornerRadius) = (false, 56, 18);
+        connectId.Changed += () => connectButton.IsEnabled = Portal.IsNumber(connectId.Digits);
+        connectId.Submitted += () => _ = ConnectTyped();
+        // A real keyboard types into the box while this page is on the screen.
+        KeyInput.Handler = key => onScreen && connectId.Key(key);
+        var connect = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 8 };
+        connect.Add(connectId, 0);
+        connect.Add(connectButton, 1);
+        running.Children.Add(Theme.Section(Tr.T("Connect to a PC")));
+        running.Children.Add(connect);
+        running.Children.Add(Theme.Hint(Tr.T("Find the 6-digit ID in PC Butler on Windows.")));
 
         // --- the PCs: every one connected to or paired with ---
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
-        {
-            Spacing = 12,
-            Children =
-            {
-                savedTitle, Theme.Faint(Tr.T("Tap a PC to connect or disconnect it, rename it or remove it. Connected PCs stay connected until you disconnect them."), 12.5),
-                savedRows,
-            },
-        }));
+        running.Children.Add(Theme.Section(Tr.T("Your PCs"), savedCount));
+        running.Children.Add(Theme.CardOf(savedRows, 0));
 
-        // --- how new PCs get in ---
+        // --- how new PCs get in, where files land, on and off: in the settings sheet ---
         askButton = Theme.Plain(Tr.T("Ask me"), () => SetRule(PortalSettings.Ask));
         passwordRuleButton = Theme.Plain(Tr.T("Password"), () => SetRule(PortalSettings.WithPassword));
         savePassword = Theme.Accent(Tr.T("Save password"), () => _ = SavePassword());
-        var rules = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
+        var rules = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 6 };
         rules.Add(askButton, 0);
         rules.Add(passwordRuleButton, 1);
-        incomingBox.Children.Add(Theme.Caps(Tr.T("When a new PC connects").ToUpper(System.Globalization.CultureInfo.CurrentCulture)));
-        incomingBox.Children.Add(rules);
+        incomingBox.Children.Add(Theme.Caps(Tr.T("When a new PC connects")));
+        incomingBox.Children.Add(Theme.BoxOf(rules, 4, Theme.SurfaceRaised));
         incomingBox.Children.Add(passwordNote);
-        incomingBox.Children.Add(Theme.BoxOf(newPassword, 4));
+        incomingBox.Children.Add(Theme.PasswordField(newPassword));
         incomingBox.Children.Add(savePassword);
-
-        // --- settings ---
-        startStop = Theme.Plain("", () => _ = Toggle());
-        storageButton = Theme.Plain(Tr.T("Allow"), async () => { await Access.AskToSaveToDownload(); Refresh(); });
-        running.Children.Add(Theme.CardOf(new VerticalStackLayout
+        startStop = Theme.Danger("", () => _ = Toggle(), "i_power_r.png");
+        storageButton = Theme.Tonal(Tr.T("Allow"), async () => { await Access.AskToSaveToDownload(); Refresh(); });
+        var folder = Theme.BoxOf(Theme.Line3(Theme.Icon("i_folder_open_m.png", 20),
+                                             Theme.TwoLines(new Label { Text = "Download/PC Butler Courier", FontSize = 14, FontAttributes = FontAttributes.Bold },
+                                                            Theme.Faint(Tr.T("Received files land here."), 12)), null, 12), 12, Theme.SurfaceRaised);
+        settingsBox = new VerticalStackLayout
         {
-            Spacing = 12,
-            Children =
-            {
-                Theme.Header(Tr.T("Settings")),
-                Theme.BoxOf(Theme.Line3(Theme.Tile(Theme.FolderTile, 36),
-                                        Theme.TwoLines(new Label { Text = "Download/PC Butler Courier", FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text },
-                                                       Theme.Faint(Tr.T("Received files land here."), 12))), 10),
-                incomingBox, storageText, storageButton, startStop,
-            },
-        }));
-
-        Content = new ScrollView
-        {
-            Content = new VerticalStackLayout
-            {
-                Padding = new Thickness(18, 22, 18, 24),
-                Children = { AppPage.PageHeader("Courier", "Files between your phone and your PCs, across the internet."), running },
-            },
+            Spacing = 14,
+            Children = { Theme.Caps(Tr.T("Received files")), folder, incomingBox, storageText, storageButton, startStop },
         };
+
+        Body.Children.Add(running);
         Dispatcher.StartTimer(TimeSpan.FromMilliseconds(700), () =>
         {
             Refresh();
@@ -171,6 +135,12 @@ public sealed class CourierPage : ContentPage
             return true;
         });
         Courier.Changed += () => MainThread.BeginInvokeOnMainThread(Refresh);
+    }
+
+    private void OpenSettings()
+    {
+        Refresh();
+        OpenSheet(Tr.T("Courier settings"), settingsBox);
     }
 
     protected override void OnDisappearing()
@@ -283,7 +253,7 @@ public sealed class CourierPage : ContentPage
             }
             if (ready.Count > 1)
             {
-                var name = await DisplayActionSheet(Tr.T("Send to"), Tr.T("Cancel"), null, ready.Select(item => item.Name).ToArray());
+                var name = await Choose(Tr.T("Send to"), ready.Select(item => new SheetChoice("i_monitor_w.png", item.Name)));
                 target = ready.FirstOrDefault(item => item.Name == name)?.Tag;
                 if (target is null)
                     return;
@@ -305,7 +275,7 @@ public sealed class CourierPage : ContentPage
         var settings = Courier.Settings;
         var node = Courier.Node;
         startStop.Text = Tr.T(node is null ? "Start Courier" : "Stop Courier");
-        (startStop.BackgroundColor, startStop.TextColor) = node is null ? (Theme.Primary, Theme.PrimaryText) : (Theme.Secondary, Theme.Red);
+        (startStop.BackgroundColor, startStop.TextColor) = node is null ? (Theme.Primary, Theme.PrimaryText) : (Theme.DangerBack, Theme.Red);
         var canSave = Access.CanSaveToDownload;
         storageText.Text = canSave ? "" : Tr.T("Allow PC Butler to save to Download, so received files can be kept.");
         storageText.IsVisible = storageButton.IsVisible = !canSave;
@@ -326,55 +296,27 @@ public sealed class CourierPage : ContentPage
     {
         var ready = Courier.Targets(node).Where(target => target.Ready).ToList();
         var connected = ready.Count > 0;
-        (statusText.Text, statusDetail.Text) = node is null ? (Tr.T("Courier is off"), Tr.T("Start it so PCs can reach this phone, and it can connect to them."))
-            : connected ? (ready.Count == 1 ? Tr.T("Connected to {0}", ready[0].Name) : Tr.T("{0} PC(s) connected.", ready.Count), Tr.T("It stays on in the background."))
-            : (Tr.T("Reachable by its ID"), Tr.T("No PC is connected yet."));
-        statusDetail.IsVisible = statusDetail.Text.Length > 0;
-        // The badge: a monitor once connected, a pulsing amber dot while waiting, a grey dot when off.
-        statusBadge.Content = connected ? statusMonitor : statusDot;
-        statusBadge.BackgroundColor = connected ? Theme.PrimarySoft : node is null ? Theme.Secondary : Theme.AmberSoft;
-        statusDot.Color = node is null ? Theme.Muted : Theme.Amber;
-        Pulse(node is not null && !connected);
         if (connected)
-            Theme.SetPill(statusPill, Tr.T("Connected"), Theme.Primary, Theme.PrimarySoft);
+            Theme.SetPill(statusPill, ready.Count == 1 ? Tr.T("Connected to {0}", ready[0].Name) : Tr.T("{0} PC(s) connected.", ready.Count).TrimEnd('.'), Theme.Primary, Theme.PrimarySoft);
         else if (node is null)
-            Theme.SetPill(statusPill, Tr.T("Off"), Theme.Muted, Theme.Secondary);
+            Theme.SetPill(statusPill, Tr.T("Stopped"), Theme.Muted, Theme.Secondary);
         else
-            Theme.SetPill(statusPill, Tr.T("Waiting"), Theme.Amber, Theme.AmberSoft);
+            Theme.SetPill(statusPill, Tr.T("Waiting for a PC"), Theme.Amber, Theme.AmberSoft);
         // The ID shows whether Courier runs or not: it is the phone's own, and stays the same.
-        idCaption.Text = Tr.T("This phone's own ID:").TrimEnd(':').ToUpper(System.Globalization.CultureInfo.CurrentCulture);
+        idCaption.Text = Tr.T("This phone's ID").ToUpper(System.Globalization.CultureInfo.CurrentCulture);
         idText.Text = Portal.ShowNumber(Courier.OwnNumber);
-        idHelp.Text = Tr.T("Type it on your PCs to connect them to this phone. It stays the same.");
-        idHelp.IsVisible = true;
+        idHelp.Text = Tr.T(node is null ? "Start Courier to be reachable" : "Enter this on your PC to connect");
+        idCard.Opacity = node is null ? 0.6 : 1;
+        startButton.IsVisible = node is null;
     }
 
-    /// <summary>The waiting dot breathes, so it is plain that Courier is still at work.</summary>
-    private async void Pulse(bool on)
-    {
-        if (!on || pulsing)
-        {
-            if (!on)
-                statusDot.Opacity = 1;
-            pulsing = on && pulsing;
-            return;
-        }
-        pulsing = true;
-        while (pulsing && statusBadge.Content == statusDot && statusDot.Color == Theme.Amber)
-        {
-            await statusDot.FadeTo(0.35, 800);
-            await statusDot.FadeTo(1, 800);
-        }
-        pulsing = false;
-        statusDot.Opacity = 1;
-    }
-
-    /// <summary>The ID to the clipboard, and "Copied" on the button for a moment.</summary>
+    /// <summary>The ID to the clipboard, and a tick on the button for a moment.</summary>
     private async void CopyId()
     {
         await Clipboard.SetTextAsync(idText.Text);
-        (copyText.Text, copyText.TextColor, copyIcon.Source) = (Tr.T("Copied"), Theme.Primary, "ic_check.png");
+        Theme.SetIcon(copyButton, "i_check_m.png");
         await Task.Delay(1600);
-        (copyText.Text, copyText.TextColor, copyIcon.Source) = (Tr.T("Copy"), Theme.Text, "ic_copy.png");
+        Theme.SetIcon(copyButton, "i_copy_m.png");
     }
 
     private void ShowAsks(PortalNode? node)
@@ -496,14 +438,14 @@ public sealed class CourierPage : ContentPage
             var words = node is null ? Tr.T(saved.Stay ? "Connects when Courier starts" : "Courier is off") : Courier.Describe(state, name);
             return (saved.Number, Name: name, saved.Stay, State: state, Words: words);
         }).ToList();
-        savedTitle.Text = items.Count == 0 ? Tr.T("Your PCs") : Tr.T("Your PCs ({0})", items.Count);
+        savedCount.Text = items.Count == 0 ? "" : items.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         var key = string.Join("|", items.Select(item => $"{item.Number}{item.Name}{item.Stay}{item.Words}")) + (node is null);
         if (key == savedShown)
             return;
         savedShown = key;
         savedRows.Children.Clear();
         if (items.Count == 0)
-            savedRows.Children.Add(Theme.Faint(Tr.T("No PC yet. Connect to one by its ID above; PCs that connect to this phone are added here too.")));
+            savedRows.Children.Add(Theme.Empty("i_monitor_m.png", Tr.T("No PC yet"), Tr.T("No PC yet. Connect to one by its ID above; PCs that connect to this phone are added here too.")));
         foreach (var item in items)
         {
             var on = item.State == PortalState.Connected;
@@ -511,9 +453,16 @@ public sealed class CourierPage : ContentPage
             var line = Theme.TwoLines(name, Theme.Faint(Portal.ShowNumber(item.Number) + "  ·  " + item.Words, 12));
             View? pill = on ? Theme.Pill(Tr.T("Connected"), Theme.Primary, Theme.PrimarySoft)
                 : item.State is PortalState.NotConnected ? null : Theme.Pill(Tr.T("Waiting"), Theme.Amber, Theme.AmberSoft);
-            var row = Theme.BoxOf(Theme.Line3(Theme.Tile(("ic_monitor.png", on ? Theme.PrimarySoft : Theme.Secondary), 34), line, pill), 8);
+            var end = new HorizontalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center };
+            if (pill is not null)
+                end.Children.Add(pill);
+            end.Children.Add(Theme.Icon("i_ellipsis_vertical_g.png", 18));
+            var row = Theme.Line3(Theme.Tile(on ? ("i_monitor_m.png", Theme.PrimarySoft) : Theme.MonitorTile, 40), line, end);
+            row.Padding = new Thickness(16, 12);
             var chosen = item;
             row.Tapped(() => _ = Manage(chosen.Number, chosen.Name));
+            if (savedRows.Children.Count > 0)
+                savedRows.Children.Add(Theme.Divider().Margin(16, 0, 16, 0));
             savedRows.Children.Add(row);
         }
     }
@@ -537,15 +486,16 @@ public sealed class CourierPage : ContentPage
         var peer = node?.PeerOf(number);
         string connect = Tr.T("Connect"), disconnect = Tr.T("Disconnect"), rename = Tr.T("Rename"), remove = Tr.T("Remove"),
                auto = Tr.T(peer is { AutoAccept: true } ? "Ask before taking its files" : "Take its files without asking");
-        var choices = new List<string>();
+        var choices = new List<SheetChoice>();
         if (saved is { Stay: true } || linked)
-            choices.Add(disconnect);
+            choices.Add(new("i_power_w.png", disconnect));
         if (!(saved is { Stay: true } && node is not null) && node?.StateOf(number) != PortalState.Connected)
-            choices.Add(connect);
-        choices.Add(rename);
+            choices.Add(new("i_power_m.png", connect));
+        choices.Add(new("i_pencil_w.png", rename));
         if (peer is { Trusted: true })
-            choices.Add(auto);
-        var choice = await DisplayActionSheet(label, Tr.T("Cancel"), remove, choices.ToArray());
+            choices.Add(new("i_check_w.png", auto));
+        choices.Add(new("i_trash_2_r.png", remove, Danger: true));
+        var choice = await Choose(label, choices, Theme.MonitorTile);
         if (choice == connect)
         {
             await Connect(number);
@@ -585,11 +535,13 @@ public sealed class CourierPage : ContentPage
     private void ShowIncoming(PortalSettings settings)
     {
         var password = settings.Incoming == PortalSettings.WithPassword || pickingPassword;
-        (askButton.BackgroundColor, askButton.TextColor) = password ? (Theme.Secondary, Theme.Text) : (Theme.Primary, Theme.PrimaryText);
-        (passwordRuleButton.BackgroundColor, passwordRuleButton.TextColor) = password ? (Theme.Primary, Theme.PrimaryText) : (Theme.Secondary, Theme.Text);
+        (askButton.BackgroundColor, askButton.TextColor) = password ? (Colors.Transparent, Theme.Muted) : (Theme.Primary, Theme.PrimaryText);
+        (passwordRuleButton.BackgroundColor, passwordRuleButton.TextColor) = password ? (Theme.Primary, Theme.PrimaryText) : (Colors.Transparent, Theme.Muted);
         passwordNote.Text = Tr.T(!password ? "You allow each new PC here." : settings.Password.Length > 0 && !pickingPassword ? "New PCs that give the password connect without your answer. Type a new one to change it."
                                                                      : "Type the password new PCs must give.");
         newPassword.IsVisible = savePassword.IsVisible = password;
+        if (newPassword.Parent?.Parent is Border field)
+            field.IsVisible = password;
     }
 
     private void SetRule(string rule)
@@ -644,8 +596,8 @@ public sealed class CourierPage : ContentPage
         foreach (var target in all)
         {
             var name = new Label { Text = target.Name, FontSize = 14.5, FontAttributes = FontAttributes.Bold, TextColor = target.Ready ? Theme.Text : Theme.Muted, VerticalOptions = LayoutOptions.Center };
-            var state = target.Ready ? Theme.Pill(Tr.T("Connected"), Theme.Primary, Theme.PrimarySoft) : Theme.Pill(Tr.T("Off"), Theme.Muted, Theme.Secondary);
-            var row = Theme.BoxOf(Theme.Line3(Theme.Tile(("ic_monitor.png", target.Ready ? Theme.PrimarySoft : Theme.Secondary), 34), name, state), 8);
+            var state = target.Ready ? Theme.Pill(Tr.T("Connected"), Theme.Primary, Theme.PrimarySoft) : Theme.Pill(Tr.T("Off"), Theme.Muted, Theme.SurfaceRaised);
+            var row = Theme.BoxOf(Theme.Line3(Theme.Tile(target.Ready ? ("i_monitor_m.png", Theme.PrimarySoft) : Theme.MonitorTile, 36), name, state), 10);
             if (target.Ready)
                 row.Tapped(() =>
                 {
@@ -671,23 +623,21 @@ public sealed class CourierPage : ContentPage
             foreach (var gone in rows.Keys.Where(transfer => !shown.Contains(transfer)).ToList())
                 rows.Remove(gone);
             if (shown.Count == 0)
-                transfers.Children.Add(Theme.Empty("ic_inbox.png", Tr.T("Nothing has been sent or received yet.")));
+                transfers.Children.Add(Theme.Empty("i_inbox_m.png", Tr.T("Nothing has been sent or received yet.")));
             foreach (var transfer in shown)
             {
                 var bar = Theme.Bar(0);
                 var detail = Theme.Faint("", 12);
-                var cancel = Theme.Plain("✕", () => { transfer.Cancel(); Refresh(); });
-                (cancel.Padding, cancel.BackgroundColor, cancel.TextColor, cancel.VerticalOptions) = (new Thickness(10, 4), Colors.Transparent, Theme.Muted, LayoutOptions.Center);
-                var pause = Theme.Plain("", () => { Courier.TogglePause(transfer); Refresh(); });
-                (pause.Padding, pause.BackgroundColor, pause.TextColor, pause.VerticalOptions) = (new Thickness(10, 4), Colors.Transparent, Theme.Primary, LayoutOptions.Center);
-                var times = Theme.Faint("", 12);
+                var cancel = Theme.IconButton("i_x_w.png", () => { transfer.Cancel(); Refresh(); }, Theme.SurfaceRaised, 34);
+                var pause = Theme.Link("", () => { Courier.TogglePause(transfer); Refresh(); });
+                                var times = Theme.Faint("", 12);
                 var name = new Label { Text = (transfer.Incoming ? "↓ " : "↑ ") + transfer.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
                 var head = Theme.Line3(Theme.Tile(Theme.TileFor(transfer.Name), 36), Theme.TwoLines(name, detail), cancel);
                 var foot = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
                 foot.Add(times.Margin(0, 0, 8, 0), 0);
                 foot.Add(pause, 1);
                 times.VerticalOptions = LayoutOptions.Center;
-                transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot } }, 12));
+                transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot } }, 14));
                 rows[transfer] = (bar, detail, cancel, pause, times);
             }
         }
@@ -726,14 +676,5 @@ public sealed class CourierPage : ContentPage
             unit++;
         }
         return unit == 0 ? $"{bytes} B" : $"{size:0.0} {units[unit]}";
-    }
-}
-
-internal static class ViewExtensions
-{
-    public static T Margin<T>(this T view, double left, double top, double right, double bottom) where T : View
-    {
-        view.Margin = new Thickness(left, top, right, bottom);
-        return view;
     }
 }

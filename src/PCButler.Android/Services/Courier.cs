@@ -124,7 +124,13 @@ public static class Courier
         return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, ready.Contains(peer))).ToList();
     }
 
-    public static PortalTransfer? Send(PortalNode node, PortalPeer target, IReadOnlyList<string> paths) => node.Send(target, paths);
+    public static PortalTransfer? Send(PortalNode node, PortalPeer target, IReadOnlyList<string> paths)
+    {
+        var transfer = node.Send(target, paths);
+        if (transfer is not null)
+            ActivityLog.Record("courier", "Files sent", $"{transfer.Name}  ·  {target.Name}");
+        return transfer;
+    }
 
     /// <summary>Files shared from another app: kept until a PC is chosen to send them to.</summary>
     public static IReadOnlyList<string> Waiting => waiting;
