@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.3
+
+- Fixed: PC Butler could close with "A new guard page for the stack cannot be created". Search worked out a file's full path one folder level at a time in a way that ran out of room on very deep folders; it now walks the folders in a loop, and a folder is never moved inside itself in the index.
+
 ## 1.22.2
 
 - Clipboard page: a new "Replace Windows' clipboard history" switch. On, Win+V opens PC Butler's list instead of Windows' own; off, Win+V goes back to Windows and PC Butler's list opens with Ctrl+Alt+V.
