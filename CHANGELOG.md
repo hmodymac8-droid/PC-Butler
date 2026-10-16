@@ -3,11 +3,17 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.22.1
+## 1.22.2
 
 - Clipboard page: a new "Replace Windows' clipboard history" switch. On, Win+V opens PC Butler's list instead of Windows' own; off, Win+V goes back to Windows and PC Butler's list opens with Ctrl+Alt+V.
 - When a shortcut is taken, the message now says by whom when it can: Win+V is named as Windows' clipboard history. For other programs Windows does not say which one, and the message says so.
 - Fixed: recording a shortcut with the Win key (such as Win+F12) on the Hotkeys tab or the Clipboard page now keeps the Win key.
+
+## 1.22.1
+
+- Fixed: the overlay could say "helper is off" while the helper was running, and frames per second stayed empty.
+- The tray panel shows only the background features now, each tile with its full name. Sort now, Pause and Report are gone from it: sorting is on the Sorter page, Pause in the window's status bar.
+- Sorter: a Review moved files button opens the list of what automatic sorting moved, to approve it or undo it.
 
 ## 1.22.0
 
@@ -29,6 +35,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Programs: AndroidDC installs, and updates, with Install: PC Butler downloads it from its own GitHub repository and sets it up, without opening its page.
 - Programs, Updates: an update is matched to the program of that very name, so its menu's Run, Open file location and Uninstall no longer pick another program whose name starts the same.
 - File Explorer's PC Butler menu comes in groups with a line between them: sorting and sharing, then the Vault, then Shred on its own.
+- The tray icon's panel has a tile for everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), lit when it is on. A click switches it on or off right there instead of opening the program, and the same switch in the window follows.
 - Install this version on every PC and phone that use Courier together.
 
 ## 1.21.6
