@@ -3,7 +3,7 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.21.5
+## 1.21.6
 
 - Courier: every file sent or received shows a notification in the corner of the screen with its progress bar, the time it has taken and the time left, and Pause (then Resume) and Cancel. It shows while the Courier widget is hidden or switched off, and says how the transfer ended for a few seconds.
 - PC Butler on the phone: Courier's notification shows the file on its way with its progress bar, time taken and time left, and has Pause or Resume, Cancel and Disconnect buttons. The Courier tab has a Pause button and the times under each transfer too. A pause on one side holds the transfer on both.
@@ -11,6 +11,10 @@ Each version is a `## heading` followed by `- ` lines.
 - Mark one saved PC as the favourite: Courier connects to it by itself when PC Butler starts.
 - A PC that shares (the host) chooses what happens when a new PC connects: it asks you to allow it, or it lets in the PCs that give the password you set. The phone asks too now, with Allow and Refuse, instead of letting every PC in.
 - A host can rename the PCs it let in.
+
+## 1.21.5
+
+- Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
 
 ## 1.21.4
 

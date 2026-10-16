@@ -16,7 +16,7 @@ public sealed record MenuAction(string Key, string Label, string Icon, bool ForF
 
 /// <summary>
 /// The "PC Butler" submenu in File Explorer's right-click menu, for files and folders: sort,
-/// lock in the Vault (files only), shred. Each item runs the program with
+/// lock in the Vault (files only), share with Courier, shred. Each item runs the program with
 /// "--act &lt;key&gt; &lt;path&gt;"; when several items are selected File Explorer starts it once per item,
 /// and the copies hand their paths to the first one (see App.RunMenuAction). It is written under
 /// HKEY_CURRENT_USER, so it needs no administrator rights and only affects this user. On
@@ -41,6 +41,7 @@ public static class ExplorerMenu
     [
         new("sort", "Sort into its category folder", "imageres.dll,-116", ForFolders: true),
         new("vault", "Lock in the Vault", "imageres.dll,-59", ForFolders: false),
+        new("courier", "Share with Courier", "imageres.dll,-171", ForFolders: true),
         new("shred", "Shred (deep delete, cannot be undone)", "imageres.dll,-5305", ForFolders: true),
     ];
 
