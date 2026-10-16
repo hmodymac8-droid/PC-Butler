@@ -8,6 +8,12 @@ Each version is a `## heading` followed by `- ` lines.
 - Fixed: the overlay could say "helper is off" while the helper was running, and frames per second stayed empty.
 - The tray panel shows only the background features now, each tile with its full name. Sort now, Pause and Report are gone from it: sorting is on the Sorter page, Pause in the window's status bar.
 - Sorter: a Review moved files button opens the list of what automatic sorting moved, to approve it or undo it.
+- Courier IDs are six digits now, like 205 937: the last six of the nine digits shown before, so the same PC keeps the same ID. A nine-digit ID typed or saved earlier still works.
+- On the PC, the ID box takes digits only, typed or pasted (Arabic digits too), with Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A and Backspace as usual. On the phone, the ID is typed on a keypad of the app's own, with Paste; a keyboard plugged in or the PC's keyboard in the emulator types into it too (digits, Backspace, Enter, Esc, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A).
+- The Vault is a file manager now, on the PC and on the phone: it takes whole folders with what is in them, and keeps folders of its own that you open, make, rename, move and delete, with files moved between them. On the PC, files and folders can be dragged onto a folder, or dropped in from File Explorer, and the search finds files in every folder. A folder taken out comes back as a normal folder with the same shape.
+- Vault: choose how long it stays open without use before it locks (1 to 60 minutes, or never), and whether it locks when PC Butler is closed (on the phone, when the app leaves the screen).
+- PC Butler on the phone: Add files… in the Vault works again (the vault no longer locks while Android's file picker is open), and a file opened from the vault is no longer removed while it is being shown.
+- PC Butler on the phone: in Arabic the app reads from right to left; Duplicates and Storage share one list of folders; the Recycle Bin says when the space is freed and empties itself after 30 days; Sorter's Undo also removes the folders it left empty; putting a big file back no longer freezes the screen; buttons with nothing to act on are hidden.
 
 ## 1.22.0
 

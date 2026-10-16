@@ -59,7 +59,7 @@ public sealed class PortalSettings
 /// <summary>A PC on the list, by its ID, under the name the user gave it.</summary>
 public sealed class PortalSaved
 {
-    /// <summary>Its ID, the nine digits.</summary>
+    /// <summary>Its ID, the six digits.</summary>
     [JsonPropertyName("number")] public string Number { get; set; } = "";
     [JsonPropertyName("name")] public string Name { get; set; } = "";
     /// <summary>Kept connected: looked for whenever Courier runs, and found again when the link drops, until Disconnect.</summary>

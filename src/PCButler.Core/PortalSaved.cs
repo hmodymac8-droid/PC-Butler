@@ -26,6 +26,10 @@ public static class PortalSavedList
     /// </summary>
     public static void Start(PortalSettings settings)
     {
+        // Saved before 1.22 with nine digits: the last six are the same PC's ID now.
+        foreach (var saved in settings.Saved)
+            saved.Number = Portal.NormalizeNumber(saved.Number);
+        settings.HostNumber = Portal.NormalizeNumber(settings.HostNumber);
         settings.Saved.RemoveAll(saved => !Portal.IsNumber(saved.Number));
         if (settings.Role.Length > 0)
         {
@@ -59,7 +63,7 @@ public static class PortalSavedList
         return name;
     }
 
-    /// <summary>Add a PC by its ID, to connect to later. False when the ID is not nine digits.</summary>
+    /// <summary>Add a PC by its ID, to connect to later. False when the ID is not six digits.</summary>
     public static bool Add(PortalSettings settings, string number, string name)
     {
         number = Portal.NormalizeNumber(number);

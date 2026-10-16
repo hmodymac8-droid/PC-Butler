@@ -14,7 +14,7 @@ namespace PCButler.Core;
 public enum PortalConnectProblem
 {
     None,
-    /// <summary>Not an ID (nine digits), or this PC's own.</summary>
+    /// <summary>Not an ID (six digits), or this PC's own.</summary>
     BadNumber,
     /// <summary>The public directory could not be reached from this network.</summary>
     NoDirectory,
@@ -74,8 +74,10 @@ public sealed partial class PortalNode
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private readonly Dictionary<string, Attempt> attempts = [];
 
-    /// <summary>This PC's ID: nine digits, like 418 205 937.</summary>
+    /// <summary>This PC's ID: six digits, like 205 937.</summary>
     public string Number => Portal.NumberOf(Id);
+    /// <summary>The nine-digit ID that versions up to 1.21 know this PC by.</summary>
+    public string LongNumber => Portal.LongNumberOf(Id);
     /// <summary>The port of the IPv4 socket used across the internet.</summary>
     public int LinkPort => link4?.Port ?? 0;
     public int LinkPort6 => link6?.Port ?? 0;
@@ -291,7 +293,9 @@ public sealed partial class PortalNode
                     {
                         // With a forwarded port, also announce that port itself: the router may show another one to the directory.
                         var forwarded = dht == dht4 && mapping is { } given && given.ExternalPort != link.Port ? given.ExternalPort : (int?)null;
+                        // Under the short ID, and the long one that versions up to 1.21 look for.
                         await dht.Lookup(Portal.DirectoryKey(Number, knock: false), announce: true, stopping.Token, forwarded);
+                        await dht.Lookup(Portal.DirectoryKey(LongNumber, knock: false), announce: true, stopping.Token, forwarded);
                         announced = now;
                         // Said again only when the address changes, not at every renewal.
                         Log.Seldom($"announced {dht == dht6} {dht.PublicAddress}", TimeSpan.FromDays(1),
@@ -300,7 +304,9 @@ public sealed partial class PortalNode
                     }
                     // A PC that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
                     // routers. Asked every few seconds, of the few computers that hold that key, so the other PC waits seconds, not minutes.
-                    foreach (var knocker in (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token)).Take(16))
+                    var knockers = (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token))
+                        .Concat(await dht.Poll(Portal.DirectoryKey(LongNumber, knock: true), stopping.Token)).Distinct();
+                    foreach (var knocker in knockers.Take(16))
                     {
                         var (at, times) = knocked.GetValueOrDefault(knocker);
                         if (link.IsOpen(knocker) || dht.IsMe(knocker) || times >= 4 && now - at < 30 * 60_000 || now - at < 45_000)
@@ -678,18 +684,29 @@ public sealed partial class PortalNode
 public static partial class Portal
 {
     /// <summary>
-    /// A PC's ID: nine digits made from its certificate's fingerprint, like "418205937". It
-    /// finds the PC; it does not prove who it is: pairing does that.
+    /// A PC's ID: six digits made from its certificate's fingerprint, like "205937". It finds
+    /// the PC; it does not prove who it is: pairing does that. They are the last six of the
+    /// nine-digit ID that versions up to 1.21 showed (<see cref="LongNumberOf"/>).
     /// </summary>
-    public static string NumberOf(string fingerprint) => (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000).ToString("D9");
+    public static string NumberOf(string fingerprint) => LongNumberOf(fingerprint)[3..];
 
-    /// <summary>An ID as typed: only its digits count, so spaces and dashes do no harm.</summary>
-    public static string NormalizeNumber(string typed) => new(typed.Where(char.IsAsciiDigit).ToArray());
+    /// <summary>The nine-digit ID of versions up to 1.21, like "418205937": still announced, so they can find this PC.</summary>
+    public static string LongNumberOf(string fingerprint) => (Convert.ToUInt64(fingerprint[..15], 16) % 1_000_000_000).ToString("D9");
 
-    public static bool IsNumber(string number) => number.Length == 9 && number.All(char.IsAsciiDigit);
+    /// <summary>
+    /// An ID as typed: only its digits count, so spaces and dashes do no harm. Nine digits (an
+    /// ID of 1.21 or older, typed or saved) become their last six, the same PC's ID now.
+    /// </summary>
+    public static string NormalizeNumber(string typed)
+    {
+        var digits = new string(typed.Where(char.IsAsciiDigit).ToArray());
+        return digits.Length == 9 ? digits[3..] : digits;
+    }
 
-    /// <summary>"418205937" as "418 205 937".</summary>
-    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]} {number[3..6]} {number[6..]}" : number;
+    public static bool IsNumber(string number) => number.Length == 6 && number.All(char.IsAsciiDigit);
+
+    /// <summary>"205937" as "205 937".</summary>
+    public static string ShowNumber(string number) => IsNumber(number) ? $"{number[..3]} {number[3..]}" : number;
 
     /// <summary>Where in the public directory a PC with this ID announces itself, or where others leave their address for it ("knock").</summary>
     public static byte[] DirectoryKey(string number, bool knock) =>

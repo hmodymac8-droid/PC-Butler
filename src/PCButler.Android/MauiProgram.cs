@@ -16,8 +16,21 @@ public static class MauiProgram
         // Entries sit in their own rounded boxes: no Android underline under the text.
         Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping("NoUnderline", (handler, _) =>
             handler.PlatformView.BackgroundTintList = global::Android.Content.Res.ColorStateList.ValueOf(global::Android.Graphics.Color.Transparent));
+        // A box for an ID or a number of days: the phone's keypad of digits only, without the minus, comma and dot of Keyboard.Numeric.
+        Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping(nameof(Entry.Keyboard), (handler, view) =>
+        {
+            if (view is DigitsEntry)
+                handler.PlatformView.InputType = global::Android.Text.InputTypes.ClassNumber;
+        });
         return builder.Build();
     }
+}
+
+/// <summary>A text box that takes digits only, with the phone's keypad of digits.</summary>
+public sealed class DigitsEntry : Entry
+{
+    // Numeric, so every other setting of the box treats it as a number; the mapping above then drops the minus, comma and dot.
+    public DigitsEntry() => Keyboard = Keyboard.Numeric;
 }
 
 /// <summary>The app: one window, the pages in tabs at the bottom.</summary>
@@ -35,17 +48,18 @@ public sealed class App : Application
         // The vault never stays open behind the user's back: going to the background locks it.
         // Android's own screens that the app opens itself (a picker, the viewer of a file) don't
         // count, unless the user stays away from the app for long.
+        // Whether it locks then at all is the user's choice (the Vault page's "Lock when the app is closed").
         window.Stopped += (_, _) =>
         {
             if (leaving)
                 awaySince = DateTime.UtcNow;
-            else
+            else if (ConfigStore.Load().Vault.LockOnClose)
                 Pages.VaultPage.Current?.Lock();
             leaving = false;
         };
         window.Activated += (_, _) =>
         {
-            if (awaySince is { } since && DateTime.UtcNow - since > TimeSpan.FromMinutes(10))
+            if (awaySince is { } since && DateTime.UtcNow - since > TimeSpan.FromMinutes(10) && ConfigStore.Load().Vault.LockOnClose)
                 Pages.VaultPage.Current?.Lock();
             (leaving, awaySince) = (false, null);
         };
@@ -54,6 +68,11 @@ public sealed class App : Application
 
     private static bool leaving;
     private static DateTime? awaySince;
+
+    /// <summary>The last time the user touched the screen or pressed a key: the vault locks after a while without.</summary>
+    public static DateTime LastUsed { get; private set; } = DateTime.UtcNow;
+
+    public static void Used() => LastUsed = DateTime.UtcNow;
 
     /// <summary>The app is about to open one of Android's own screens (a picker, a viewer): that is no reason to lock the vault.</summary>
     public static void LeavingOnPurpose() => leaving = true;

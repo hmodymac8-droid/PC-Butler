@@ -14,7 +14,7 @@ namespace PCButler.Android.Pages;
 public sealed class CourierPage : ContentPage
 {
     private readonly VerticalStackLayout running = new() { Spacing = 0 };
-    private readonly Entry connectId = new() { Placeholder = "000 000 000", FontSize = 24, FontFamily = "monospace", Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
+    private readonly IdPad connectId = new();
     // The status card: a round badge (a pulsing dot while waiting, a monitor once connected), two lines, a pill.
     private readonly Border statusBadge = new() { WidthRequest = 42, HeightRequest = 42, StrokeThickness = 0, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), VerticalOptions = LayoutOptions.Center };
     private readonly BoxView statusDot = new() { WidthRequest = 11, HeightRequest = 11, CornerRadius = 6, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
@@ -50,7 +50,7 @@ public sealed class CourierPage : ContentPage
     private readonly Label passwordNote = Theme.Faint("", 12.5);
     private bool pickingPassword;
     private string asksShown = "", targetsShown = "", transfersShown = "\0", savedShown = "\0";
-    private bool pulsing;
+    private bool pulsing, onScreen;
 
     public CourierPage()
     {
@@ -77,6 +77,12 @@ public sealed class CourierPage : ContentPage
             },
         }));
         // --- connecting to a PC by its ID: it joins the list and stays connected ---
+        var connectButton = Theme.Accent(Tr.T("Connect"), () => _ = ConnectTyped());
+        connectButton.IsEnabled = false;
+        connectId.Changed += () => connectButton.IsEnabled = Portal.IsNumber(connectId.Digits);
+        connectId.Submitted += () => _ = ConnectTyped();
+        // A real keyboard types into the pad while this page is on the screen.
+        KeyInput.Handler = key => onScreen && connectId.Key(key);
         running.Children.Add(Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 12,
@@ -84,7 +90,7 @@ public sealed class CourierPage : ContentPage
             {
                 Theme.Line3(Theme.Tile(("ic_monitor.png", Theme.PrimarySoft), 40), Theme.Title(Tr.T("Connect to a PC"), 19).Centered()),
                 Theme.Faint(Tr.T("Type the ID the PC shows in its Courier. It joins your list and stays connected.")),
-                Theme.BoxOf(connectId, 4), Theme.Accent(Tr.T("Connect"), () => _ = ConnectTyped()),
+                connectId, connectButton,
             },
         }));
         running.Children.Add(asks);
@@ -165,9 +171,16 @@ public sealed class CourierPage : ContentPage
         Courier.Changed += () => MainThread.BeginInvokeOnMainThread(Refresh);
     }
 
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        onScreen = false;
+    }
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        onScreen = true;
         await Access.AskForNotifications();
         var settings = Courier.Settings;
         // Once switched on (before 1.22: once a role was chosen), it starts with the app; files shared from another app need it running, whatever the setting says.
@@ -181,14 +194,14 @@ public sealed class CourierPage : ContentPage
 
     private async Task ConnectTyped()
     {
-        var number = Portal.NormalizeNumber(connectId.Text ?? "");
+        var number = Portal.NormalizeNumber(connectId.Digits);
         if (!Portal.IsNumber(number) || number == Courier.OwnNumber)
         {
             await DisplayAlert(Tr.T("Courier"), Tr.T(number == Courier.OwnNumber ? "That is this phone's own ID. Type the ID the PC shows in its Courier."
-                                                                                  : "Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."), Tr.T("OK"));
+                                                                                  : "Type the ID exactly as the other PC shows it: six digits, like 205 937."), Tr.T("OK"));
             return;
         }
-        connectId.Text = "";
+        connectId.Clear();
         await Connect(number);
     }
 
