@@ -15,7 +15,7 @@ public sealed class SorterPage : AppPage
     private readonly Label summarySize = Theme.Faint("", 14);
     private readonly Label detail = Theme.Faint("");
     private readonly VerticalStackLayout groups = new() { Spacing = 10 };
-    private readonly Entry age = new() { Keyboard = Keyboard.Numeric, WidthRequest = 80, HorizontalTextAlignment = TextAlignment.Center };
+    private readonly Entry age = new DigitsEntry { WidthRequest = 80, HorizontalTextAlignment = TextAlignment.Center };
     private readonly Label lastRun = Theme.Faint("");
     private readonly Button undo;
     private readonly Button sort;

@@ -16,8 +16,21 @@ public static class MauiProgram
         // Entries sit in their own rounded boxes: no Android underline under the text.
         Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping("NoUnderline", (handler, _) =>
             handler.PlatformView.BackgroundTintList = global::Android.Content.Res.ColorStateList.ValueOf(global::Android.Graphics.Color.Transparent));
+        // A box for an ID or a number of days: the phone's keypad of digits only, without the minus, comma and dot of Keyboard.Numeric.
+        Microsoft.Maui.Handlers.EntryHandler.Mapper.AppendToMapping(nameof(Entry.Keyboard), (handler, view) =>
+        {
+            if (view is DigitsEntry)
+                handler.PlatformView.InputType = global::Android.Text.InputTypes.ClassNumber;
+        });
         return builder.Build();
     }
+}
+
+/// <summary>A text box that takes digits only, with the phone's keypad of digits.</summary>
+public sealed class DigitsEntry : Entry
+{
+    // Numeric, so every other setting of the box treats it as a number; the mapping above then drops the minus, comma and dot.
+    public DigitsEntry() => Keyboard = Keyboard.Numeric;
 }
 
 /// <summary>The app: one window, the pages in tabs at the bottom.</summary>

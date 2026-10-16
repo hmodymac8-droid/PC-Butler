@@ -747,11 +747,15 @@ Section("courier IDs");
           && Bencode.Decode(Encoding.ASCII.GetBytes(new string('l', 50))) is null && Bencode.Decode([]) is null, "broken messages from strangers are refused, not crashed on");
     var someId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a certificate")));
     var shortId = Portal.NumberOf(someId);
-    Check(shortId.Length == 9 && shortId.All(char.IsAsciiDigit) && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
-          && Portal.NumberOf(new string('0', 64)) == "000000000" && Portal.DirectoryKey(shortId, false).Length == 20
-          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is nine digits made from its certificate ({shortId})");
-    Check(Portal.ShowNumber("418205937") == "418 205 937" && Portal.NormalizeNumber(" 418-205 937 ") == "418205937" && Portal.NormalizeNumber("K7M-2QX") == "72"
-          && !Portal.IsNumber("41820593") && !Portal.IsNumber("4182059370") && !Portal.IsNumber("K7M2QX123") && Portal.NormalizeNumber("") == "",
+    var longId = Portal.LongNumberOf(someId);
+    Check(shortId.Length == 6 && shortId.All(char.IsAsciiDigit) && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
+          && Portal.NumberOf(new string('0', 64)) == "000000" && Portal.DirectoryKey(shortId, false).Length == 20
+          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is six digits made from its certificate ({shortId})");
+    Check(longId.Length == 9 && longId.EndsWith(shortId) && Portal.IsNumber(longId) && Portal.HasNumber(someId, shortId) && Portal.HasNumber(someId, longId)
+          && !Portal.HasNumber(someId, "000000") && !Portal.HasNumber(someId, "000" + shortId), $"the nine-digit ID of older versions still finds the same PC ({longId})");
+    Check(Portal.ShowNumber("205937") == "205 937" && Portal.ShowNumber("418205937") == "418 205 937" && Portal.NormalizeNumber(" 418-205 937 ") == "418205937"
+          && Portal.NormalizeNumber("K7M-2QX") == "72" && Portal.IsNumber("205937")
+          && !Portal.IsNumber("20593") && !Portal.IsNumber("41820593") && !Portal.IsNumber("4182059370") && !Portal.IsNumber("K7M2QX123") && Portal.NormalizeNumber("") == "",
           "an ID is digits only, read however it is typed");
 
     // ------------------------------------------------------------ tune-up: lasting changes that can all be put back
