@@ -299,37 +299,123 @@ public partial class App : Application
                 window?.ShowPage("portal");
                 break;
             case "overlay":
-                var config = ConfigStore.Load();
-                config.Overlay.Enabled = !config.Overlay.Enabled;
-                ConfigStore.Save(config);
-                window?.UpdateConfig(saved => saved.Overlay.Enabled = config.Overlay.Enabled);
-                Overlay.Apply(config);
-                window?.Benchmark.ShowEnabled();
-                Notify(config.Overlay.Enabled ? "The performance overlay is on." : "The performance overlay is off.", []);
+                var on = !ConfigStore.Load().Overlay.Enabled;
+                SetFeature("overlay", on);
+                Notify(on ? "The performance overlay is on." : "The performance overlay is off.", []);
                 break;
             case "boost":
-                // Boost the program that is in front; pressed again, everything goes back.
-                var front = GameDetector.Foreground();
-                var settings = ConfigStore.Load().Boost;
-                Task.Run(() =>
-                {
-                    if (BoostMode.Active is not null)
-                    {
-                        BoostMode.Stop();
-                        Dispatcher.BeginInvoke(() => Notify("Boost is off: everything is back as it was.", []));
-                        return;
-                    }
-                    var state = BoostMode.Start(settings, front is null || front.Pid == Environment.ProcessId ? 0 : front.Pid);
-                    Dispatcher.BeginInvoke(() =>
-                    {
-                        if (state.Favoured.Length > 0)
-                            Notify("Boost is on for {0}.", [state.Favoured]);
-                        else
-                            Notify("Boost is on.", []);
-                    });
-                });
+                ToggleBoost();
                 break;
         }
+    }
+
+    /// <summary>Boost the program that is in front; done again, everything goes back.</summary>
+    private void ToggleBoost()
+    {
+        var front = GameDetector.Foreground();
+        var settings = ConfigStore.Load().Boost;
+        Task.Run(() =>
+        {
+            if (BoostMode.Active is not null)
+            {
+                BoostMode.Stop();
+                Dispatcher.BeginInvoke(() => Notify("Boost is off: everything is back as it was.", []));
+                return;
+            }
+            var state = BoostMode.Start(settings, front is null || front.Pid == Environment.ProcessId ? 0 : front.Pid);
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (state.Favoured.Length > 0)
+                    Notify("Boost is on for {0}.", [state.Favoured]);
+                else
+                    Notify("Boost is on.", []);
+            });
+        });
+    }
+
+    // --- the background features, as the tray panel lists them ---
+
+    /// <summary>Something PC Butler does in the background, and whether it is on now.</summary>
+    public sealed record Feature(string Key, string Name, string Glyph, bool On);
+
+    /// <summary>Every background feature, each read from where it really lives (the settings, Windows, or the running part).</summary>
+    public IReadOnlyList<Feature> Features()
+    {
+        var config = ConfigStore.Load();
+        return
+        [
+            new("sort", "Automatic sorting", "", config.AutoSortOn),
+            new("clipboard", "Clipboard history", "", config.Clipboard.Enabled),
+            new("overlay", "Performance overlay", "", config.Overlay.Enabled),
+            new("courier", "Courier", "", Courier.Node is not null),
+            new("boost", "Boost", "", BoostMode.Active is not null),
+            new("dropzone", "Drop zone", "", config.DropZone),
+            new("alerts", "Usage alerts", "", config.UsageAlerts),
+            new("autostart", "Start with Windows", "", Autostart.IsEnabled()),
+        ];
+    }
+
+    /// <summary>Switch a background feature on or off, the same way its own switch in the window does, and show it there.</summary>
+    public async void SetFeature(string key, bool on)
+    {
+        if (exiting)
+            return;
+        switch (key)
+        {
+            case "sort" when on:
+                // Turning it on moves files, so the window asks first, as its own switch does.
+                ShowMainWindow();
+                window?.ShowSwitches();
+                window?.SetAutoSort(true);
+                break;
+            case "sort":
+                ChangeConfig(config => config.AutoSort = false);
+                break;
+            case "clipboard":
+                ChangeConfig(config => config.Clipboard.Enabled = on);
+                if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
+                    Ui.Warn("Clipboard", clipboardError);
+                break;
+            case "overlay":
+                ChangeConfig(config => config.Overlay.Enabled = on);
+                Overlay.Apply(ConfigStore.Load());
+                break;
+            case "courier" when on:
+                // Not set up yet (no role, no host): its page is where that is done.
+                if (await Courier.Start() is not null)
+                    ShowPage("portal");
+                break;
+            case "courier":
+                await Courier.Stop();
+                break;
+            case "boost":
+                if (on != (BoostMode.Active is not null))
+                    ToggleBoost();
+                break;
+            case "dropzone":
+                SetDropZone(on);
+                break;
+            case "alerts":
+                ChangeConfig(config => config.UsageAlerts = on);
+                break;
+            case "autostart":
+                PCButler.MainWindow.SetAutostart(on);
+                break;
+        }
+        window?.ShowSwitches();
+    }
+
+    /// <summary>Change the saved settings, and the window's copy of them when it is open.</summary>
+    private void ChangeConfig(Action<Config> change)
+    {
+        if (window is not null)
+        {
+            window.UpdateConfig(change);
+            return;
+        }
+        var config = ConfigStore.Load();
+        change(config);
+        ConfigStore.Save(config);
     }
 
     /// <summary>Show or hide the drop zone and remember the choice.</summary>
@@ -340,6 +426,7 @@ public partial class App : Application
         ConfigStore.Save(config);
         window?.UpdateConfig(saved => saved.DropZone = show);
         ShowDropZone(show);
+        window?.ShowSwitches();
     }
 
     /// <summary>Once after each update, when the window first opens: the list of what changed.</summary>

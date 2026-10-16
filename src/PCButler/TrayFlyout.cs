@@ -16,7 +16,8 @@ namespace PCButler;
 /// <summary>
 /// The panel a click on the tray icon opens, like Windows' quick settings: what PC Butler
 /// is doing, the processor and memory, a row of tiles for the things used most (each
-/// showing whether it is on), the update when there is one, and Open and Exit. It closes
+/// showing whether it is on), every background feature with a tick that switches it on or off,
+/// the update when there is one, and Open and Exit. It closes
 /// when anything else is clicked. A double-click on the icon opens the main window instead.
 /// </summary>
 public sealed class TrayFlyout : Window
@@ -28,6 +29,8 @@ public sealed class TrayFlyout : Window
     private readonly Rectangle cpuBar = new() { Height = 3, HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5 };
     private readonly Rectangle memoryBar = new() { Height = 3, HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5 };
     private readonly UniformGrid tiles = new() { Columns = 3 };
+    private readonly StackPanel features = new() { Margin = new Thickness(0, 10, 0, 0) };
+    private readonly Dictionary<string, (TextBlock Tick, TextBlock Name)> featureRows = [];
     private readonly Border update;
     private readonly TextBlock updateText = Ui.Text("", 12.5, "Primary", weight: FontWeights.SemiBold);
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -94,7 +97,7 @@ public sealed class TrayFlyout : Window
             Background = Ui.Paint("Card"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14),
             Padding = new Thickness(14), Margin = new Thickness(8),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.4 },
-            Child = new StackPanel { Children = { head, readings, tiles, update, bottom } },
+            Child = new StackPanel { Children = { head, readings, tiles, features, update, bottom } },
         };
 
         Deactivated += (_, _) => CloseOnce();
@@ -108,6 +111,36 @@ public sealed class TrayFlyout : Window
         refresh.Start();
         Loaded += (_, _) => Place();
         Fill();
+    }
+
+    /// <summary>One background feature: a tick when it is on, its icon and name. A click switches it and keeps the panel open.</summary>
+    private Border FeatureRow(App.Feature feature)
+    {
+        var tick = Ui.Glyph("", 12, "Primary");
+        tick.Width = 18;
+        tick.VerticalAlignment = VerticalAlignment.Center;
+        var mark = Ui.Glyph(feature.Glyph, 14);
+        mark.VerticalAlignment = VerticalAlignment.Center;
+        var name = Ui.Text(Ui.T(feature.Name), 12.5);
+        name.VerticalAlignment = VerticalAlignment.Center;
+        var row = new Border
+        {
+            Background = Brushes.Transparent, CornerRadius = new CornerRadius(8), Padding = new Thickness(8, 6, 8, 6), Cursor = Cursors.Hand,
+            Child = Ui.Row(8, tick, mark, name), ToolTip = Ui.T("Click to switch it on or off"),
+        };
+        row.MouseEnter += (_, _) => row.Background = Ui.Paint("Secondary");
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        row.MouseLeftButtonUp += (_, _) =>
+        {
+            // Read again: it may have changed since the panel last looked.
+            if (App.Current.Features().FirstOrDefault(each => each.Key == feature.Key) is not { } now)
+                return;
+            App.Current.SetFeature(now.Key, !now.On);
+            if (!closing)
+                Fill();
+        };
+        featureRows[feature.Key] = (tick, name);
+        return row;
     }
 
     private static Border Reading(string name, TextBlock value, Rectangle bar)
@@ -177,6 +210,20 @@ public sealed class TrayFlyout : Window
         tiles.Children.Add(Tile("\uE8B7", Ui.T("Drop zone"), config.DropZone, true, () => App.Current.SetDropZone(!ConfigStore.Load().DropZone), stayOpen: true));
         tiles.Children.Add(Tile("\uE8AB", connected > 0 ? Ui.T("Courier · {0}", connected) : Ui.T("Courier"), connected > 0, true,
                                 () => App.Current.ShowPage("portal")));
+
+        // The background features, each ticked when it is on.
+        foreach (var feature in App.Current.Features())
+        {
+            if (!featureRows.ContainsKey(feature.Key))
+            {
+                if (features.Children.Count == 0)
+                    features.Children.Add(Ui.Muted(Ui.T("Running in the background"), 11.5).Margin(8, 0, 0, 4));
+                features.Children.Add(FeatureRow(feature));
+            }
+            var (tick, name) = featureRows[feature.Key];
+            tick.Visibility = feature.On ? Visibility.Visible : Visibility.Hidden;
+            name.Foreground = Ui.Paint(feature.On ? "Text" : "Muted");
+        }
     }
 
     private static void SetBar(Rectangle bar, int percent)
