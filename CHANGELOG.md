@@ -23,6 +23,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Programs: AndroidDC installs, and updates, with Install: PC Butler downloads it from its own GitHub repository and sets it up, without opening its page.
 - Programs, Updates: an update is matched to the program of that very name, so its menu's Run, Open file location and Uninstall no longer pick another program whose name starts the same.
 - File Explorer's PC Butler menu comes in groups with a line between them: sorting and sharing, then the Vault, then Shred on its own.
+- The tray icon's panel has a tile for everything PC Butler runs in the background (automatic sorting, clipboard history, the performance overlay, Courier, Boost, the drop zone, usage alerts, starting with Windows), lit when it is on. A click switches it on or off right there instead of opening the program, and the same switch in the window follows.
 - Install this version on every PC and phone that use Courier together.
 
 ## 1.21.6
