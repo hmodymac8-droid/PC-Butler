@@ -20,6 +20,7 @@ public sealed class ClipboardManager : IDisposable
 {
     private const int WM_CLIPBOARDUPDATE = 0x031D, WM_HOTKEY = 0x0312, HotkeyId = 0xB070;
     private readonly HwndSource source;
+    private readonly KeyHook hook = new();
     private ClipboardSettings settings = new();
     private bool listening, hotkey;
     private DateTime ignoreUntil; // our own copy, when an item is pasted again
@@ -49,11 +50,15 @@ public sealed class ClipboardManager : IDisposable
         if (hotkey)
             UnregisterHotKey(source.Handle, HotkeyId);
         hotkey = false;
+        hook.Clear();
         if (!wanted.Enabled || wanted.Shortcut.Length == 0)
             return null;
         if (!Shortcut.TryParse(wanted.Shortcut, out var modifiers, out var key))
             return Ui.T("“{0}” is not a shortcut PC Butler can use.", wanted.Shortcut);
         hotkey = RegisterHotKey(source.Handle, HotkeyId, (uint)modifiers | MOD_NOREPEAT, (uint)KeyInterop.VirtualKeyFromKey(key));
+        // Windows keeps Win+V (its own clipboard history) and other Win shortcuts for itself: those are taken over with a keyboard hook.
+        if (!hotkey && modifiers.HasFlag(ModifierKeys.Windows) && hook.Set(modifiers, key, ShowPicker))
+            return null;
         return hotkey ? null : Ui.T("{0} is already used by another program. Choose another shortcut.", wanted.Shortcut);
     }
 
@@ -82,13 +87,33 @@ public sealed class ClipboardManager : IDisposable
         var target = GetForegroundWindow();
         if (picker is { IsVisible: true })
         {
-            picker.Activate();
+            BringToFront(picker);
             return;
         }
         picker = new ClipboardPicker(this, target);
         picker.Closed += (_, _) => picker = null;
         picker.Show();
-        picker.Activate();
+        BringToFront(picker);
+    }
+
+    /// <summary>
+    /// Opened by the keyboard hook (Win+V), Windows does not let PC Butler take the front from the
+    /// program there: sharing that program's input for a moment lets the list come forward and take the keys.
+    /// </summary>
+    private static void BringToFront(Window window)
+    {
+        window.Activate();
+        var handle = new WindowInteropHelper(window).Handle;
+        var front = GetForegroundWindow();
+        if (handle == IntPtr.Zero || front == handle)
+            return;
+        var theirs = GetWindowThreadProcessId(front, IntPtr.Zero);
+        var ours = GetCurrentThreadId();
+        var attached = theirs != 0 && theirs != ours && AttachThreadInput(ours, theirs, true);
+        SetForegroundWindow(handle);
+        window.Activate();
+        if (attached)
+            AttachThreadInput(ours, theirs, false);
     }
 
     // --- recording ---
@@ -224,6 +249,7 @@ public sealed class ClipboardManager : IDisposable
     {
         if (hotkey)
             UnregisterHotKey(source.Handle, HotkeyId);
+        hook.Dispose();
         if (listening)
             RemoveClipboardFormatListener(source.Handle);
         source.Dispose();
@@ -279,12 +305,15 @@ public sealed class ClipboardManager : IDisposable
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr process);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint to, bool on);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterClipboardFormat(string name);
     [DllImport("user32.dll")] private static extern bool IsClipboardFormatAvailable(uint format);
 }
 
-/// <summary>Shortcuts as text ("Ctrl+Alt+V") and back.</summary>
+/// <summary>Shortcuts as text ("Win+V", "Ctrl+Alt+V") and back.</summary>
 public static class Shortcut
 {
     public static bool TryParse(string text, out ModifierKeys modifiers, out Key key)
