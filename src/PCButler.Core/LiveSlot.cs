@@ -18,7 +18,9 @@ namespace PCButler.Core;
 public static class LiveSlot
 {
     private const int Size = 64 * 1024;
-    private static readonly ConcurrentDictionary<string, MemoryMappedViewAccessor> Open = new();
+    // The map is kept with its view: once its last handle is closed (the map collected), Windows forgets the name,
+    // and the helper would make a new slot of its own that this program can't open.
+    private static readonly ConcurrentDictionary<string, (MemoryMappedFile Map, MemoryMappedViewAccessor View)> Open = new();
 
     /// <summary>The main program's process id: this process, or in the helper the program that started it.</summary>
     public static int Owner { get; set; } = Environment.ProcessId;
@@ -76,14 +78,18 @@ public static class LiveSlot
 
     private static MemoryMappedViewAccessor? Get(string name)
     {
-        if (Open.TryGetValue(name, out var view))
-            return view;
+        if (Open.TryGetValue(name, out var slot))
+            return slot.View;
         try
         {
             // Kept open for the life of the program: shared memory lasts while someone holds it.
             var map = MemoryMappedFile.CreateOrOpen(name, Size);
-            view = map.CreateViewAccessor();
-            return Open.TryAdd(name, view) ? view : Open[name];
+            slot = (map, map.CreateViewAccessor());
+            if (Open.TryAdd(name, slot))
+                return slot.View;
+            slot.View.Dispose();
+            map.Dispose();
+            return Open[name].View;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
         {
