@@ -264,6 +264,14 @@ public static class Folders
         return $"{stem} ({counter}){suffix}";
     }
 
+    /// <summary>A folder picked with Android's folder picker, for this once (not kept, unlike <see cref="Add"/>). Null when none was chosen.</summary>
+    public static async Task<AUri?> PickTree()
+    {
+        var intent = new Intent(Intent.ActionOpenDocumentTree);
+        intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission);
+        return (await Results.Start(intent))?.Data;
+    }
+
     /// <summary>Files picked with Android's own file picker, with their addresses (so the originals can be removed after).</summary>
     public static async Task<List<AUri>> PickFiles()
     {

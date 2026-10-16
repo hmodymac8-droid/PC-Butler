@@ -59,7 +59,7 @@ public sealed class PortalPage : Page
 
         // --- this PC: its ID, and connecting to another one ---
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
-        connectBox = Ui.Field(width: 170, hint: "418 205 937");
+        connectBox = Ui.DigitsOnly(Ui.Field(width: 170, hint: "205937"));
         connectBox.FlowDirection = FlowDirection.LeftToRight;
         connectBox.FontSize = 16;
         connectBox.KeyDown += (_, e) =>
@@ -228,7 +228,7 @@ public sealed class PortalPage : Page
         if (!Portal.IsNumber(number) || number == Courier.OwnNumber)
         {
             Ui.Info("Courier", Ui.T(number == Courier.OwnNumber ? "That is this PC's own ID. Type the ID the other PC shows in its Courier."
-                                                               : "Type the ID exactly as the other PC shows it: nine digits, like 418 205 937."));
+                                                               : "Type the ID exactly as the other PC shows it: six digits, like 205 937."));
             connectBox.Focus();
             return;
         }

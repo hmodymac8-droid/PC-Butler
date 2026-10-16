@@ -823,11 +823,15 @@ Section("courier IDs");
           && Bencode.Decode(Encoding.ASCII.GetBytes(new string('l', 50))) is null && Bencode.Decode([]) is null, "broken messages from strangers are refused, not crashed on");
     var someId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes("a certificate")));
     var shortId = Portal.NumberOf(someId);
-    Check(shortId.Length == 9 && shortId.All(char.IsAsciiDigit) && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
-          && Portal.NumberOf(new string('0', 64)) == "000000000" && Portal.DirectoryKey(shortId, false).Length == 20
-          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is nine digits made from its certificate ({shortId})");
-    Check(Portal.ShowNumber("418205937") == "418 205 937" && Portal.NormalizeNumber(" 418-205 937 ") == "418205937" && Portal.NormalizeNumber("K7M-2QX") == "72"
-          && !Portal.IsNumber("41820593") && !Portal.IsNumber("4182059370") && !Portal.IsNumber("K7M2QX123") && Portal.NormalizeNumber("") == "",
+    var longId = Portal.LongNumberOf(someId);
+    Check(shortId.Length == 6 && shortId.All(char.IsAsciiDigit) && Portal.IsNumber(shortId) && shortId == Portal.NumberOf(someId.ToLowerInvariant())
+          && Portal.NumberOf(new string('0', 64)) == "000000" && Portal.DirectoryKey(shortId, false).Length == 20
+          && !Portal.DirectoryKey(shortId, false).SequenceEqual(Portal.DirectoryKey(shortId, true)), $"a PC's ID is six digits made from its certificate ({shortId})");
+    Check(longId.Length == 9 && longId.EndsWith(shortId) && Portal.NormalizeNumber(longId) == shortId,
+          $"the nine-digit ID of older versions, typed or saved, becomes the same PC's six ({longId})");
+    Check(Portal.ShowNumber("205937") == "205 937" && Portal.NormalizeNumber(" 205-937 ") == "205937" && Portal.NormalizeNumber(" 418-205 937 ") == "205937"
+          && Portal.NormalizeNumber("K7M-2QX") == "72" && Portal.IsNumber("205937")
+          && !Portal.IsNumber("20593") && !Portal.IsNumber("418205937") && !Portal.IsNumber("2059370") && !Portal.IsNumber("K7M2QX") && Portal.NormalizeNumber("") == "",
           "an ID is digits only, read however it is typed");
 
     // ------------------------------------------------------------ tune-up: lasting changes that can all be put back
@@ -1076,6 +1080,40 @@ File.WriteAllBytes(blob, bytes);
 var refused = vault.MoveOut(vault.Items.ToList(), outFolder);
 Check(refused.Count == 0 && refused.Errors.Count == 1 && !File.Exists(Path.Combine(outFolder, "tamper.txt")), "a changed vault file is refused");
 Check(vault.Delete(vault.Items.ToList()).Count == 1 && vault.Items.Count == 0, "delete from the vault");
+// Folders inside the vault: whole folders in, made, renamed, moved, and out again with their shape.
+var vaultAlbum = Path.Combine(temp, "Album");
+Make(Path.Combine(vaultAlbum, "2024"), "beach.jpg", "sand");
+Make(Path.Combine(vaultAlbum, "2024", "June"), "cake.jpg", "cream");
+Make(vaultAlbum, "cover.jpg", "front");
+Directory.CreateDirectory(Path.Combine(vaultAlbum, "Empty"));
+var vaultAlbumIn = vault.AddFolders([vaultAlbum]);
+Check(vaultAlbumIn.Count == 3 && vaultAlbumIn.Errors.Count == 0 && !Directory.Exists(vaultAlbum)
+      && vault.FoldersIn("").SequenceEqual(["Album"]) && vault.FoldersIn("Album").SequenceEqual(["Album/2024", "Album/Empty"])
+      && vault.FilesIn("Album/2024/June").Single().Name == "cake.jpg" && vault.FilesIn("Album").Single().Name == "cover.jpg",
+      "a whole folder goes in with its sub-folders, empty ones too: " + string.Join("; ", vaultAlbumIn.Errors));
+var notes = vault.CreateFolder("", "Notes");
+vault.Add([Make(temp, "todo.txt", "milk")], dir: notes);
+var badName = false;
+try { vault.CreateFolder("", "a/b"); } catch (VaultException) { badName = true; }
+Check(badName && vault.CreateFolder("", "Notes") == "Notes (2)" && vault.FilesIn("Notes").Single().Dir == "Notes", "folders are made, names checked and kept apart");
+vault.Move(vault.FilesIn("Notes"), "Album/Empty");
+var renamedAlbum = vault.RenameFolder("Album", "Pictures");
+var movedYear = vault.MoveFolder("Pictures/2024", "");
+var intoItself = false;
+try { vault.MoveFolder("2024", "2024/June"); } catch (VaultException) { intoItself = true; }
+Check(renamedAlbum == "Pictures" && movedYear == "2024" && intoItself && vault.FilesIn("Pictures/Empty").Single().Name == "todo.txt"
+      && vault.FilesIn("2024/June").Single().Name == "cake.jpg" && !vault.Folders().Any(folder => folder.StartsWith("Album")),
+      "files and folders move and are renamed, but never into themselves");
+vault.Rename(vault.FilesIn("Pictures").Single(), "front.jpg");
+vault = Vault.Unlock("new password");
+Check(vault.FilesIn("Pictures").Single().Name == "front.jpg" && vault.Folders().Contains("Notes (2)"), "the folders, empty ones too, are kept when the vault locks");
+var folderOut = vault.MoveOutFolder("2024", outFolder);
+Check(folderOut.Count == 2 && File.ReadAllText(Path.Combine(outFolder, "2024", "June", "cake.jpg")) == "cream"
+      && File.ReadAllText(Path.Combine(outFolder, "2024", "beach.jpg")) == "sand" && !vault.Folders().Contains("2024"), "a vault folder comes out as a normal folder");
+var folderGone = vault.DeleteFolder("Pictures");
+Check(folderGone.Count == 2 && vault.Items.Count == 0 && vault.Folders().SequenceEqual(["Notes", "Notes (2)"]), "deleting a folder deletes what is in it");
+vault.DeleteFolder("Notes");
+vault.DeleteFolder("Notes (2)");
 
 // A vault made by Downloads Sorter (the Python program) must open unchanged.
 if (args.Length >= 2)
