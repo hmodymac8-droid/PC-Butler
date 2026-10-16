@@ -44,6 +44,9 @@ public partial class App : Application
     public OverlayController Overlay { get; } = new();
     /// <summary>The shortcuts of the Settings page's Hotkeys tab.</summary>
     public Hotkeys Keys { get; private set; } = null!;
+    /// <summary>File search: the index of the drives, kept up to date while the program runs.</summary>
+    public PCButler.Core.Search.SearchEngine Search { get; } = new();
+    private SearchPopup? searchPopup;
     private string trayState = "";
     private bool firstStart;
     private DropZoneWindow? dropZone;
@@ -153,6 +156,7 @@ public partial class App : Application
         foreach (var (action, problem) in Keys.Apply(ConfigStore.Load().Hotkeys))
             Log.Warning($"Hotkey for {action}: {problem}");
         Overlay.Apply(ConfigStore.Load());
+        Search.Start(ConfigStore.Load().Search);
         StartBackground();
         StartCourier();
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
@@ -288,6 +292,12 @@ public partial class App : Application
             case "open":
                 ShowMainWindow();
                 break;
+            case "search":
+                ShowSearchPopup();
+                break;
+            case "searchpage":
+                ShowPage("search");
+                break;
             case "sort":
                 Background.RequestSort();
                 break;
@@ -330,6 +340,22 @@ public partial class App : Application
                 });
                 break;
         }
+    }
+
+    /// <summary>The search box over whatever program is in front; pressed again while it is open, it comes back to the front.</summary>
+    public void ShowSearchPopup()
+    {
+        if (exiting)
+            return;
+        if (searchPopup is { IsVisible: true })
+        {
+            SearchPopup.BringToFront(searchPopup);
+            return;
+        }
+        searchPopup = new SearchPopup();
+        searchPopup.Closed += (_, _) => searchPopup = null;
+        searchPopup.Show();
+        SearchPopup.BringToFront(searchPopup);
     }
 
     /// <summary>Show or hide the drop zone and remember the choice.</summary>
@@ -640,6 +666,7 @@ public partial class App : Application
         Usage.Stop();
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
         Overlay.Stop();
+        Search.Stop(); // saves the index, so the next start is instant
         courierWatch.Stop();
         courierWidget?.Close();
         Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4)); // and so does Portal: nothing listens once the program is gone

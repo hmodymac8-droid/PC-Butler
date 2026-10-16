@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window
     public SettingsPage Settings => Get<SettingsPage>("settings");
     public BenchmarkPage Benchmark => Get<BenchmarkPage>("benchmark");
     public AboutPage About => Get<AboutPage>("about");
+    public SearchPage SearchPage => Get<SearchPage>("search");
 
     public MainWindow()
     {
@@ -91,6 +92,7 @@ public sealed partial class MainWindow : Window
         foreach (var (key, glyph, name, make, bottom) in new (string, string, string, Func<Page>, bool)[]
                  {
                      ("home", "\uE80F", "Home", () => new HomePage(this), false),
+                     ("search", "\uE721", "Search", () => new SearchPage(this), false),
                      ("preview", "\uE8FD", "Sorter", () => new SorterPage(this), false),
                      ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this), false),
                      ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this), false),
