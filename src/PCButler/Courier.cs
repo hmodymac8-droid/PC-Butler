@@ -78,7 +78,7 @@ public static class Courier
             // The test hook keeps Courier on this PC only, so trying the page never opens a port to the internet.
             var local = Environment.GetEnvironmentVariable("PCBUTLER_PORTAL_LOOPBACK") == "1";
             var node = await PortalNode.Start(settings, () => Application.Current.Dispatcher.BeginInvoke(() =>
-                UpdateConfig(config => { config.Portal.Devices = settings.Devices.ToList(); config.Portal.HostNumber = settings.HostNumber; })), local: local);
+                UpdateConfig(config => { config.Portal.Devices = settings.Devices.ToList(); config.Portal.HostNumber = settings.HostNumber; config.Portal.Saved = settings.Saved.ToList(); })), local: local);
             node.Attention += App.Current.PortalNeedsAttention;
             Portal.Current = node;
             return null;
@@ -111,9 +111,11 @@ public static class Courier
             return node.Peers.Where(peer => peer.Trusted).Select(peer => new Target(peer.Name, peer, peer.Online)).ToList();
         var host = node.HostPeer;
         var list = new List<Target>();
+        // Paired on this side is not enough: the host has to have let this PC in too.
+        var allowed = host is { Online: true, Trusted: true } && !node.WaitingForHost;
         if (host is not null)
-            list.Add(new Target(host.Name, host, host is { Online: true, Trusted: true }));
-        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && host is { Online: true, Trusted: true })));
+            list.Add(new Target(host.Name, host, allowed));
+        list.AddRange(node.OtherClients.Select(client => new Target(client.Name, client, client.Online && allowed)));
         return list;
     }
 
