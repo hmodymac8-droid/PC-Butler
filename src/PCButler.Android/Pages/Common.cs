@@ -43,6 +43,7 @@ public abstract class AppPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        showFolders?.Invoke(); // the list may have changed on another page
         Shown();
     }
 
@@ -55,6 +56,8 @@ public abstract class AppPage : ContentPage
     /// The card listing the folders this page works in, with "Add folder…" (Android's folder
     /// picker) and a way to take one off. changed: after the list changed.
     /// </summary>
+    private Action? showFolders;
+
     protected View FoldersCard(string page, string intro, Action changed)
     {
         var list = new VerticalStackLayout { Spacing = 8 };
@@ -80,13 +83,15 @@ public abstract class AppPage : ContentPage
             }
         }
         Show();
+        showFolders = Show;
+        var shared = page == "sorter" ? "" : Tr.T("Duplicates and Storage use the same folders.");
         return Theme.CardOf(new VerticalStackLayout
         {
             Spacing = 10,
             Children =
             {
                 Theme.Header(Tr.T("Folders")),
-                Theme.Faint(Tr.T(intro)),
+                Theme.Faint(Tr.T(intro) + (shared.Length > 0 ? " " + shared : "")),
                 list,
                 Theme.Plain(Tr.T("Add folder…"), async () =>
                 {

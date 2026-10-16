@@ -123,7 +123,7 @@ public sealed class SorterPage : AppPage
             if (group.Count() > 6)
                 list.Children.Add(Theme.Faint(Tr.T("…and {0} more", group.Count() - 6), 12.5).Margin(4, 6, 0, 0));
             var title = new Label { Text = group.Key, FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
-            var where = Theme.Faint($"→ {group.First().Root.Name}/{group.Key}" + (group.Select(move => move.Root.Path).Distinct().Count() > 1 ? " …" : ""), 12);
+            var where = Theme.Faint((Tr.IsArabic ? "← " : "→ ") + $"{group.First().Root.Name}/{group.Key}" + (group.Select(move => move.Root.Path).Distinct().Count() > 1 ? " …" : ""), 12);
             var pill = Theme.Pill($"{group.Count()} · {Size(group.Sum(move => move.File.Size))}", Theme.Text, Theme.Secondary);
             groups.Children.Add(Theme.CardOf(new VerticalStackLayout
             {
@@ -156,7 +156,7 @@ public sealed class SorterPage : AppPage
     {
         var last = PhoneSorter.Last();
         lastRun.Text = last is null ? Tr.T("Nothing sorted yet.") : Tr.T("Last sort: {0}, {1} file(s).", last.Time, last.Moves.Count);
-        undo.IsEnabled = last is not null;
+        undo.IsEnabled = undo.IsVisible = last is not null;
     }
 
     private async Task Undo()

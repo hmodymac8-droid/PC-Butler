@@ -17,6 +17,7 @@ public sealed class DuplicatesPage : AppPage
     private readonly Button clear;
     private readonly VerticalStackLayout groups = new() { Spacing = 0 };
     private readonly Button remove;
+    private readonly Label removeNote = new() { Text = Tr.T("Deleted copies go to the Recycle Bin first."), FontSize = 12, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center };
     private readonly List<(DuplicateEntry Entry, CheckBox Box)> boxes = [];
     private readonly Dictionary<string, Doc> docs = new(StringComparer.Ordinal);
     private CancellationTokenSource? scanning;
@@ -50,7 +51,7 @@ public sealed class DuplicatesPage : AppPage
             {
                 Theme.Line3(Theme.Tile(("ic_copy.png", Theme.AccentBack), 40), status, clear),
                 remove,
-                new Label { Text = Tr.T("Deleted copies go to the Recycle Bin first."), FontSize = 12, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center },
+                removeNote,
             },
         }, 16);
         results.IsVisible = false;
@@ -73,6 +74,7 @@ public sealed class DuplicatesPage : AppPage
         groups.Children.Clear();
         boxes.Clear();
         remove.IsEnabled = false;
+        remove.IsVisible = removeNote.IsVisible = false;
         results.IsVisible = true;
         status.Text = Tr.T("Looking for files…");
         List<DuplicateGroup> found;
@@ -130,6 +132,7 @@ public sealed class DuplicatesPage : AppPage
         }
         if (found.Count > 150)
             groups.Children.Add(Theme.Faint(Tr.T("The first 150 groups are shown. Delete these, then look again for the rest.")));
+        remove.IsVisible = removeNote.IsVisible = found.Count > 0; // nothing found, nothing to delete
         Count();
     }
 
@@ -144,7 +147,7 @@ public sealed class DuplicatesPage : AppPage
     private async Task DeleteTicked()
     {
         var chosen = boxes.Where(item => item.Box.IsChecked).Select(item => docs[item.Entry.Path]).ToList();
-        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, on the Storage page.", chosen.Count), Tr.T("Delete")))
+        if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, on the Storage page.", chosen.Count) + "\n\n" + SpaceNote, Tr.T("Delete")))
             return;
         var (count, errors) = await Task.Run(() => Bin(chosen));
         await Say(errors.Count == 0 ? Tr.T("{0} file(s) deleted.", count) : Tr.T("{0} file(s) deleted. {1} could not be:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
@@ -163,6 +166,9 @@ public sealed class DuplicatesPage : AppPage
             throw new IOException(error.Message);
         }
     }
+
+    /// <summary>The bin keeps a copy, so the space comes back only once it is emptied.</summary>
+    public static string SpaceNote => Tr.T("The space is freed when the Recycle Bin is emptied; it empties itself after {0} days.", RecycleBin.KeepDays);
 
     /// <summary>Files into PC Butler's Recycle Bin, one by one.</summary>
     public static (int Count, List<string> Errors) Bin(IEnumerable<Doc> files)
