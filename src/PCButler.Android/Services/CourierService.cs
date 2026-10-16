@@ -45,6 +45,7 @@ public sealed class CourierService : Service
     /// </summary>
     public static void Received(PortalTransfer transfer)
     {
+        ActivityLog.Record("courier", "Files received", $"{transfer.Name}  ·  {transfer.Peer}");
         try
         {
             var manager = (NotificationManager)Context.GetSystemService(NotificationService)!;

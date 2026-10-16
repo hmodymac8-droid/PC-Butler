@@ -16,4 +16,12 @@
 	     Duplicates and Storage see only the folders the user picks in Android's own folder picker. -->
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+	<!-- Apps (a tool): the apps with an icon on the home screen are listed, and one can be uninstalled (Android asks first). -->
+	<uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+	<queries>
+		<intent>
+			<action android:name="android.intent.action.MAIN" />
+			<category android:name="android.intent.category.LAUNCHER" />
+		</intent>
+	</queries>
 </manifest>

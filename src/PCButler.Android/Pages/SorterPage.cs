@@ -158,6 +158,8 @@ public sealed class SorterPage : AppPage
         {
             var moves = planned;
             var (count, errors) = await Task.Run(() => PhoneSorter.Move(moves));
+            if (count > 0)
+                ActivityLog.Record("sorter", "Files sorted", Tr.T("{0} file(s)", count));
             await Say(errors.Count == 0 ? Tr.T("Sorted {0} file(s).", count) : Tr.T("Sorted {0} file(s). {1} could not be moved:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
         }
         finally
@@ -180,6 +182,8 @@ public sealed class SorterPage : AppPage
         if (PhoneSorter.Last() is null || !await Ask(Tr.T("Put the files of the last sort back where they were?"), Tr.T("Undo")))
             return;
         var (count, errors) = await Task.Run(PhoneSorter.UndoLast);
+        if (count > 0)
+            ActivityLog.Record("sorter", "Sort undone", Tr.T("{0} file(s)", count));
         await Say(errors.Count == 0 ? Tr.T("{0} file(s) put back.", count) : Tr.T("{0} file(s) put back. {1} could not be:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
         ShowHistory();
         await Plan();
