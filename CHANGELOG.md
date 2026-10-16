@@ -11,6 +11,7 @@ Each version is a `## heading` followed by `- ` lines.
 - Duplicates on the phone: pick how files match with chips; in each group tap the copy to keep and the others are marked Delete; a bar at the bottom shows the space freed and deletes the extras.
 - Storage on the phone: the free space shown big, a Scan button in the header, folders with bars, and a delete button on each large old file.
 - Vault on the phone: new create and unlock screens with a password eye, three tiles to add files, add a folder or make one, a ⋮ sheet for each file, a bar at the bottom while selecting, and lock settings in a sheet.
+- New on the phone: a Tools button on top of every page opens all of PC Butler's tools. Search finds files by name or type in your folders. Cleaner finds installers, files of 100 MB or more and old downloads to remove, and clears PC Butler's own cache. Apps lists your apps with their size, to open, see in Android's app info or uninstall. Benchmark measures the processor and storage for real. Clipboard keeps text to copy again or send to a PC through Courier. History shows what PC Butler did.
 
 ## 1.22.1
 

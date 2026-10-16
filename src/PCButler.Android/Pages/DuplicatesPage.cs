@@ -195,6 +195,8 @@ public sealed class DuplicatesPage : AppPage
         if (chosen.Count == 0 || !await Ask(Tr.T("Move {0} file(s) to PC Butler's Recycle Bin? They can be put back from there, on the Storage page.", chosen.Count) + "\n\n" + SpaceNote, Tr.T("Delete")))
             return;
         var (count, errors) = await Task.Run(() => Bin(chosen));
+        if (count > 0)
+            ActivityLog.Record("duplicates", "Duplicates deleted", Tr.T("{0} file(s)", count));
         await Say(errors.Count == 0 ? Tr.T("{0} file(s) deleted.", count) : Tr.T("{0} file(s) deleted. {1} could not be:\n{2}", count, errors.Count, string.Join("\n", errors.Take(5))));
         await Scan();
     }

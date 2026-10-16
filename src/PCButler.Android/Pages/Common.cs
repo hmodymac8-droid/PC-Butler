@@ -23,9 +23,14 @@ public abstract class AppPage : ContentPage
 
     protected readonly ScrollView Scroller;
 
-    protected AppPage(string title)
+    /// <summary>A page of its own, opened from the Tools sheet: the bar has a way back.</summary>
+    private readonly bool tool;
+
+    protected AppPage(string title, bool tool = false)
     {
+        this.tool = tool;
         Title = Tr.T(title);
+        Microsoft.Maui.Controls.Shell.SetNavBarIsVisible(this, false);
         var head = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 12, Padding = new Thickness(4, 14, 2, 8) };
         head.Add(new VerticalStackLayout { Spacing = 6, VerticalOptions = LayoutOptions.Center, Children = { Theme.Title(Tr.T(title), 24), HeaderSub } }, 0);
         head.Add(HeaderRight, 1);
@@ -38,22 +43,95 @@ public abstract class AppPage : ContentPage
         Content = Root;
     }
 
-    /// <summary>The bar on top of every page: "PC Butler", Butler in the accent.</summary>
-    private static View Bar()
+    /// <summary>The bar on top of every page: "PC Butler", Butler in the accent (on a tool's page, with an arrow back), and Tools at the end.</summary>
+    private View Bar()
     {
         var name = new Label
         {
             FontSize = 16, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center,
             FormattedText = new FormattedString { Spans = { new Span { Text = "PC ", TextColor = Theme.Text }, new Span { Text = "Butler", TextColor = Theme.Primary } } },
         };
-        return new VerticalStackLayout
+        View start = name;
+        if (tool)
         {
-            Children =
+            var arrow = Theme.Icon("i_arrow_left_w.png", 18);
+            if (Tr.IsArabic)
+                arrow.RotationY = 180;
+            start = new HorizontalStackLayout { Spacing = 8, VerticalOptions = LayoutOptions.Center, Children = { arrow, name } };
+            start.Tapped(() => _ = Navigation.PopAsync());
+        }
+        var tools = new Border
+        {
+            BackgroundColor = Theme.PrimarySoft, StrokeThickness = 0, StrokeShape = Theme.Round(18), HeightRequest = 36, Padding = new Thickness(12, 0),
+            VerticalOptions = LayoutOptions.Center,
+            Content = new HorizontalStackLayout
             {
-                new ContentView { Content = name, Padding = new Thickness(22, 0), HeightRequest = 52 },
-                Theme.Divider(),
+                Spacing = 6,
+                Children = { Theme.Icon("i_grid_2x2_m.png", 16), new Label { Text = Tr.T("Tools"), FontSize = 13, FontAttributes = FontAttributes.Bold, TextColor = Theme.Primary, VerticalOptions = LayoutOptions.Center } },
             },
         };
+        tools.Tapped(OpenTools);
+        var line = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, Padding = new Thickness(22, 0, 16, 0), HeightRequest = 52 };
+        line.Add(start, 0);
+        line.Add(tools, 1);
+        return new VerticalStackLayout { Children = { line, Theme.Divider() } };
+    }
+
+    /// <summary>The five tabs and the tools, in a grid of three: a tab is switched to, a tool opens over the tabs.</summary>
+    private static readonly (string Name, string Icon, Func<AppPage>? Open)[] AllTools =
+    [
+        ("Courier", "i_send_m.png", null), ("Sorter", "i_wand_sparkles_m.png", null), ("Duplicates", "i_copy_m.png", null),
+        ("Storage", "i_chart_pie_m.png", null), ("Vault", "i_lock_m.png", null),
+        ("Search", "i_search_m.png", () => new SearchPage()), ("Cleaner", "i_sparkles_m.png", () => new CleanerPage()),
+        ("Apps", "i_app_window_m.png", () => new AppsPage()), ("Benchmark", "i_gauge_m.png", () => new BenchmarkPage()),
+        ("Clipboard", "i_clipboard_m.png", () => new ClipboardPage()), ("History", "i_history_m.png", () => new HistoryPage()),
+    ];
+
+    private void OpenTools()
+    {
+        var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
+        for (var column = 0; column < 3; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        Action close = () => { };
+        for (var index = 0; index < AllTools.Length; index++)
+        {
+            var (name, icon, open) = AllTools[index];
+            var here = Title == Tr.T(name);
+            var cell = new Border
+            {
+                BackgroundColor = here ? Theme.PrimarySoft : Theme.SurfaceRaised, StrokeThickness = 0, StrokeShape = Theme.Round(18), Padding = new Thickness(4, 14),
+                Content = new VerticalStackLayout
+                {
+                    Spacing = 8,
+                    Children =
+                    {
+                        Theme.Icon(icon, 22),
+                        new Label { Text = Tr.T(name), FontSize = 12.5, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, TextColor = here ? Theme.Primary : Theme.Text },
+                    },
+                },
+            };
+            var tab = index;
+            cell.Tapped(async () =>
+            {
+                close();
+                if (here)
+                    return;
+                if (open is not null)
+                {
+                    await Navigation.PushAsync(open());
+                    return;
+                }
+                // A tab: back to the tabs first, if a tool is open over them.
+                if (Navigation.NavigationStack.Count > 1)
+                    await Navigation.PopToRootAsync(false);
+                if (Microsoft.Maui.Controls.Shell.Current?.CurrentItem is { } bar && tab < bar.Items.Count)
+                    bar.CurrentItem = bar.Items[tab];
+            });
+            if (grid.RowDefinitions.Count <= index / 3)
+                grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            grid.Add(cell, index % 3, index / 3);
+        }
+        close = OpenSheet(Tr.T("PC Butler tools"), grid);
     }
 
     protected void SetSub(View? view)

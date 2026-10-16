@@ -258,7 +258,10 @@ public sealed class StoragePage : AppPage
             return;
         var (_, errors) = await Task.Run(() => DuplicatesPage.Bin([docs[file.Path]]));
         if (errors.Count == 0)
+        {
             result?.BigFiles.RemoveAll(item => item.Path == file.Path);
+            ActivityLog.Record("storage", "Large file deleted", $"{file.Name}  ·  {Size(file.Size)}");
+        }
         else
             await Say(string.Join("\n", errors));
         ShowBig();
