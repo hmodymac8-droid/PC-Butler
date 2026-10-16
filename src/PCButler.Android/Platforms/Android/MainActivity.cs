@@ -33,9 +33,17 @@ public class MainActivity : MauiAppCompatActivity
             base.OnActivityResult(requestCode, resultCode, data);
     }
 
+    /// <summary>Any touch counts as use, so the vault doesn't lock under the user's finger.</summary>
+    public override bool DispatchTouchEvent(MotionEvent? e)
+    {
+        App.Used();
+        return base.DispatchTouchEvent(e);
+    }
+
     /// <summary>A real keyboard's keys go first to the ID pad, when it is on the screen.</summary>
     public override bool DispatchKeyEvent(KeyEvent? e)
     {
+        App.Used();
         if (e is not null && Pages.KeyInput.Handler?.Invoke(e) == true)
             return true;
         return base.DispatchKeyEvent(e);

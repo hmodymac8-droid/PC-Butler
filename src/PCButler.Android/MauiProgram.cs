@@ -48,17 +48,18 @@ public sealed class App : Application
         // The vault never stays open behind the user's back: going to the background locks it.
         // Android's own screens that the app opens itself (a picker, the viewer of a file) don't
         // count, unless the user stays away from the app for long.
+        // Whether it locks then at all is the user's choice (the Vault page's "Lock when the app is closed").
         window.Stopped += (_, _) =>
         {
             if (leaving)
                 awaySince = DateTime.UtcNow;
-            else
+            else if (ConfigStore.Load().Vault.LockOnClose)
                 Pages.VaultPage.Current?.Lock();
             leaving = false;
         };
         window.Activated += (_, _) =>
         {
-            if (awaySince is { } since && DateTime.UtcNow - since > TimeSpan.FromMinutes(10))
+            if (awaySince is { } since && DateTime.UtcNow - since > TimeSpan.FromMinutes(10) && ConfigStore.Load().Vault.LockOnClose)
                 Pages.VaultPage.Current?.Lock();
             (leaving, awaySince) = (false, null);
         };
@@ -67,6 +68,11 @@ public sealed class App : Application
 
     private static bool leaving;
     private static DateTime? awaySince;
+
+    /// <summary>The last time the user touched the screen or pressed a key: the vault locks after a while without.</summary>
+    public static DateTime LastUsed { get; private set; } = DateTime.UtcNow;
+
+    public static void Used() => LastUsed = DateTime.UtcNow;
 
     /// <summary>The app is about to open one of Android's own screens (a picker, a viewer): that is no reason to lock the vault.</summary>
     public static void LeavingOnPurpose() => leaving = true;
