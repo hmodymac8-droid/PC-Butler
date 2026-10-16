@@ -145,16 +145,51 @@ public sealed class SearchIndex
     /// <summary>The folder a row is in ("" for a root).</summary>
     public string FolderOf(int row) => parent[row] < 0 ? "" : FullPath(parent[row]);
 
+    /// <summary>
+    /// Walked up in a loop, not by calling itself: a folder chain thousands deep (a reparse
+    /// point that leads back into itself) ran the stack out and closed PC Butler. A chain that
+    /// loops back on itself stops after as many steps as there are rows.
+    /// </summary>
     public string FullPath(int row)
     {
         if (parent[row] < 0)
             return Name(row);
         if (IsFolder(row) && folderPaths.TryGetValue(row, out var known))
             return known;
-        var path = Join(FullPath(parent[row]), NameSpan(row));
-        if (IsFolder(row))
-            folderPaths[row] = path;
+        var chain = new List<int>();
+        var path = "";
+        for (var at = row; ; at = parent[at])
+        {
+            if (at < 0 || chain.Count > count)
+                break;
+            if (parent[at] < 0)
+            {
+                path = Name(at);
+                break;
+            }
+            if (at != row && IsFolder(at) && folderPaths.TryGetValue(at, out var cached))
+            {
+                path = cached;
+                break;
+            }
+            chain.Add(at);
+        }
+        for (var index = chain.Count - 1; index >= 0; index--)
+        {
+            path = Join(path, NameSpan(chain[index]));
+            if (IsFolder(chain[index]) && path.Length <= 1024) // very long ones are rare, and would fill memory
+                folderPaths[chain[index]] = path;
+        }
         return path;
+    }
+
+    /// <summary>Whether a row is this folder or somewhere inside it.</summary>
+    public bool IsWithin(int row, int folder)
+    {
+        for (var (at, steps) = (row, 0); at >= 0 && steps <= count; at = parent[at], steps++)
+            if (at == folder)
+                return true;
+        return false;
     }
 
     public static string Join(string folder, ReadOnlySpan<char> name) =>
@@ -368,7 +403,7 @@ public sealed class SearchIndex
     {
         ForgetName(row);
         WriteName(row, name);
-        if (newParent >= 0 && newParent != parent[row])
+        if (newParent >= 0 && newParent != parent[row] && !IsWithin(newParent, row)) // never into itself: that would loop forever
         {
             Unlink(row);
             parent[row] = newParent;
@@ -504,7 +539,7 @@ public sealed class SearchIndex
     private List<int> Chain(int folder)
     {
         var chain = new List<int>();
-        for (var row = folder; row >= 0; row = parent[row])
+        for (var row = folder; row >= 0 && chain.Count <= count; row = parent[row])
             chain.Add(row);
         chain.Reverse();
         return chain;
