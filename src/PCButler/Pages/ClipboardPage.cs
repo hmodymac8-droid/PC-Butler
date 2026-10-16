@@ -38,7 +38,7 @@ public sealed class ClipboardPage : Page
         shortcut.PreviewKeyDown += RecordShortcut;
         rows.Children.Add(Ui.SettingRow(Ui.T("Shortcut to open the list"),
                                         Ui.T("Press it in any program to pick an item and paste it there. Click the box, then press the new keys."),
-                                        Ui.Row(6, shortcut, Ui.Button(Ui.T("Default"), () => SetShortcut("Ctrl+Alt+V")))));
+                                        Ui.Row(6, shortcut, Ui.Button(Ui.T("Default"), () => SetShortcut(ClipboardSettings.DefaultShortcut)))));
 
         limit = Ui.Field(settings.Limit.ToString(), 90);
         limit.LostFocus += (_, _) => SaveLimit();
