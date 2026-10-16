@@ -12,26 +12,25 @@ namespace PCButler.Android.Pages;
 /// </summary>
 public sealed class VaultPage : AppPage
 {
-    private readonly VerticalStackLayout create = new() { Spacing = 10 };
-    private readonly VerticalStackLayout locked = new() { Spacing = 10 };
-    private readonly VerticalStackLayout open = new() { Spacing = 10 };
+    private readonly VerticalStackLayout create = new() { Spacing = 12, Padding = new Thickness(0, 24, 0, 0) };
+    private readonly VerticalStackLayout locked = new() { Spacing = 12, Padding = new Thickness(0, 24, 0, 0) };
+    private readonly VerticalStackLayout open = new() { Spacing = 0 };
     private readonly Entry newPassword = Secret(Tr.T("Password"));
     private readonly Entry confirmPassword = Secret(Tr.T("The same password again"));
     private readonly Entry password = Secret(Tr.T("Password"));
-    private readonly Label count = Theme.Faint("", 13.5);
-    private readonly Label stateText = new() { FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
-    private readonly Image stateIcon = new() { WidthRequest = 22, HeightRequest = 22, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center };
+    private readonly Label count = Theme.Faint("", 12.5);
     private readonly Border statePill = Theme.Pill("", Theme.Primary, Theme.PrimarySoft);
-    private readonly View stateLine;
+    private readonly Border settingsButton, lockButton;
     // The files: where in the vault, what is there, and the bar for what is selected.
     private readonly FlexLayout crumbs = new() { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, AlignItems = Microsoft.Maui.Layouts.FlexAlignItems.Center };
     private readonly VerticalStackLayout items = new() { Spacing = 0 };
-    private readonly Border itemsCard;
     private readonly Button selectButton;
-    private readonly Label selectedText = new() { FontSize = 13.5, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
-    private readonly View selectionBar;
+    private readonly Label selectedText = new() { FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
+    private readonly Border selectionBar;
     private readonly Label lockText = Theme.Faint("", 12.5);
-    private readonly Border settingsCard;
+    private readonly Label autoText = Theme.Faint("", 12.5);
+    private readonly Label autoValue = Theme.Faint("", 13);
+    private readonly VerticalStackLayout lockSheet;
     private string here = "";
     private bool selecting;
     private readonly HashSet<string> selectedFolders = new(StringComparer.OrdinalIgnoreCase);
@@ -39,66 +38,82 @@ public sealed class VaultPage : AppPage
     private Vault? vault;
     private bool busy;
 
-    public VaultPage() : base("Vault", "Private files, encrypted with your password.")
+    /// <summary>A big rounded square with an icon, over the create and unlock screens.</summary>
+    private static Border Hero(string icon) => new()
     {
-        // Creating: a lock tile, the password twice.
-        create.Children.Add(Theme.Line3(Theme.Tile(Theme.LockTile, 44), Theme.Title(Tr.T("Create the vault"), 18).Centered()));
-        create.Children.Add(Theme.Faint(Tr.T("Choose a password of at least {0} characters. Without it, nobody (you neither) can open what is inside: write it down somewhere safe.", Vault.MinPassword)));
-        create.Children.Add(Theme.BoxOf(newPassword, 4));
-        create.Children.Add(Theme.BoxOf(confirmPassword, 4));
-        create.Children.Add(Theme.Accent(Tr.T("Create"), () => _ = Create()));
+        WidthRequest = 96, HeightRequest = 96, BackgroundColor = Theme.PrimarySoft, StrokeThickness = 0, StrokeShape = Theme.Round(32),
+        HorizontalOptions = LayoutOptions.Center, Content = Theme.Icon(icon, 44), Margin = new Thickness(0, 0, 0, 6),
+    };
 
-        // The state of the vault, on top of the card: a lock (open or shut), the files in it, a pill.
-        var badge = new Border
-        {
-            WidthRequest = 46, HeightRequest = 46, BackgroundColor = Theme.AccentBack, StrokeThickness = 0, VerticalOptions = LayoutOptions.Center,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 }, Content = stateIcon,
-        };
-        stateLine = Theme.Line3(badge, Theme.TwoLines(stateText, count), statePill);
+    private static Label Centered(Label label)
+    {
+        label.HorizontalTextAlignment = TextAlignment.Center;
+        return label;
+    }
+
+    public VaultPage() : base("Vault")
+    {
+        SetSub(new HorizontalStackLayout { Spacing = 8, Children = { statePill, count.Centered() } });
+        settingsButton = Theme.IconButton("i_settings_2_w.png", OpenLockSheet);
+        lockButton = Theme.IconButton("i_lock_w.png", Lock);
+
+        // Creating: a shield, the password twice, and a warning that nothing can get it back.
+        create.Children.Add(Hero("i_shield_check_m.png"));
+        create.Children.Add(Centered(Theme.Title(Tr.T("Create the vault"), 20)));
+        create.Children.Add(Centered(Theme.Faint(Tr.T("Choose a password of at least {0} characters. Without it, nobody (you neither) can open what is inside: write it down somewhere safe.", Vault.MinPassword))));
+        create.Children.Add(Theme.PasswordField(newPassword).Margin(0, 8, 0, 0));
+        create.Children.Add(Theme.PasswordField(confirmPassword));
+        create.Children.Add(Theme.Hint(Tr.T("There's no recovery — if you forget it, files can't be opened.")));
+        create.Children.Add(Theme.Accent(Tr.T("Create"), () => _ = Create(), "i_shield_check_k.png").Margin(0, 6, 0, 0));
 
         // Locked: the files are hidden until the password is typed.
-        locked.Children.Add(new Border
-        {
-            WidthRequest = 58, HeightRequest = 58, BackgroundColor = Theme.Surface, StrokeThickness = 0, HorizontalOptions = LayoutOptions.Center,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), Margin = new Thickness(0, 10, 0, 0),
-            Content = new Image { Source = "ic_lock_muted.png", WidthRequest = 28, HeightRequest = 28, HorizontalOptions = LayoutOptions.Center, VerticalOptions = LayoutOptions.Center },
-        });
-        locked.Children.Add(new Label { Text = Tr.T("Files are hidden"), FontSize = 16, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, HorizontalTextAlignment = TextAlignment.Center });
-        locked.Children.Add(new Label { Text = Tr.T("Unlock with your password to see your files."), FontSize = 13.5, TextColor = Theme.Muted, HorizontalTextAlignment = TextAlignment.Center });
-        locked.Children.Add(Theme.BoxOf(password, 4));
+        locked.Children.Add(Hero("i_lock_m.png"));
+        locked.Children.Add(Centered(Theme.Title(Tr.T("Files are hidden"), 20)));
+        locked.Children.Add(Centered(Theme.Faint(Tr.T("Unlock with your password to see your files."))));
+        locked.Children.Add(Theme.PasswordField(password).Margin(0, 8, 0, 0));
         password.Completed += (_, _) => _ = Unlock();
-        locked.Children.Add(Theme.Accent(Tr.T("Unlock"), () => _ = Unlock()));
+        locked.Children.Add(Theme.Accent(Tr.T("Unlock"), () => _ = Unlock(), "i_lock_open_k.png"));
+        locked.Children.Add(Centered(autoText));
 
-        // Open: add files or a whole folder, make a folder, lock.
-        var adds = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
-        adds.Add(Theme.Accent(Tr.T("Add files…"), () => _ = AddFiles()), 0);
-        adds.Add(Theme.Plain(Tr.T("Add folder…"), () => _ = AddFolder()), 1);
-        var more = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
-        more.Add(Theme.Plain(Tr.T("New folder…"), () => _ = NewFolder()), 0);
-        more.Add(Theme.Plain(Tr.T("Lock"), Lock), 1);
-        open.Children.Add(adds);
-        open.Children.Add(more);
-        open.Children.Add(Theme.BoxOf(Theme.Faint(Tr.T("What you add is moved in: it leaves the phone's folders and lives only in the vault. Tap a folder to open it, a file for what can be done with it."), 12.5)));
-
-        Body.Children.Add(Theme.CardOf(new VerticalStackLayout { Spacing = 14, Children = { stateLine, create, locked, open } }));
+        // Open: three tiles to add files, a folder, or make a folder.
+        var tiles = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Star), new(GridLength.Star) }, ColumnSpacing = 10 };
+        tiles.Add(ActionTile("i_file_plus_m.png", Tr.T("Add files"), () => _ = AddFiles()), 0);
+        tiles.Add(ActionTile("i_folder_input_m.png", Tr.T("Add folder"), () => _ = AddFolder()), 1);
+        tiles.Add(ActionTile("i_folder_plus_m.png", Tr.T("New folder"), () => _ = NewFolder()), 2);
+        open.Children.Add(tiles);
+        open.Children.Add(Theme.Hint(Tr.T("Added files are moved in and encrypted — originals are removed.")));
 
         // The files: a path to tap back along, "Select", the folders and files here.
-        selectButton = Theme.Plain(Tr.T("Select"), () => Select(!selecting));
-        (selectButton.Padding, selectButton.FontSize, selectButton.BackgroundColor, selectButton.TextColor) = (new Thickness(12, 6), 13, Colors.Transparent, Theme.Primary);
-        var head = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 8 };
+        selectButton = Theme.Link(Tr.T("Select"), () => Select(!selecting));
+        var head = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto) }, ColumnSpacing = 8, Padding = new Thickness(4, 14, 0, 6) };
         head.Add(crumbs, 0);
         head.Add(selectButton, 1);
-        var bar = new Grid { ColumnDefinitions = { new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto) }, ColumnSpacing = 6 };
-        bar.Add(selectedText, 0);
-        bar.Add(Small(Theme.Plain(Tr.T("Move…"), () => _ = MoveSelected())), 1);
-        bar.Add(Small(Theme.Plain(Tr.T("Take out"), () => _ = TakeOutSelected())), 2);
-        bar.Add(Small(Theme.DangerGhost(Tr.T("Delete"), () => _ = DeleteSelected())), 3);
-        selectionBar = Theme.BoxOf(bar, 8, Theme.SurfaceRaised);
-        selectionBar.IsVisible = false;
-        itemsCard = Theme.CardOf(new VerticalStackLayout { Spacing = 8, Children = { head, selectionBar, items } }, 16);
-        Body.Children.Add(itemsCard);
+        open.Children.Add(head);
+        open.Children.Add(Theme.CardOf(items, 0));
+        var auto = Theme.Line3(Theme.Tile(("i_clock_m.png", Theme.PrimarySoft), 38), new Label { Text = Tr.T("Auto-lock"), FontSize = 14.5, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center },
+                               new HorizontalStackLayout { Spacing = 4, VerticalOptions = LayoutOptions.Center, Children = { autoValue.Centered(), Theme.Icon(Tr.IsArabic ? "i_chevron_left_g.png" : "i_chevron_right_g.png", 16) } });
+        var autoCard = Theme.CardOf(auto, 14);
+        autoCard.Tapped(OpenLockSheet);
+        open.Children.Add(autoCard);
+        open.Children.Add(new BoxView { HeightRequest = 80, Color = Colors.Transparent }); // room for the bar
 
-        // When it locks.
+        // While selecting: a bar at the bottom with what can be done to all of them.
+        var bar = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto) }, ColumnSpacing = 6 };
+        bar.Add(Theme.IconButton("i_x_w.png", () => Select(false), Theme.Card, 40), 0);
+        bar.Add(selectedText.Margin(4, 0, 0, 0), 1);
+        bar.Add(Theme.IconButton("i_move_right_w.png", () => _ = MoveSelected(), Theme.Card, 40), 2);
+        bar.Add(Theme.IconButton("i_log_out_w.png", () => _ = TakeOutSelected(), Theme.Card, 40), 3);
+        bar.Add(Theme.IconButton("i_trash_2_r.png", () => _ = DeleteSelected(), Theme.DangerBack, 40), 4);
+        selectionBar = Theme.BoxOf(bar, 8, Theme.SurfaceRaised);
+        (selectionBar.StrokeShape, selectionBar.IsVisible) = (Theme.Round(26), false);
+        selectionBar.Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.5f, Radius = 18, Offset = new Point(0, 6) };
+
+        Body.Children.Add(create);
+        Body.Children.Add(locked);
+        Body.Children.Add(open);
+        Float(selectionBar);
+
+        // When it locks: in a sheet.
         var settings = ConfigStore.Load().Vault;
         var choices = VaultSettings.Choices;
         var labels = choices.Select(minutes => minutes == 0 ? Tr.T("Never") : minutes == 60 ? Tr.T("1 hour") : Tr.T("{0} min", minutes)).ToList();
@@ -106,18 +121,16 @@ public sealed class VaultPage : AppPage
         onClose.Toggled += (_, e) => SaveSettings(saved => saved.LockOnClose = e.Value);
         var closeLine = Theme.Line3(null, Theme.TwoLines(Theme.Body(Tr.T("Lock when the app is closed"), 14),
                                                          Theme.Faint(Tr.T("Also when you switch to another app or the screen turns off."), 12)), onClose, 8);
-        settingsCard = Theme.CardOf(new VerticalStackLayout
+        lockSheet = new VerticalStackLayout
         {
-            Spacing = 10,
+            Spacing = 12,
             Children =
             {
-                Theme.Header(Tr.T("Locking")),
                 Theme.Caps(Tr.T("Lock after this long without use")),
-                Theme.Chips(labels, Math.Max(0, Array.IndexOf(choices, settings.LockMinutes)), index => SaveSettings(saved => saved.LockMinutes = choices[index])),
-                closeLine, lockText,
+                Theme.Chips(labels, Math.Max(0, Array.IndexOf(choices, settings.LockMinutes)), index => SaveSettings(saved => saved.LockMinutes = choices[index]), wrap: true),
+                Theme.BoxOf(closeLine, 14, Theme.SurfaceRaised), lockText,
             },
-        });
-        Body.Children.Add(settingsCard);
+        };
         Current = this;
         // Without use for the chosen time: locked, wherever the app is.
         Dispatcher.StartTimer(TimeSpan.FromSeconds(15), () =>
@@ -127,6 +140,27 @@ public sealed class VaultPage : AppPage
                 Lock();
             return true;
         });
+    }
+
+    private static View ActionTile(string icon, string text, Action action)
+    {
+        var tile = Theme.CardOf(new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                Theme.Tile((icon, Theme.PrimarySoft), 40),
+                new Label { Text = text, FontSize = 13, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap },
+            },
+        }, 14);
+        tile.Tapped(() => { App.Used(); action(); });
+        return tile;
+    }
+
+    private void OpenLockSheet()
+    {
+        ShowLockText();
+        OpenSheet(Tr.T("Locking"), lockSheet);
     }
 
     /// <summary>The page, so the app can lock the vault when it goes to the background.</summary>
@@ -147,6 +181,8 @@ public sealed class VaultPage : AppPage
     private void ShowLockText()
     {
         var settings = ConfigStore.Load().Vault;
+        autoValue.Text = settings.LockMinutes == 0 ? Tr.T("Never") : settings.LockMinutes == 60 ? Tr.T("1 hour") : Tr.T("{0} min", settings.LockMinutes);
+        autoText.Text = settings.LockMinutes == 0 ? "" : Tr.T("Auto-locks after {0}", autoValue.Text);
         lockText.Text = settings.LockMinutes == 0
             ? Tr.T(settings.LockOnClose ? "It locks when you lock it, or close the app." : "It locks only when you lock it.")
             : Tr.T(settings.LockOnClose ? "It locks after {0} minutes without use, or when you close the app." : "It locks after {0} minutes without use.", settings.LockMinutes);
@@ -168,22 +204,28 @@ public sealed class VaultPage : AppPage
         create.IsVisible = !Vault.Exists;
         locked.IsVisible = Vault.Exists && vault is null;
         open.IsVisible = vault is not null;
-        stateLine.IsVisible = Vault.Exists;
-        itemsCard.IsVisible = vault is not null;
-        settingsCard.IsVisible = Vault.Exists;
-        stateText.Text = Tr.T(vault is null ? "The vault is locked" : "The vault is open");
-        stateIcon.Source = vault is null ? "ic_lock.png" : "ic_lock_open.png";
+        HeaderRight.Content = vault is null ? Vault.Exists ? settingsButton : null : lockButton;
         ShowLockText();
-        if (vault is null)
+        if (!Vault.Exists)
         {
-            count.Text = Tr.T("Private files, encrypted with your password.");
-            Theme.SetPill(statePill, Tr.T("Hidden"), Theme.Text, Theme.Secondary);
+            SetSub(null);
         }
         else
         {
-            Theme.SetPill(statePill, Tr.T("Open"), Theme.Primary, Theme.PrimarySoft);
-            ShowItems();
+            SetSub(statePill.Parent as View ?? statePill);
+            if (vault is null)
+            {
+                count.Text = "";
+                Theme.SetPill(statePill, Tr.T("Locked"), Theme.Muted, Theme.SurfaceRaised);
+            }
+            else
+            {
+                Theme.SetPill(statePill, Tr.T("Open"), Theme.Primary, Theme.PrimarySoft);
+                ShowItems();
+            }
         }
+        if (vault is null)
+            selectionBar.IsVisible = false;
     }
 
     private async Task Create()
@@ -248,8 +290,7 @@ public sealed class VaultPage : AppPage
             return;
         if (here.Length > 0 && !vault.Folders().Contains(here, StringComparer.OrdinalIgnoreCase))
             here = ""; // the folder was moved or deleted
-        count.Text = vault.Items.Count == 0 && vault.Folders().Count == 0 ? Tr.T("The vault is open, and empty.")
-            : Tr.T("{0} file(s), {1}", vault.Items.Count, Size(vault.Items.Sum(item => item.Size)));
+        count.Text = Tr.T("{0} file(s), {1}", vault.Items.Count, Size(vault.Items.Sum(item => item.Size)));
         ShowCrumbs();
         selectButton.Text = Tr.T(selecting ? "Done" : "Select");
         ShowSelection();
@@ -257,7 +298,7 @@ public sealed class VaultPage : AppPage
         var folders = vault.FoldersIn(here);
         var files = vault.FilesIn(here);
         if (folders.Count == 0 && files.Count == 0)
-            items.Children.Add(Theme.Empty("ic_folder.png", Tr.T(here.Length == 0 ? "Nothing in the vault yet. Add files or a folder." : "This folder is empty.")));
+            items.Children.Add(Theme.Empty("i_folder_open_m.png", Tr.T(here.Length == 0 ? "Nothing in the vault yet. Add files or a folder." : "This folder is empty.")));
         foreach (var folder in folders)
         {
             var inside = vault.FilesUnder(folder).Count;
@@ -283,27 +324,42 @@ public sealed class VaultPage : AppPage
     private void AddRow((string Icon, Color Back) tile, string name, string detail, bool ticked, Action<bool> tickChanged, Action tapped, Action more)
     {
         if (items.Children.Count > 0)
-            items.Children.Add(new BoxView { HeightRequest = 1, Color = Theme.Line });
+            items.Children.Add(Theme.Divider().Margin(16, 0, 16, 0));
         var title = new Label { Text = name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
         var texts = Theme.TwoLines(title, Theme.Faint(detail, 12));
         View? left;
+        Action tappedRow;
         if (selecting)
         {
-            var box = new CheckBox { IsChecked = ticked, Color = Theme.Primary, VerticalOptions = LayoutOptions.Center };
-            box.CheckedChanged += (_, e) => tickChanged(e.Value);
-            left = new HorizontalStackLayout { Spacing = 4, Children = { box, Theme.Tile(tile, 36) } };
-            texts.Tapped(() => box.IsChecked = !box.IsChecked);
+            // A round tick in front of the tile: mint with a check when chosen.
+            var on = ticked;
+            var mark = new Border { WidthRequest = 22, HeightRequest = 22, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), StrokeThickness = 2, VerticalOptions = LayoutOptions.Center };
+            void Paint()
+            {
+                mark.Stroke = on ? Theme.Primary : Theme.Muted;
+                mark.BackgroundColor = on ? Theme.Primary : Colors.Transparent;
+                mark.Content = on ? Theme.Icon("i_check_k.png", 13) : null;
+            }
+            Paint();
+            left = new HorizontalStackLayout { Spacing = 10, Children = { mark, Theme.Tile(tile, 40) } };
+            tappedRow = () =>
+            {
+                on = !on;
+                Paint();
+                tickChanged(on);
+            };
         }
         else
         {
-            left = Theme.Tile(tile, 36);
-            texts.Tapped(() => { App.Used(); tapped(); });
+            left = Theme.Tile(tile, 40);
+            tappedRow = () => { App.Used(); tapped(); };
         }
-        var dots = Theme.Plain("⋯", () => { App.Used(); more(); });
-        (dots.Padding, dots.BackgroundColor, dots.TextColor, dots.FontSize, dots.VerticalOptions) = (new Thickness(12, 4), Colors.Transparent, Theme.Muted, 18, LayoutOptions.Center);
+        var dots = Theme.IconButton("i_ellipsis_vertical_g.png", () => { App.Used(); more(); }, Colors.Transparent, 40);
         dots.IsVisible = !selecting;
         var line = Theme.Line3(left, texts, dots);
-        line.Padding = new Thickness(0, 8);
+        line.Padding = new Thickness(16, 10, 8, 10);
+        texts.Tapped(tappedRow);
+        left.Tapped(tappedRow);
         items.Children.Add(line);
     }
 
@@ -340,15 +396,9 @@ public sealed class VaultPage : AppPage
 
     private void ShowSelection()
     {
-        selectionBar.IsVisible = selecting;
+        selectionBar.IsVisible = selecting && vault is not null;
         var total = selectedFiles.Count + selectedFolders.Count;
-        selectedText.Text = total == 0 ? Tr.T("Tick what to move, take out or delete.") : Tr.T("{0} selected", total);
-    }
-
-    private static Button Small(Button button)
-    {
-        (button.FontSize, button.Padding) = (12.5, new Thickness(10, 8));
-        return button;
+        selectedText.Text = Tr.T("{0} selected", total);
     }
 
     // --- one file, one folder ---
@@ -356,7 +406,7 @@ public sealed class VaultPage : AppPage
     private async Task FileActions(VaultItem item)
     {
         string open = Tr.T("Open"), rename = Tr.T("Rename…"), move = Tr.T("Move to…"), takeOut = Tr.T("Take out"), delete = Tr.T("Delete");
-        var choice = await DisplayActionSheet(item.Name, Tr.T("Cancel"), delete, open, rename, move, takeOut);
+        var choice = await Choose(item.Name, Actions(open, rename, move, takeOut, delete), Theme.TileFor(item.Name));
         if (choice == open)
             await OpenItem(item);
         else if (choice == rename)
@@ -369,10 +419,16 @@ public sealed class VaultPage : AppPage
             await DeleteItems([item], []);
     }
 
+    private static SheetChoice[] Actions(string open, string rename, string move, string takeOut, string delete) =>
+    [
+        new("i_external_link_w.png", open), new("i_pencil_w.png", rename), new("i_move_right_w.png", move),
+        new("i_log_out_w.png", takeOut), new("i_trash_2_r.png", delete, Danger: true),
+    ];
+
     private async Task FolderActions(string folder)
     {
         string open = Tr.T("Open"), rename = Tr.T("Rename…"), move = Tr.T("Move to…"), takeOut = Tr.T("Take out"), delete = Tr.T("Delete");
-        var choice = await DisplayActionSheet(Vault.DirName(folder), Tr.T("Cancel"), delete, open, rename, move, takeOut);
+        var choice = await Choose(Vault.DirName(folder), Actions(open, rename, move, takeOut, delete), Theme.FolderTile);
         if (choice == open)
         {
             here = folder;
@@ -456,8 +512,8 @@ public sealed class VaultPage : AppPage
         // Not into a folder being moved, or into one inside it.
         var targets = vault.Folders().Where(target => !folders.Any(folder => Vault.IsInside(target, folder))).ToList();
         var top = Tr.T("Vault (the top)");
-        var choice = await DisplayActionSheet(Tr.T("Move to"), Tr.T("Cancel"), null, [top, .. targets.Select(target => target.Replace("/", " › "))]);
-        if (choice is null || choice == Tr.T("Cancel"))
+        var choice = await Choose(Tr.T("Move to"), [new SheetChoice("i_lock_w.png", top), .. targets.Select(target => new SheetChoice("i_folder_w.png", target.Replace("/", " › ")))]);
+        if (choice is null)
             return false;
         var into = choice == top ? "" : targets.First(target => target.Replace("/", " › ") == choice);
         try
