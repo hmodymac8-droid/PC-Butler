@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.6
+
+- Fixed: the Search page could freeze the window ("Not Responding") with millions of files indexed. The list waited for the index while it was being saved, sorted or updated; now it never waits (a line fills in a moment later), the index is copied quickly and written to disk without holding up searches, and a search with millions of results is not run again every second while files change.
+
 ## 1.22.5
 
 - Fixed: clicking the tray icon while its panel was closing could stop PC Butler with "Cannot set Visibility to Visible or call Show, ShowDialog, Close... while a Window is closing". The panel now ignores a second close while it is already closing.

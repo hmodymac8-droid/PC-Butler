@@ -30,44 +30,57 @@ public static class IndexStore
 
     public static string DefaultFile => Path.Combine(Folder, "index.bin");
 
-    /// <summary>Write the index (the live rows only). Takes the index's read lock while it copies.</summary>
+    /// <summary>
+    /// Write the index (the live rows only). Takes the index's read lock only while it copies, not
+    /// while it writes: a change waiting for the lock holds up everyone reading after it, the
+    /// window too.
+    /// </summary>
     public static void Save(SearchIndex index, string file, IndexInfo info)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         var temporary = file + ".new";
+        int[] parents;
+        byte[] flags;
+        long[]? sizes;
+        uint[]? dates;
+        bool byName;
+        var names = new MemoryStream();
         index.Gate.EnterReadLock();
         try
         {
-            var (rows, parents, flags, sizes, dates, byName) = index.Export();
-            using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
-            using (var writer = new BinaryWriter(stream, Encoding.UTF8))
+            (var rows, parents, flags, sizes, dates, byName) = index.Export();
+            names.Capacity = rows.Length * 24;
+            var buffer = new byte[Encoding.UTF8.GetMaxByteCount(32768) + 1];
+            foreach (var row in rows)
             {
-                writer.Write(Magic);
-                writer.Write(FormatVersion);
-                writer.Write((sizes is null ? 0 : 1) | (dates is null ? 0 : 2) | (index.Variants ? 4 : 0) | (byName ? 8 : 0));
-                writer.Write(info.Fingerprint);
-                writer.Write(info.SavedUtc.Ticks);
-                writer.Write(info.ScannedUtc.Ticks);
-                writer.Write(parents.Length);
-                writer.Flush();
-                stream.Write(MemoryMarshal.AsBytes(parents.AsSpan()));
-                stream.Write(flags);
-                if (sizes is not null)
-                    stream.Write(MemoryMarshal.AsBytes(sizes.AsSpan()));
-                if (dates is not null)
-                    stream.Write(MemoryMarshal.AsBytes(dates.AsSpan()));
-                var buffer = new byte[Encoding.UTF8.GetMaxByteCount(32768) + 1];
-                foreach (var row in rows)
-                {
-                    var length = Encoding.UTF8.GetBytes(index.NameSpan(row), buffer);
-                    buffer[length] = 0;
-                    stream.Write(buffer, 0, length + 1);
-                }
+                var length = Encoding.UTF8.GetBytes(index.NameSpan(row), buffer);
+                buffer[length] = 0;
+                names.Write(buffer, 0, length + 1);
             }
         }
         finally
         {
             index.Gate.ExitReadLock();
+        }
+        using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8))
+        {
+            writer.Write(Magic);
+            writer.Write(FormatVersion);
+            writer.Write((sizes is null ? 0 : 1) | (dates is null ? 0 : 2) | (index.Variants ? 4 : 0) | (byName ? 8 : 0));
+            writer.Write(info.Fingerprint);
+            writer.Write(info.SavedUtc.Ticks);
+            writer.Write(info.ScannedUtc.Ticks);
+            writer.Write(parents.Length);
+            writer.Flush();
+            stream.Write(MemoryMarshal.AsBytes(parents.AsSpan()));
+            stream.Write(flags);
+            if (sizes is not null)
+                stream.Write(MemoryMarshal.AsBytes(sizes.AsSpan()));
+            if (dates is not null)
+                stream.Write(MemoryMarshal.AsBytes(dates.AsSpan()));
+            names.Position = 0;
+            names.CopyTo(stream);
         }
         File.Move(temporary, file, overwrite: true);
     }
