@@ -338,6 +338,20 @@ public sealed class ClipboardManager : IDisposable
 /// <summary>Shortcuts as text ("Win+V", "Ctrl+Alt+V") and back.</summary>
 public static class Shortcut
 {
+    /// <summary>
+    /// The modifier keys held now, for recording a shortcut. WPF can miss the Win key (Windows
+    /// handles it first), so it is read straight from Windows.
+    /// </summary>
+    public static ModifierKeys Held()
+    {
+        var held = Keyboard.Modifiers;
+        if ((GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0)
+            held |= ModifierKeys.Windows;
+        return held;
+    }
+
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
+
     public static bool TryParse(string text, out ModifierKeys modifiers, out Key key)
     {
         modifiers = ModifierKeys.None;

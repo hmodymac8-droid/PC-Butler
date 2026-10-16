@@ -7,6 +7,7 @@ Each version is a `## heading` followed by `- ` lines.
 
 - Clipboard page: a new "Replace Windows' clipboard history" switch. On, Win+V opens PC Butler's list instead of Windows' own; off, Win+V goes back to Windows and PC Butler's list opens with Ctrl+Alt+V.
 - When a shortcut is taken, the message now says by whom when it can: Win+V is named as Windows' clipboard history. For other programs Windows does not say which one, and the message says so.
+- Fixed: recording a shortcut with the Win key (such as Win+F12) on the Hotkeys tab or the Clipboard page now keeps the Win key.
 
 ## 1.22.0
 
