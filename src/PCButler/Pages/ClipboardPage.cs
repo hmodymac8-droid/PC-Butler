@@ -161,13 +161,13 @@ public sealed class ClipboardPage : Page
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.Tab)
             return;
-        if (Keyboard.Modifiers == ModifierKeys.None)
+        if (Shortcut.Held() == ModifierKeys.None)
         {
             if (key is Key.Back or Key.Delete)
                 SetShortcut(""); // no shortcut
             return; // a key alone would take it from every program
         }
-        SetShortcut(Shortcut.Format(Keyboard.Modifiers, key));
+        SetShortcut(Shortcut.Format(Shortcut.Held(), key));
     }
 
     private void SetShortcut(string keys)
