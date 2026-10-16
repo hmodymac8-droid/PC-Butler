@@ -3,6 +3,31 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.21.6
+
+- PC Butler no longer writes to the disk every second. The helper's temperatures and frame counts reach the program through memory instead of the sensors.json and fps.json files, and settings are only written when they change.
+- The log (pcbutler.log) stays under a megabyte: the older part moves to pcbutler.old.log. Deleting files adds one line, not one per file, and Courier no longer notes every repeated knock and renewal.
+
+## 1.21.5
+
+- Clipboard: Win+V now opens PC Butler's clipboard history instead of Windows' own, and it is the default shortcut (if you kept the old Ctrl+Alt+V, it moves to Win+V). Any other shortcut can still be set on the Clipboard page or in Settings > Hotkeys.
+- Share with Courier from File Explorer: right-click files or folders, choose PC Butler > Share with Courier, and they wait on the Courier page, ready to send (sent at once when one PC is connected).
+
+## 1.21.4
+
+- Settings > Hotkeys: the clipboard history's shortcut can be changed there too, like the others.
+
+## 1.21.3
+
+- Fixed: switching the overlay off could, rarely, close PC Butler.
+
+## 1.21.2
+
+- Frames per second now work without the helper on accounts Windows allows to count frames (members of its "Performance Log Users" group): PC Butler counts them itself, with no permission prompt. Other accounts still use the helper.
+- Benchmark: a switch that starts the helper by itself when a game comes up, so frames per second are counted without visiting the page first. Windows asks for your permission once each time PC Butler runs.
+- The overlay says why there is no frame rate: "helper is off" when nothing is counting, instead of a dash.
+- A game session is no longer cut short by a look at another window: it ends when the game is closed.
+
 ## 1.21.1
 
 - Courier has its own encrypted connection code now, the same on Windows and in the PC Butler phone app, so a PC and a phone work together: install this version on every PC that talks to a phone.

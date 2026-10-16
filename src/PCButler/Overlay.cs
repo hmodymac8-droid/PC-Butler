@@ -140,6 +140,14 @@ public sealed class OverlayController
     private int recordedPid;
     private DateTime lastInFront, lastAsked;
     private readonly NetworkMeter network = new();
+    private bool helperOffered; // the helper is offered once each run: a "no" is not asked again
+    // Counting frames in this program itself: null = not tried yet, true = Windows allows this account to, false = it needs the helper.
+    private bool? countsItself;
+    private DateTime itselfSince;
+    private bool itselfSawFrames;
+
+    /// <summary>True when this program counts frames with no helper: Windows allows that to accounts in its "Performance Log Users" group.</summary>
+    public bool CountsItself => countsItself == true;
 
     public OverlayController() => timer.Tick += (_, _) => Tick();
 
@@ -168,10 +176,26 @@ public sealed class OverlayController
     public void Stop()
     {
         timer.Stop();
+        if (countsItself == true)
+            FpsMeter.Stop();
+        countsItself = null;
         FinishSession();
         window?.Close();
         window = null;
         Latest = null;
+    }
+
+    private static bool StillRunning(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return error is System.ComponentModel.Win32Exception; // there, but not ours to look at
+        }
     }
 
     private void FinishSession()
@@ -191,12 +215,36 @@ public sealed class OverlayController
         var now = DateTime.UtcNow;
 
         // Frames per second come from the helper; ask it to count when it is there and not counting yet.
+        // First try to count frames here, with no helper: Windows lets some accounts do that. Only if it refuses is the helper needed.
+        if (settings.Fps && countsItself is null)
+        {
+            countsItself = FpsMeter.Start();
+            (itselfSince, itselfSawFrames) = (now, false);
+            Log.Info(countsItself == true ? "Counting frames without the helper" : "Counting frames needs the helper on this account");
+        }
         var counts = settings.Fps ? FpsMeter.Latest() : null;
+        itselfSawFrames |= counts is { Count: > 0 };
+        if (countsItself == true && !itselfSawFrames && (now - itselfSince).TotalSeconds > 15)
+        {
+            // Windows let the count start but hands over nothing (the desktop alone shows frames all the time): the helper it is.
+            FpsMeter.Stop();
+            countsItself = false;
+            Log.Info("No frames were reported without the helper; it is needed after all");
+        }
         CountingFrames = counts is not null;
-        if (settings.Fps && counts is null && (now - lastAsked).TotalSeconds > 10 && AdminHelper.Running)
+        var helper = AdminHelper.Running;
+        var needsHelper = countsItself == false;
+        if (settings.Fps && needsHelper && counts is null && (now - lastAsked).TotalSeconds > 10 && helper)
         {
             lastAsked = now;
             Task.Run(() => AdminHelper.Send("fps", ["on"], 10));
+        }
+        // A game has come up and nothing is counting its frames: start the helper, if the user asked for that.
+        if (game && needsHelper && settings is { Fps: true, AutoHelper: true } && !helper && !helperOffered)
+        {
+            helperOffered = true;
+            Log.Info($"A game is in front ({front!.Name}); starting the helper to count its frames");
+            Task.Run(Sensors.StartHelper);
         }
 
         var usage = App.Current.Usage;
@@ -219,8 +267,8 @@ public sealed class OverlayController
             lastInFront = now;
             recorder.Add(reading);
         }
-        else if (recorder is not null && (now - lastInFront).TotalSeconds > 20)
-            FinishSession();
+        else if (recorder is not null && ((now - lastInFront).TotalMinutes > 10 || !StillRunning(recordedPid)))
+            FinishSession(); // the game was closed, or left alone for a long while; a look at another window does not end it
 
         if (watched is null)
         {
@@ -234,7 +282,8 @@ public sealed class OverlayController
         {
             (string, string, bool)? line = row switch
             {
-                "fps" => ("FPS", fps?.ToString() ?? "—", true),
+                // Why there is no number, when there is none: nobody is counting, counting has just begun, or this program shows no frames.
+                "fps" => ("FPS", fps?.ToString() ?? (needsHelper && !helper ? Ui.T("helper is off") : counts is null ? "…" : "—"), true),
                 "frame_time" when fps is > 0 => ("ms", (1000.0 / fps.Value).ToString("0.0"), false),
                 "cpu" => ("CPU", $"{reading.Cpu,3}%" + (settings.Temperatures && reading.CpuTemperature is { } cpu ? $"  {cpu}°C" : ""), false),
                 "gpu" when reading.Gpu is not null || reading.GpuTemperature is not null =>

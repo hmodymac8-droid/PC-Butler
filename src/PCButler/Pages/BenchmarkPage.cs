@@ -36,7 +36,11 @@ public sealed class BenchmarkPage : Page
         rows.Children.Add(Ui.SettingRow(Ui.T("Temperatures"), Ui.T("Beside the processor's and the graphics card's use."),
                                         Ui.Switch("", settings.Temperatures, on => Change(overlay => overlay.Temperatures = on))));
         fpsButton = Ui.Button(Ui.T("Start the helper"), StartHelper);
-        rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Frames per second need administrator rights"), 13, weight: FontWeights.Bold), fpsState, fpsButton));
+        rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Counting frames per second"), 13, weight: FontWeights.Bold), fpsState, fpsButton));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Start the helper by itself when a game starts"),
+                                        Ui.T("So frames are counted without coming here first. Windows asks for your permission once each time PC Butler "
+                                             + "runs, when the first game comes up."),
+                                        Ui.Switch("", settings.AutoHelper, on => Change(overlay => overlay.AutoHelper = on))));
         cpuButton = Ui.Button(Ui.T("Get PawnIO"), () => Shell.Open(CpuSensor.DriverPage));
         rows.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Processor temperature"), 13, weight: FontWeights.Bold), cpuState, cpuButton));
         games = Ui.Field(string.Join(", ", settings.Games), 300, "game.exe, emulator.exe");
@@ -117,10 +121,11 @@ public sealed class BenchmarkPage : Page
         if (overlay.SessionsSaved != sessionsShown)
             ShowSessions();
         var helper = AdminHelper.Running;
-        fpsState.Text = Ui.T(overlay.CountingFrames ? "The helper is counting frames. It stops when PC Butler closes."
+        fpsState.Text = Ui.T(overlay.CountsItself ? "Frames are counted with no helper: Windows allows this account to. Nothing to start."
+                             : overlay.CountingFrames ? "The helper is counting frames. It stops when PC Butler closes."
                              : helper ? "The helper is running; frames are counted while the overlay is on."
                              : "Without the helper the overlay shows everything except frames per second. Start it once each time PC Butler starts.");
-        fpsButton.Visibility = helper ? Visibility.Collapsed : Visibility.Visible;
+        fpsButton.Visibility = helper || overlay.CountsItself ? Visibility.Collapsed : Visibility.Visible;
         var driver = CpuSensor.DriverInstalled;
         cpuState.Text = Ui.T(!driver ? "Reading an Intel or AMD processor's own temperature needs a driver. PC Butler uses PawnIO, a free, signed one, "
                                        + "and does not install it for you: get it from its own site, then start the helper."

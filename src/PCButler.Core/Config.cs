@@ -92,13 +92,17 @@ public sealed class ScheduleSettings
 public sealed class ClipboardSettings
 {
     public const int MinLimit = 10, MaxLimit = 10000;
+    /// <summary>Win+V, the key Windows' own clipboard history uses: PC Butler takes it over while the manager is on.</summary>
+    public const string DefaultShortcut = "Win+V";
 
     /// <summary>Off until the user turns it on: everything copied is recorded while it is on.</summary>
     [JsonPropertyName("enabled")] public bool Enabled { get; set; }
     /// <summary>How many items are kept; pinned ones never count against it.</summary>
     [JsonPropertyName("limit")] public int Limit { get; set; } = 500;
-    /// <summary>The keys that open the list, such as "Ctrl+Alt+V"; "" = none.</summary>
-    [JsonPropertyName("shortcut")] public string Shortcut { get; set; } = "Ctrl+Alt+V";
+    /// <summary>The keys that open the list, such as "Win+V"; "" = none.</summary>
+    [JsonPropertyName("shortcut")] public string Shortcut { get; set; } = DefaultShortcut;
+    /// <summary>2 since Win+V became the default; settings without it still have the old default, Ctrl+Alt+V, which moves to Win+V once.</summary>
+    [JsonPropertyName("shortcut_version")] public int ShortcutVersion { get; set; } = 2;
     /// <summary>Keep the history on disk, so it survives a restart.</summary>
     [JsonPropertyName("keep_on_disk")] public bool KeepOnDisk { get; set; } = true;
     /// <summary>Record copied pictures too, not only text and files.</summary>
@@ -252,14 +256,30 @@ public static class ConfigStore
         config.Cleaner ??= new CleanerSettings();
         config.Schedule ??= new ScheduleSettings();
         config.Clipboard ??= new ClipboardSettings();
+        if (saved?["clipboard"] is JsonObject clipboard && !clipboard.ContainsKey("shortcut_version"))
+        {
+            if (config.Clipboard.Shortcut == "Ctrl+Alt+V")
+                config.Clipboard.Shortcut = ClipboardSettings.DefaultShortcut;
+            config.Clipboard.ShortcutVersion = 2;
+        }
         config.Clipboard.Limit = Math.Clamp(config.Clipboard.Limit, ClipboardSettings.MinLimit, ClipboardSettings.MaxLimit);
         return config;
     }
 
+    /// <summary>Write the settings, unless the file holds exactly these already (reading costs the disk nothing; writing does).</summary>
     public static void Save(Config config)
     {
+        var text = JsonSerializer.Serialize(config, Options);
+        try
+        {
+            if (File.Exists(AppInfo.ConfigFile) && File.ReadAllText(AppInfo.ConfigFile) == text)
+                return;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
         Directory.CreateDirectory(AppInfo.DataDir);
-        File.WriteAllText(AppInfo.ConfigFile, JsonSerializer.Serialize(config, Options));
+        File.WriteAllText(AppInfo.ConfigFile, text);
     }
 
     /// <summary>Look up a per-user Windows folder, honouring a relocated one.</summary>

@@ -233,7 +233,9 @@ public sealed partial class PortalNode
                         var forwarded = dht == dht4 && mapping is { } given && given.ExternalPort != link.Port ? given.ExternalPort : (int?)null;
                         await dht.Lookup(Portal.DirectoryKey(Number, knock: false), announce: true, stopping.Token, forwarded);
                         announced = now;
-                        Log.Info($"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
+                        // Said again only when the address changes, not at every renewal.
+                        Log.Seldom($"announced {dht == dht6} {dht.PublicAddress}", TimeSpan.FromDays(1),
+                                   $"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
                         Raise();
                     }
                     // A client that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
@@ -244,9 +246,11 @@ public sealed partial class PortalNode
                         if (link.IsOpen(knocker) || dht.IsMe(knocker) || times >= 4 && now - at < 30 * 60_000 || now - at < 45_000)
                             continue;
                         knocked[knocker] = (now, now - at > 30 * 60_000 ? 1 : times + 1);
-                        Log.Info($"Courier: a PC at {knocker} is asking to connect; opening a path towards it");
+                        // A PC that keeps knocking is noted once an hour, not at every try.
+                        Log.Seldom($"knock {knocker}", TimeSpan.FromHours(1), $"Courier: a PC at {knocker} is asking to connect; opening a path towards it");
                         _ = link.PunchTo(knocker, TimeSpan.FromSeconds(25), stopping.Token).ContinueWith(done =>
-                            Log.Info($"Courier: path to {knocker} {(done.Result ? "opened" : "did not open")}"), TaskContinuationOptions.OnlyOnRanToCompletion);
+                            Log.Seldom($"knock {knocker} {done.Result}", TimeSpan.FromHours(1), $"Courier: path to {knocker} {(done.Result ? "opened" : "did not open")}"),
+                            TaskContinuationOptions.OnlyOnRanToCompletion);
                     }
                 }
                 await Task.Delay(3000, stopping.Token);
@@ -294,7 +298,12 @@ public sealed partial class PortalNode
                             await Pair(host);
                         Raise();
                     }
-                    if (host is { Online: true, Trusted: true } && Environment.TickCount64 - lastAsked > 10_000)
+                    else if (host is { Online: true, Trusted: false } && HostPassword.Length > 0)
+                    {
+                        await Pair(host); // the user typed the password the host asked for
+                        Raise();
+                    }
+                    if (host is { Online: true, Trusted: true } && Environment.TickCount64 - lastAsked > (WaitingForHost ? 3000 : 10_000))
                     {
                         lastAsked = Environment.TickCount64;
                         await AskForClients(host);
@@ -336,11 +345,16 @@ public sealed partial class PortalNode
                 .Select(item => new PortalClient(item.GetProperty("id").GetString() ?? "", Portal.CleanLabel(item.GetProperty("name").GetString() ?? ""),
                                                  item.GetProperty("online").GetBoolean()))
                 .Where(item => IdPattern().IsMatch(item.Id) && item.Id != Id).ToList();
+            HostAllowed();
             if (!fresh.SequenceEqual(otherClients))
             {
                 otherClients = fresh;
                 Raise();
             }
+        }
+        catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden)
+        {
+            HostRefused();
         }
         catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or JsonException
                                           or KeyNotFoundException or InvalidOperationException)
