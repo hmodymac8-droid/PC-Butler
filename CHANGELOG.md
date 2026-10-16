@@ -10,6 +10,12 @@ Each version is a `## heading` followed by `- ` lines.
 - Win + F opens a search box over whatever program is in front: Enter opens, Ctrl+Enter opens the folder. The shortcut can be changed on the Hotkeys tab.
 - Results: sort by name, path, size or date modified; open, open the folder, copy the path or name, rename, or move files to the Recycle Bin (History can bring them back).
 - Settings > Search: which drives and folders are indexed, what is left out, and how much memory the index uses. The index is saved, so search is ready at once when PC Butler starts, and changes are followed while it runs.
+- Courier: every file sent or received shows a notification in the corner of the screen with its progress bar, the time it has taken and the time left, and Pause (then Resume) and Cancel. It shows while the Courier widget is hidden or switched off, and says how the transfer ended for a few seconds.
+- PC Butler on the phone: Courier's notification shows the file on its way with its progress bar, time taken and time left, and has Pause or Resume, Cancel and Disconnect buttons. The Courier tab has a Pause button and the times under each transfer too. A pause on one side holds the transfer on both.
+- Courier keeps a list of saved PCs, on Windows and on the phone: add a PC by its ID to connect to it later, connect to any of them with a click, rename them and remove them. The PCs you connect to join the list by themselves.
+- Mark one saved PC as the favourite: Courier connects to it by itself when PC Butler starts.
+- A PC that shares (the host) chooses what happens when a new PC connects: it asks you to allow it, or it lets in the PCs that give the password you set. The phone asks too now, with Allow and Refuse, instead of letting every PC in.
+- A host can rename the PCs it let in.
 
 ## 1.21.6
 
