@@ -7,6 +7,7 @@
 //   dotnet run --project tests/PCButler.Tests [path to a vault made by Downloads Sorter] [its password]
 using System.Text;
 using PCButler.Core;
+using PCButler.Core.Search;
 
 var temp = Directory.CreateTempSubdirectory("pcbutler-test-").FullName;
 Environment.SetEnvironmentVariable("PCBUTLER_DATA", Path.Combine(temp, "data"));
@@ -917,16 +918,37 @@ Section("courier IDs");
           && GameDetector.LooksLikeGame(Front("chrome.exe", true), ["chrome.exe"]), "a browser, a player or the desktop in full screen is not a game, unless listed");
     Check(GameDetector.Foreground() is null or { Name.Length: > 4, Right: > 0 }, "the window in front can be read");
     Check(FpsMeter.Choose(144, 300) == 144 && FpsMeter.Choose(0, 60) == 60 && FpsMeter.Choose(0, 0) == 0, "a program's own frame count is used before the graphics kernel's");
-    var fpsDir = Path.Combine(temp, "fps");
-    Directory.CreateDirectory(fpsDir);
-    Check(FpsMeter.Latest(fpsDir) is null, "no frame counts while nobody is counting");
-    var countingStarted = FpsMeter.Start(fpsDir);
+    var fpsSlot = $"PCButler-test-fps-{Guid.NewGuid():N}";
+    Check(FpsMeter.Latest(fpsSlot) is null, "no frame counts while nobody is counting");
+    var countingStarted = FpsMeter.Start(fpsSlot);
     FpsMeter.Stop();
     Check(true, $"asking Windows to count frames without administrator rights is refused quietly, not with a crash (started: {countingStarted})");
-    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow, Fps = { [4242] = 143, [77] = 60 } }));
-    Check(FpsMeter.Latest(fpsDir) is { Count: 2 } counts && counts[4242] == 143, "the helper's counts are read by program");
-    File.WriteAllText(FpsMeter.FileIn(fpsDir), System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow.AddSeconds(-30), Fps = { [4242] = 143 } }));
-    Check(FpsMeter.Latest(fpsDir) is null, "counts the helper stopped refreshing are not shown as if they were live");
+    LiveSlot.Write(fpsSlot, System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow, Fps = { [4242] = 143, [77] = 60 } }));
+    Check(FpsMeter.Latest(fpsSlot) is { Count: 2 } counts && counts[4242] == 143, "the helper's counts are read by program");
+    LiveSlot.Write(fpsSlot, System.Text.Json.JsonSerializer.Serialize(new FpsMeter.FpsReading { Time = DateTime.UtcNow.AddSeconds(-30), Fps = { [4242] = 143 } }));
+    Check(FpsMeter.Latest(fpsSlot) is null, "counts the helper stopped refreshing are not shown as if they were live");
+    var sensorSlot = $"PCButler-test-sensors-{Guid.NewGuid():N}";
+    Check(Sensors.Latest(sensorSlot) is null, "no temperatures while the helper is not running");
+    LiveSlot.Write(sensorSlot, System.Text.Json.JsonSerializer.Serialize(new SensorReading { Time = DateTime.Now, CpuTemperature = 55.5, Fans = [900] }));
+    Check(Sensors.Latest(sensorSlot) is { CpuTemperature: 55.5, Fans: [900] }, "the helper's temperatures reach the main program through memory");
+    var longText = new string('x', 5000);
+    LiveSlot.Write(sensorSlot, longText);
+    LiveSlot.Write(sensorSlot, "short");
+    Check(LiveSlot.Read(sensorSlot) == "short" && !LiveSlot.Write(sensorSlot, new string('x', 70_000)), "a shorter reading replaces a longer one whole, and one too big is refused");
+    var logLines = File.Exists(AppInfo.LogFile) ? File.ReadAllLines(AppInfo.LogFile).Length : 0;
+    for (var knock = 0; knock < 5; knock++)
+        Log.Seldom("test knock", TimeSpan.FromHours(1), "Courier: a PC keeps knocking");
+    Check(File.ReadAllLines(AppInfo.LogFile).Length == logLines + 1, "a message that repeats is logged once, not every time");
+    for (var line = 0; line < 12_000; line++)
+        Log.Info("filler line for the size limit, " + new string('x', 80));
+    Check(new FileInfo(AppInfo.LogFile).Length <= Log.MaxBytes && File.Exists(Log.OldFile) && new FileInfo(Log.OldFile).Length <= Log.MaxBytes,
+          "the log never grows past its limit: the old part moves aside, replacing the one before");
+    var savedConfig = ConfigStore.Load();
+    ConfigStore.Save(savedConfig);
+    var savedAt = File.GetLastWriteTimeUtc(AppInfo.ConfigFile);
+    Thread.Sleep(50);
+    ConfigStore.Save(savedConfig);
+    Check(File.GetLastWriteTimeUtc(AppInfo.ConfigFile) == savedAt, "saving unchanged settings leaves the file alone");
     File.WriteAllText(Path.Combine(helperDir, "helper-command.json"), """{"id":"f1","action":"fps","services":["off"]}""");
     AdminHelper.Poll(helperDir, []);
     Check(File.ReadAllText(Path.Combine(helperDir, "helper-result.json")).Contains("\"off\""), "the helper takes the request to stop counting frames");
@@ -1145,6 +1167,20 @@ Check(Math.Abs(boxes[0].Width * boxes[0].Height / (600.0 * 400) - 6.0 / 24) < 0.
 Check(Storage.Treemap([], 100, 100).Count == 0 && Storage.Treemap([5], 100, 50) is [(0, 0, 100, 50)], "treemap edge cases");
 
 Section("clipboard history");
+var configBefore = File.Exists(AppInfo.ConfigFile) ? File.ReadAllText(AppInfo.ConfigFile) : null;
+Check(new ClipboardSettings().Shortcut == "Win+V", "Win+V is the default shortcut");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"enabled": true, "shortcut": "Ctrl+Alt+V"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Win+V", "the old default shortcut moves to Win+V");
+File.WriteAllText(AppInfo.ConfigFile, """{"clipboard": {"shortcut": "Ctrl+Shift+B"}}""");
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Shift+B", "a shortcut the user chose stays");
+var chosen = ConfigStore.Load();
+chosen.Clipboard.Shortcut = "Ctrl+Alt+V";
+ConfigStore.Save(chosen);
+Check(ConfigStore.Load().Clipboard.Shortcut == "Ctrl+Alt+V", "Ctrl+Alt+V chosen after the change stays");
+if (configBefore is null)
+    File.Delete(AppInfo.ConfigFile);
+else
+    File.WriteAllText(AppInfo.ConfigFile, configBefore);
 ClipboardHistory.Clear(keepPinned: false);
 ClipboardHistory.Add(new ClipEntry { Text = "first" }, 3);
 ClipboardHistory.Add(new ClipEntry { Text = "second" }, 3);
@@ -1232,6 +1268,128 @@ Section("app usage");
           "the report is a spreadsheet, names quoted where they must be");
     AppUsageLog.Clear();
     Check(AppUsageLog.FirstDay is null && AppUsageLog.Report(DateTime.Today.AddDays(-90), DateTime.Today).Count == 0, "and it can be cleared");
+}
+
+Section("search: parser");
+{
+    var tree = QueryParser.Parse("report 2024|2025 !draft");
+    Check(tree is AndNode { Parts: [TermNode { Text: "report" }, OrNode { Parts: [TermNode { Text: "2024" }, TermNode { Text: "2025" }] }, NotNode { Part: TermNode { Text: "draft" } }] },
+          "space is AND, | binds tighter, ! is NOT: " + tree);
+    Check(QueryParser.Parse("\"my report\" <a|b>") is AndNode { Parts: [TermNode { Text: "my report" }, OrNode { Parts.Count: 2 }] }, "quotes keep spaces, < > group");
+    Check(QueryParser.Parse("case:<Ab cd>") is AndNode { Parts: [TermNode { Text: "Ab", Modifiers: QueryModifiers.Case }, TermNode { Text: "cd", Modifiers: QueryModifiers.Case }] },
+          "a modifier before a group applies to everything in it");
+    Check(QueryParser.Parse("ext:jpg;.PNG") is ExtNode { Extensions: ["jpg", "PNG"] } && QueryParser.Parse("ext:") is ExtNode { Extensions: [""] }, "ext: lists");
+    Check(QueryParser.Parse("C:\\Users") is TermNode { Text: "C:\\Users", Modifiers: QueryModifiers.None }, "a drive letter is not a modifier");
+    Check(QueryParser.Parse("folder:") is AllNode { Modifiers: QueryModifiers.Folders } && QueryParser.Parse("") is AllNode { Modifiers: QueryModifiers.None }, "folder: alone, empty search");
+    Check(QueryParser.Parse("file:a*") is TermNode { Text: "a*", Modifiers: QueryModifiers.Files } && QueryParser.Parse("wow!") is TermNode { Text: "wow!" }, "file: on a term; ! inside a word is text");
+    Check(QueryParser.Parse("a > | <") is TermNode { Text: "a" }, "stray operators are ignored");
+
+    Section("search: folding and matching");
+    Check(SearchText.Apply("مُحَمَّد", Fold.Full, true) == "محمد" && SearchText.Apply("أحمد إبراهيم آمنة", Fold.Full, true) == "احمد ابراهيم امنه", "tashkeel and alef variants fold");
+    Check(SearchText.Apply("مستشفى", Fold.Full, true) == "مستشفي" && SearchText.Apply("مدرسة", Fold.Full, false) == "مدرسة", "ى and ة fold only with the variants on");
+    Check(SearchText.Apply("Résumé.DOCX", Fold.Full, true) == "resume.docx" && SearchText.Apply("Résumé", Fold.Case, true) == "résumé" && SearchText.Apply("Résumé", Fold.Marks, true) == "Resume",
+          "accents and case fold separately");
+    Check(SearchText.Apply("한국어", Fold.Full, true) == "한국어", "Korean syllables are not taken apart");
+    Check(SearchText.WildcardMatch("report.pdf", "*.pdf") && SearchText.WildcardMatch("a1.txt", "a?.txt") && !SearchText.WildcardMatch("a12.txt", "a?.txt")
+          && SearchText.WildcardMatch("abc", "*") && !SearchText.WildcardMatch("abc.pdfx", "*.pdf"), "wildcards");
+
+    var index = new SearchIndex();
+    var c = index.AddRoot("C:\\");
+    var users = index.Add(c, "Users", folder: true);
+    var docs = index.Add(users, "Docs", folder: true);
+    var report = index.Add(docs, "Report 2024.PDF", false, 1000, new DateTime(2024, 5, 1, 0, 0, 0, DateTimeKind.Utc));
+    var draft = index.Add(docs, "report draft.docx", false, 50, new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+    var arabic = index.Add(docs, "مُحَمَّد أحمد.txt", false, 10);
+    var hospital = index.Add(docs, "مستشفى.jpg", false, 20000);
+    var noExt = index.Add(docs, "README", false, 5);
+    var photos = index.Add(users, "Photos", folder: true);
+    var holiday = index.Add(photos, "holiday.JPG", false, 3000);
+    string[] Find(string query, SearchSort sort = SearchSort.Name, bool descending = false, SearchOptions? options = null) =>
+        Searcher.Run(index, query, sort, descending, options).Rows.Select(index.Name).ToArray();
+    bool Same(string[] got, params string[] wanted) => got.OrderBy(n => n, StringComparer.Ordinal).SequenceEqual(wanted.OrderBy(n => n, StringComparer.Ordinal));
+    Check(Same(Find("report"), "Report 2024.PDF", "report draft.docx"), "a word anywhere in the name, any case: " + string.Join(", ", Find("report")));
+    Check(Same(Find("report !draft"), "Report 2024.PDF") && Same(Find("pdf|docx"), "Report 2024.PDF", "report draft.docx"), "NOT and OR");
+    Check(Same(Find("case:Report"), "Report 2024.PDF") && Find("case:REPORT").Length == 0, "case: matches upper and lower case exactly");
+    Check(Same(Find("محمد"), "مُحَمَّد أحمد.txt") && Same(Find("احمد"), "مُحَمَّد أحمد.txt") && Same(Find("مستشفي"), "مستشفى.jpg"), "Arabic without tashkeel and with letter variants");
+    Check(Find("diacritics:محمد").Length == 0 && Same(Find("diacritics:مُحَمَّد"), "مُحَمَّد أحمد.txt"), "diacritics: makes tashkeel count");
+    Check(Same(Find("*.jpg"), "holiday.JPG", "مستشفى.jpg") && Same(Find("ext:pdf;docx"), "Report 2024.PDF", "report draft.docx") && Same(Find("ext:"), "README"), "wildcards and ext:");
+    Check(Same(Find("docs\\rep"), "Report 2024.PDF", "report draft.docx") && Same(Find("path:photos"), "Photos", "holiday.JPG")
+          && Same(Find("*users\\*\\*.jpg"), "holiday.JPG", "مستشفى.jpg"), "paths with \\, path: and wildcards in paths: " + string.Join(", ", Find("docs\\rep")) + " / " + string.Join(", ", Find("path:photos")) + " / " + string.Join(", ", Find("*users\\*\\*.jpg")));
+    Check(Same(Find("folder:o"), "Photos", "Docs") && Find("file:").Length == 6 && Find("").Length == 10, "file:, folder:, everything");
+    Check(Same(Find("\"report draft\""), "report draft.docx") && Same(Find("<holi|readme> !folder:"), "holiday.JPG", "README"), "quotes, groups and !folder:");
+    Check(Find("", SearchSort.Size, descending: true)[0] == "مستشفى.jpg" && Find("report", SearchSort.Modified)[0] == "Report 2024.PDF", "sort by size and date");
+
+    index.BuildOrder();
+    Check(Find("").SequenceEqual(new[] { index.Name(c) }.Concat(Find("").Skip(1))) && Find("o", SearchSort.Name).SequenceEqual(["Docs", "holiday.JPG", "Photos", "Report 2024.PDF", "report draft.docx"]),
+          "name order: " + string.Join(", ", Find("o")));
+    var added = index.Add(docs, "aaa new report.txt", false, 1);
+    Check(Find("report")[0] == "aaa new report.txt" && index.Unranked == 1, "rows added after the order was built still sort in their place");
+    var byPath = Find("", SearchSort.Path);
+    Check(Array.IndexOf(byPath, "Docs") < Array.IndexOf(byPath, "Report 2024.PDF") && Array.IndexOf(byPath, "Report 2024.PDF") < Array.IndexOf(byPath, "holiday.JPG"), "path order");
+
+    Section("search: index changes");
+    Check(index.Find("c:\\users\\DOCS\\report 2024.pdf") == report && index.FullPath(holiday) == "C:\\Users\\Photos\\holiday.JPG" && index.Find("C:\\nope") == -1, "paths are found and built");
+    index.Rename(draft, "final.docx");
+    Check(Find("draft").Length == 0 && Same(Find("final"), "final.docx") && index.Find("C:\\Users\\Docs\\final.docx") == draft, "rename");
+    index.Rename(docs, "Papers", photos);
+    Check(index.FullPath(report) == "C:\\Users\\Photos\\Papers\\Report 2024.PDF" && Same(Find("photos\\papers\\rep"), "Report 2024.PDF"), "a moved folder takes its contents along");
+    index.Remove(docs);
+    Check(Find("report").SequenceEqual(["aaa new report.txt"]) == false && Find("2024").Length == 0 && index.IsRemoved(arabic) && index.Live == 4, "removing a folder removes what is in it");
+    Check(index.Find("C:\\Users\\Photos\\holiday.JPG") == holiday && Same(Find("hol"), "holiday.JPG"), "the rest is untouched");
+    var compact = index.Compacted();
+    Check(compact.Live == 4 && compact.Count == 4 && compact.Find("C:\\Users\\Photos\\holiday.JPG") is var h && h >= 0 && compact.Size(h) == 3000
+          && Searcher.Run(compact, "hol").Rows.Length == 1, "compacting keeps the live rows");
+
+    Section("search: saving and loading");
+    var saved = Path.Combine(temp, "index.bin");
+    var info = new IndexInfo("fingerprint", DateTime.UtcNow, new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+    IndexStore.Save(compact, saved, info);
+    var loaded = IndexStore.Load(saved);
+    Check(loaded is { } l && l.Info.Fingerprint == "fingerprint" && l.Info.ScannedUtc == info.ScannedUtc && l.Index.Live == 4 && l.Index.Order is not null
+          && l.Index.FullPath(l.Index.Find("C:\\Users\\Photos\\holiday.JPG")) == "C:\\Users\\Photos\\holiday.JPG"
+          && l.Index.Modified(l.Index.Find("C:\\Users\\Photos")) is null && l.Index.Size(l.Index.Find("C:\\Users\\Photos\\holiday.JPG")) == 3000, "save and load");
+    File.WriteAllBytes(saved, [1, 2, 3]);
+    Check(IndexStore.Load(saved) is null && IndexStore.Load(Path.Combine(temp, "missing.bin")) is null, "a damaged or missing file loads as nothing");
+
+    Section("search: folder scan");
+    var tree2 = Path.Combine(temp, "scan");
+    Make(Path.Combine(tree2, "A"), "one.txt", "12345");
+    Make(Path.Combine(tree2, "A", "B"), "two.md");
+    Make(Path.Combine(tree2, "node_modules"), "skip.js");
+    Make(tree2, "تقرير.docx");
+    var scannedIndex = new SearchIndex();
+    var scanRules = new ScanRules(new SearchSettings { Exclude = ["node_modules"] });
+    FolderScanSource.Scan(scannedIndex, tree2, scanRules);
+    Check(scannedIndex.Live == 6 && scannedIndex.Find(Path.Combine(tree2, "A", "B", "two.md")) >= 0 && scannedIndex.Find(Path.Combine(tree2, "node_modules")) < 0
+          && scannedIndex.Size(scannedIndex.Find(Path.Combine(tree2, "A", "one.txt"))) == 5, $"a folder is walked, with exclusions ({scannedIndex.Live})");
+    Check(Searcher.Run(scannedIndex, "تقرير").Rows.Length == 1 && Searcher.Run(scannedIndex, "folder:").Rows.Length == 3, "and searched");
+
+    Section("search: engine and watchers");
+    var engineFolder = Path.Combine(temp, "watched");
+    Make(engineFolder, "first.txt");
+    using (var engine = new SearchEngine(Path.Combine(temp, "engine.bin")))
+    {
+        engine.Start(new SearchSettings { Drives = [], Folders = [engineFolder], Exclude = [] });
+        bool Wait(Func<bool> done)
+        {
+            for (var tries = 0; tries < 100 && !done(); tries++)
+                Thread.Sleep(100);
+            return done();
+        }
+        Check(Wait(() => engine.State == SearchState.Ready && engine.Search("first", SearchSort.Name, false, default).Rows.Length == 1), "the engine walks its folders");
+        Make(engineFolder, "second.txt");
+        Check(Wait(() => engine.Search("second", SearchSort.Name, false, default).Rows.Length == 1), "a new file is seen by the watcher");
+        File.Move(Path.Combine(engineFolder, "second.txt"), Path.Combine(engineFolder, "third.txt"));
+        Check(Wait(() => engine.Search("third", SearchSort.Name, false, default).Rows.Length == 1 && engine.Search("second", SearchSort.Name, false, default).Rows.Length == 0), "a rename is followed");
+        Directory.CreateDirectory(Path.Combine(temp, "outside", "Sub"));
+        File.WriteAllText(Path.Combine(temp, "outside", "Sub", "inner.txt"), "x");
+        Directory.Move(Path.Combine(temp, "outside"), Path.Combine(engineFolder, "moved"));
+        Check(Wait(() => engine.Search("inner", SearchSort.Name, false, default).Rows.Length == 1), "a folder moved in is walked with its contents");
+        File.Delete(Path.Combine(engineFolder, "third.txt"));
+        Check(Wait(() => engine.Search("third", SearchSort.Name, false, default).Rows.Length == 0), "a deleted file leaves the index");
+        engine.Stop();
+        Check(File.Exists(Path.Combine(temp, "engine.bin")), "the index is saved when the engine stops");
+    }
 }
 
 Section("courier saved PCs and passwords");
