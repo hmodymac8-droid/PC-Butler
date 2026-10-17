@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.8
+
+- Clipboard: a locked item's password can now be as short as one character (it needed at least 4).
+
 ## 1.22.7
 
 - Clipboard: a Lock button next to Pin on the Clipboard page. It locks the chosen item with a password (hidden and kept encrypted), unlocks a locked one, or locks an unlocked one again. This was only in the right-click menu before.
