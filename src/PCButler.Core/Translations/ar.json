@@ -1902,5 +1902,7 @@
  "Text copied on a connected PC lands here, ready to paste. What you copy here goes to the PCs when you come back to PC Butler.": "النص المنسوخ في حاسوب متصل يصل هنا جاهزًا للصق. وما تنسخه هنا يذهب إلى الحواسيب حين ترجع إلى PC Butler.",
  "Send what's copied to PC": "إرسال المنسوخ للحاسوب",
  "On the PC's clipboard now: press Ctrl+V there to paste it.": "صار في حافظة الحاسوب: اضغط Ctrl+V هناك للصقه.",
- "On {0}'s clipboard now: press Ctrl+V there to paste it.": "صار في حافظة {0}: اضغط Ctrl+V هناك للصقه."
+ "On {0}'s clipboard now: press Ctrl+V there to paste it.": "صار في حافظة {0}: اضغط Ctrl+V هناك للصقه.",
+ "Recent searches": "عمليات البحث السابقة",
+ "Remove from recent searches": "إزالة من عمليات البحث السابقة"
 }

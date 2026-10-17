@@ -20,6 +20,9 @@ public sealed class SearchPage : Page
     private readonly TextBlock state = Ui.Muted("", 12.5);
     private readonly DispatcherTimer typing = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromSeconds(1) };
+    // A search kept unchanged this long goes into the recent searches.
+    private readonly DispatcherTimer remember = new() { Interval = TimeSpan.FromSeconds(2.5) };
+    private readonly WrapPanel recent = new() { Margin = new Thickness(30, 0, 0, 10) };
     private CancellationTokenSource? running;
     private bool changedWhileAway;
 
@@ -32,6 +35,13 @@ public sealed class SearchPage : Page
         {
             typing.Stop();
             typing.Start();
+            remember.Stop();
+            remember.Start();
+        };
+        remember.Tick += (_, _) =>
+        {
+            remember.Stop();
+            SearchHistory.Add(box.Text);
         };
         box.PreviewKeyDown += (_, e) =>
         {
@@ -42,6 +52,7 @@ public sealed class SearchPage : Page
                     results.Step(results.SelectedIndex < 0 ? 0 : 1);
                     break;
                 case Key.Enter:
+                    SearchHistory.Add(box.Text);
                     results.ChooseFirst();
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
                         results.OpenFolderChosen();
@@ -69,11 +80,15 @@ public sealed class SearchPage : Page
         };
         results.SortChanged += () => Run();
         results.ChoiceChanged += ShowStatus;
+        results.Opened += () => SearchHistory.Add(box.Text);
+        SearchHistory.Changed += ShowRecent;
 
         var top = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
         top.Children.Add(Ui.Glyph("", 18, "Primary").Margin(0, 0, 12, 0).Dock(Dock.Left));
         top.Children.Add(box);
         Children.Add(top.Dock(Dock.Top));
+        Children.Add(recent.Dock(Dock.Top));
+        ShowRecent();
         var bar = new DockPanel { Margin = new Thickness(4, 8, 4, 0) };
         bar.Children.Add(state.Dock(Dock.Right));
         bar.Children.Add(status);
@@ -102,7 +117,34 @@ public sealed class SearchPage : Page
     {
         box.Text = text;
         box.CaretIndex = text.Length;
+        box.Focus();
         Run();
+    }
+
+    /// <summary>The recent searches under the box: a click runs one again, a right-click takes it out.</summary>
+    private void ShowRecent()
+    {
+        recent.Children.Clear();
+        var entries = SearchHistory.Entries;
+        recent.Visibility = entries.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (entries.Count == 0)
+            return;
+        recent.Children.Add(Ui.Muted(Ui.T("Recent searches"), 12.5).Margin(0, 0, 10, 4));
+        foreach (var entry in entries.Take(12))
+        {
+            var chip = Ui.Button(entry.Length > 40 ? entry[..40] + "…" : entry, () => SearchFor(entry));
+            chip.ToolTip = entry;
+            chip.FontSize = 12.5;
+            chip.Padding = new Thickness(10, 2, 10, 2);
+            chip.Margin = new Thickness(0, 0, 6, 4);
+            chip.ContextMenu = new ContextMenu { Items = { Ui.Item("Remove from recent searches", () => SearchHistory.Remove(entry)) } };
+            recent.Children.Add(chip);
+        }
+        var clear = Ui.Text(Ui.T("Clear"), 12.5, "Primary").Margin(6, 0, 0, 4);
+        clear.Cursor = Cursors.Hand;
+        clear.VerticalAlignment = VerticalAlignment.Center;
+        clear.MouseLeftButtonUp += (_, _) => SearchHistory.Clear();
+        recent.Children.Add(clear);
     }
 
     private void OnIndexChanged() => Dispatcher.BeginInvoke(() =>
