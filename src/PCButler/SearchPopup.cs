@@ -49,6 +49,7 @@ public sealed class SearchPopup : Window
             typing.Stop();
             Run();
         };
+        results.Opened += () => SearchHistory.Add(box.Text);
         results.Opened += CloseOnce;
         results.SortChanged += Run;
 
