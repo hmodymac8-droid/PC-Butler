@@ -106,7 +106,9 @@ public sealed class SearchEngine : IDisposable
                 if (current.Order is null)
                     BuildOrder();
                 Log.Info($"Search: loaded {current.Live:N0} entries");
-                rescanWanted = settings.RescanHours > 0 && DateTime.UtcNow - scannedAt > TimeSpan.FromHours(settings.RescanHours);
+                // Broken entries taken out at load leave their folders missing until they are walked again.
+                rescanWanted = current.Repaired > 0
+                               || (settings.RescanHours > 0 && DateTime.UtcNow - scannedAt > TimeSpan.FromHours(settings.RescanHours));
                 SetState(SearchState.Ready);
             }
             else
