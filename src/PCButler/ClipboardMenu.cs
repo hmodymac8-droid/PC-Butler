@@ -108,8 +108,8 @@ public static class ClipboardMenu
         AskPassword(owner, hold, Ui.T("Its content is hidden in the list and kept encrypted. Pasting it asks for this password. A forgotten password can't be recovered."),
                     ["Password", "Type it again"], Ui.T("Lock"), typed =>
                     {
-                        if (typed[0].Length < 4)
-                            return Ui.T("Use at least 4 characters.");
+                        if (typed[0].Length == 0)
+                            return Ui.T("Type a password (one character is enough).");
                         if (typed[0] != typed[1])
                             return Ui.T("The two passwords are not the same.");
                         done = ClipboardHistory.Lock(entry, typed[0]);
