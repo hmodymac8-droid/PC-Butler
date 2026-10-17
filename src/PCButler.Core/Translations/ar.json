@@ -591,6 +591,7 @@
  "Local storage": "مساحة التخزين",
  "Lock": "قفل",
  "Lock again": "قفل مجددًا",
+ "Type a password (one character is enough).": "اكتب كلمة مرور (حرف واحد يكفي).",
  "Lock the chosen item with a password: its content is hidden and kept encrypted.": "اقفل العنصر المختار بكلمة مرور: يُخفى محتواه ويُحفظ مشفّرًا.",
  "Lock in the Vault": "قفل في الخزنة",
  "Lock in the Vault ({0} file(s))": "قفل في الخزنة ({0} ملف)",
