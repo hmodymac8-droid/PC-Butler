@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.16
+
+- The phone app, PC Butler for Android 1.2.3, is sent to Google Play for its closed test. It brings the clipboard sharing, the Tools sheet (Search, Cleaner, Apps, Benchmark, Clipboard, History), the new look and the fixes since 1.0.1 to the Play version.
+
 ## 1.22.15
 
 - Booster, Advanced: Extreme no longer switches off Windows Search indexing. With it off, the Photos app could fail to start the first time after a restart, so opening a picture showed "Windows cannot find '…\picture.jpg'" until Photos was repaired. "Search indexing off" is still in the list, now in no preset, for those who want it. If you applied Extreme before, press Apply on Extreme once more to switch indexing back on.
