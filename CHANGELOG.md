@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.7
+
+- Fixed: on the phone, the Cleaner could freeze PC Butler ("not responding") after Scan files. The scan now runs in the background and shows how many folders it has looked at, and long lists show 40 files at a time with "Show more" (Search too).
+
 ## 1.22.6
 
 - Fixed: the Search page could freeze the window ("Not Responding") with millions of files indexed. The list waited for the index while it was being saved, sorted or updated; now it never waits (a line fills in a moment later), the index is copied quickly and written to disk without holding up searches, and a search with millions of results is not run again every second while files change.
