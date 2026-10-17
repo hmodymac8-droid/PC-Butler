@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.9
+
+- Fixed: on the phone, the Cleaner could freeze PC Butler ("not responding") after Scan files. The scan now runs in the background and shows how many folders it has looked at, and long lists show 40 files at a time with "Show more" (Search too).
+
 ## 1.22.8
 
 - Clipboard: a locked item's password can now be as short as one character (it needed at least 4).

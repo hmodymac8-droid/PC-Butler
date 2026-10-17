@@ -50,12 +50,30 @@ public sealed class SearchPage : AppPage
         }
         status.IsVisible = true;
         status.Text = Tr.T("Looking for files…");
-        files = await Task.Run(() => ToolKit.AllFiles(CancellationToken.None));
+        var looked = 0;
+        var ticking = Dispatcher.CreateTimer();
+        ticking.Interval = TimeSpan.FromMilliseconds(400);
+        ticking.Tick += (_, _) => status.Text = Tr.T("Looking for files… {0} folder(s)", Volatile.Read(ref looked));
+        ticking.Start();
+        try
+        {
+            files = await Task.Run(() => ToolKit.AllFiles(CancellationToken.None, () => Interlocked.Increment(ref looked)));
+        }
+        finally
+        {
+            ticking.Stop();
+        }
         Show();
     }
 
-    private void Show()
+    /// <summary>How many results are listed at first, and added by each "Show more": a long list all at once stalls the screen.</summary>
+    private const int Page = 40;
+    private int shownRows = Page;
+
+    private void Show(bool fromTop = true)
     {
+        if (fromTop)
+            shownRows = Page;
         status.IsVisible = !ToolKit.HasFolders;
         status.Text = Tr.T("Add a folder on the Sorter or Storage page first: Android only lets PC Butler see folders you pick.");
         var needle = (query.Text ?? "").Trim();
@@ -66,7 +84,7 @@ public sealed class SearchPage : AppPage
         results.Children.Clear();
         if (found.Count == 0)
             results.Children.Add(Theme.Empty("i_search_m.png", Tr.T("No matching files"), Tr.T("Try another name or file type")));
-        foreach (var file in found.Take(200))
+        foreach (var file in found.Take(shownRows))
         {
             var row = ToolKit.FileRow(file, Theme.Icon(Tr.IsArabic ? "i_chevron_left_g.png" : "i_chevron_right_g.png", 16));
             row.Padding = new Thickness(16, 10);
@@ -75,8 +93,8 @@ public sealed class SearchPage : AppPage
                 results.Children.Add(Theme.Divider().Margin(16, 0, 16, 0));
             results.Children.Add(row);
         }
-        if (found.Count > 200)
-            results.Children.Add(Theme.Faint(Tr.T("…and {0} more", found.Count - 200), 12.5).Margin(16, 8, 16, 12));
+        if (found.Count > shownRows)
+            results.Children.Add(Theme.Link(Tr.T("Show {0} more", Math.Min(Page, found.Count - shownRows)), () => { shownRows += Page; Show(false); }).Margin(8, 4, 8, 8));
     }
 
     private async Task Details(Doc file)

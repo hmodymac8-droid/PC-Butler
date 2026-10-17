@@ -12,12 +12,12 @@ public static class ToolKit
     /// Every file in all the folders the user gave PC Butler (the Sorter's, and the ones of
     /// Duplicates and Storage), each once.
     /// </summary>
-    public static List<Doc> AllFiles(CancellationToken cancel)
+    public static List<Doc> AllFiles(CancellationToken cancel, Action? folderDone = null)
     {
         var trees = Folders.For("sorter").Concat(Folders.For("storage")).GroupBy(tree => tree.ToString()).Select(group => group.First());
         var seen = new Dictionary<string, Doc>(StringComparer.Ordinal);
         foreach (var root in trees.Select(Folders.Root).OfType<Doc>())
-            foreach (var doc in Folders.Files(root, cancel))
+            foreach (var doc in Folders.Files(root, cancel, _ => folderDone?.Invoke()))
                 seen.TryAdd(doc.Path, doc);
         return seen.Values.ToList();
     }
