@@ -13,8 +13,8 @@
     <RootNamespace>PCButler.Android</RootNamespace>
     <ApplicationTitle>PC Butler</ApplicationTitle>
     <ApplicationId>com.hmodymac8droid.pcbutler</ApplicationId>
-    <ApplicationDisplayVersion>1.2.0</ApplicationDisplayVersion>
-    <ApplicationVersion>4</ApplicationVersion>
+    <ApplicationDisplayVersion>1.2.1</ApplicationDisplayVersion>
+    <ApplicationVersion>5</ApplicationVersion>
     <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <!-- One APK that runs on phones (arm64) and on the emulator (x64). -->
