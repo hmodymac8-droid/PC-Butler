@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.7
+
+- Clipboard: a Lock button next to Pin on the Clipboard page. It locks the chosen item with a password (hidden and kept encrypted), unlocks a locked one, or locks an unlocked one again. This was only in the right-click menu before.
+
 ## 1.22.6
 
 - Fixed: the Search page could freeze the window ("Not Responding") with millions of files indexed. The list waited for the index while it was being saved, sorted or updated; now it never waits (a line fills in a moment later), the index is copied quickly and written to disk without holding up searches, and a search with millions of results is not run again every second while files change.

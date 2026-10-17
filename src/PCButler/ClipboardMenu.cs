@@ -88,6 +88,20 @@ public static class ClipboardMenu
         return opened;
     }
 
+    /// <summary>The page's lock button: unlock a locked item, lock an unlocked one again, or give an ordinary one a password.</summary>
+    public static void ToggleLock(ClipEntry entry, Window owner)
+    {
+        if (entry.Hidden)
+            Unlock(entry, owner, null);
+        else if (entry.Open)
+            ClipboardHistory.Relock(entry);
+        else
+            Lock(entry, owner, null);
+    }
+
+    /// <summary>What the lock button says for an item.</summary>
+    public static string LockLabel(ClipEntry? entry) => entry is null ? "Lock" : entry.Hidden ? "Unlock" : entry.Open ? "Lock again" : "Lock";
+
     private static void Lock(ClipEntry entry, Window owner, Action<bool>? hold)
     {
         var done = false;
