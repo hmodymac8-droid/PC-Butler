@@ -5,7 +5,7 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.22.16
 
-- The phone app, PC Butler for Android 1.2.3, is on Google Play: it brings the clipboard sharing, the Tools sheet (Search, Cleaner, Apps, Benchmark, Clipboard, History), the new look and the fixes since 1.0.1 to the Play version.
+- The phone app, PC Butler for Android 1.2.3, is sent to Google Play for its closed test. It brings the clipboard sharing, the Tools sheet (Search, Cleaner, Apps, Benchmark, Clipboard, History), the new look and the fixes since 1.0.1 to the Play version.
 
 ## 1.22.15
 
