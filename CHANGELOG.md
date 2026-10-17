@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.11
+
+- Search: when broken entries are taken out of the saved index, the drives are indexed again in the background, so the files that were under them can be found again.
+
 ## 1.22.10
 
 - Fixed: PC Butler could freeze for good on the Search page, or when going from it to Search settings. A broken entry in the saved index (a folder that led back to itself) made the list work out a path millions of folders long. Such entries are now taken out when the index loads, and a path never goes deeper than Windows allows.
