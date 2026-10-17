@@ -117,4 +117,15 @@ public sealed class Shell : Microsoft.Maui.Controls.Shell
         tabs.Items.Add(new ShellContent { Title = Tr.T("Vault"), ContentTemplate = new DataTemplate(typeof(Pages.VaultPage)), Icon = "tab_vault.png" });
         Items.Add(tabs);
     }
+
+    /// <summary>
+    /// A tool opens over the tab that was showing. Switching to a tab shows that tab's own page,
+    /// not a tool left open over it earlier (before, the Courier tab could show Search).
+    /// </summary>
+    protected override void OnNavigated(ShellNavigatedEventArgs args)
+    {
+        base.OnNavigated(args);
+        if (args.Source == ShellNavigationSource.ShellSectionChanged && CurrentItem?.CurrentItem is { Stack.Count: > 1 } section)
+            _ = section.Navigation.PopToRootAsync(false);
+    }
 }

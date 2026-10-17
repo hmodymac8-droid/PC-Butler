@@ -102,9 +102,9 @@ public sealed class DuplicatesPage : AppPage
         {
             return;
         }
+        status.IsVisible = false; // done: "Comparing… files" no longer stays under the results
         if (result.Count == 0)
         {
-            status.IsVisible = false;
             groups.Children.Add(Theme.CardOf(Theme.Empty("i_circle_check_m.png", Tr.T("No duplicates found."))));
         }
         resultsHead.IsVisible = result.Count > 0;
