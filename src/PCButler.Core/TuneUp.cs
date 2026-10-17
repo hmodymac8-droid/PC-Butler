@@ -29,7 +29,7 @@ public sealed record AnimationStep : TweakStep;
 
 /// <summary>
 /// A change to Windows that stays until it is undone. Level is the lowest preset that
-/// includes it (1 low … 4 extreme; 0 = in no preset). Admin tweaks are carried out by the
+/// includes it (1 low … 4 extreme; 0 = in no preset, only chosen by hand). Admin tweaks are carried out by the
 /// administrator helper.
 /// </summary>
 public sealed record Tweak(string Key, int Level, bool Admin, string Title, string Detail, TweakStep[] Steps, string Group = "tune");
@@ -94,8 +94,8 @@ public static partial class TuneUp
                 new RegistryStep(true, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", -1),
                 new RegistryStep(true, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 1),
             ]),
-        new("indexing", 4, true, "Search indexing off", "Windows stops reading your files in the background to index them. Searching for files, and in "
-                                                        + "Start, becomes slower.", [new ServiceStep("WSearch")]),
+        new("indexing", 0, true, "Search indexing off", "Windows stops reading your files in the background to index them. Searching for files, and in "
+                                                        + "Start, becomes slower, and the Photos app can fail to open pictures after a restart.", [new ServiceStep("WSearch")]),
         new("rare_services", 4, true, "Rarely used services off", "Error reporting, offline maps, fax and the shop-demo service. Crashes are no longer "
                                                                   + "reported to Microsoft.",
             [new ServiceStep("WerSvc"), new ServiceStep("MapsBroker"), new ServiceStep("Fax"), new ServiceStep("RetailDemo")]),

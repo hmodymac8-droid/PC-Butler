@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.15
+
+- Booster, Advanced: Extreme no longer switches off Windows Search indexing. With it off, the Photos app could fail to start the first time after a restart, so opening a picture showed "Windows cannot find '…\picture.jpg'" until Photos was repaired. "Search indexing off" is still in the list, now in no preset, for those who want it. If you applied Extreme before, press Apply on Extreme once more to switch indexing back on.
+
 ## 1.22.14
 
 - Programs, Updates: a program is no longer offered another maker's program of the same name. winget pairs programs with packages by name when it knows nothing better, so a "Duplicate File Finder" by one publisher was shown VovSoft's Duplicate File Finder 2.1 as its update. Each update is now checked against the installed program's publisher and left out when they differ.

@@ -17,7 +17,7 @@ public sealed class BoosterAdvanced : DockPanel
         ("low", "Low", "Safe on every PC: nothing you would miss is switched off."),
         ("medium", "Medium", "Recommended. Adds the fastest power plan, solid windows and no telemetry."),
         ("high", "High", "Adds no animations, and holds Windows' own background work back."),
-        ("extreme", "Extreme", "Everything in the list, including search indexing. For gaming, or an old, slow PC."),
+        ("extreme", "Extreme", "Everything in the list except search indexing. For gaming, or an old, slow PC."),
         ("custom", "Custom", "Your own choice from the list below."),
     ];
 
@@ -80,7 +80,7 @@ public sealed class BoosterAdvanced : DockPanel
                     levels["custom"].IsChecked = true;
             });
             switches[tweak.Key] = toggle;
-            var title = Ui.T(tweak.Title) + "  ·  " + Ui.T(Presets[tweak.Level - 1].Label) + (tweak.Admin ? "  ·  " + Ui.T("needs administrator rights") : "");
+            var title = Ui.T(tweak.Title) + "  ·  " + (tweak.Level >= 1 ? Ui.T(Presets[tweak.Level - 1].Label) : Ui.T("in no preset")) + (tweak.Admin ? "  ·  " + Ui.T("needs administrator rights") : "");
             body.Children.Add(Ui.SettingRow(title, Ui.T(tweak.Detail), toggle, first));
             first = false;
         }
@@ -137,8 +137,8 @@ public sealed class BoosterAdvanced : DockPanel
         var level = Level;
         var needsAdmin = TuneUp.Catalogue.Any(tweak => tweak.Admin && keys.Contains(tweak.Key))
                          || TuneUp.Load().Applied.Keys.Any(key => TuneUp.Catalogue.Any(tweak => tweak.Key == key && tweak.Admin && tweak.Group == "tune"));
-        if (level == "extreme" && !Ui.Ask("Booster", Ui.T("Extreme switches off search indexing and error reporting as well. Searching for files "
-                                                          + "becomes slower.\n\nApply it? Undo all changes puts everything back."), warning: true))
+        if (level == "extreme" && !Ui.Ask("Booster", Ui.T("Extreme switches off error reporting and a few rarely used services as well. "
+                                                          + "Crashes are no longer reported to Microsoft.\n\nApply it? Undo all changes puts everything back."), warning: true))
             return;
         if (needsAdmin)
             await Admin.Ensure("Booster", Ui.T("Some of these changes need administrator rights. Without them, the rest is still applied."));
