@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace PCButler.Core.Search;
 
@@ -145,10 +146,14 @@ public sealed class SearchIndex
     /// <summary>The folder a row is in ("" for a root).</summary>
     public string FolderOf(int row) => parent[row] < 0 ? "" : FullPath(parent[row]);
 
+    /// <summary>The deepest a path can go: Windows paths stop at 32,767 characters, two or more per folder.</summary>
+    private const int MaxDepth = 16384;
+
     /// <summary>
     /// Walked up in a loop, not by calling itself: a folder chain thousands deep (a reparse
     /// point that leads back into itself) ran the stack out and closed PC Butler. A chain that
-    /// loops back on itself stops after as many steps as there are rows.
+    /// loops back on itself stops after MaxDepth steps, and the path is built once, not joined
+    /// again at each level: a loop through millions of rows used to keep the window busy for good.
     /// </summary>
     public string FullPath(int row)
     {
@@ -160,7 +165,7 @@ public sealed class SearchIndex
         var path = "";
         for (var at = row; ; at = parent[at])
         {
-            if (at < 0 || chain.Count > count)
+            if (at < 0 || chain.Count > MaxDepth)
                 break;
             if (parent[at] < 0)
             {
@@ -174,19 +179,25 @@ public sealed class SearchIndex
             }
             chain.Add(at);
         }
+        var text = new StringBuilder(path);
         for (var index = chain.Count - 1; index >= 0; index--)
         {
-            path = Join(path, NameSpan(chain[index]));
-            if (IsFolder(chain[index]) && path.Length <= 1024) // very long ones are rare, and would fill memory
-                folderPaths[chain[index]] = path;
+            if (text.Length == 0 || (text[^1] != '\\' && text[^1] != '/'))
+                text.Append('\\');
+            text.Append(NameSpan(chain[index]));
+            if (index > 0 && IsFolder(chain[index]) && text.Length <= 1024) // very long ones are rare, and would fill memory
+                folderPaths[chain[index]] = text.ToString();
         }
-        return path;
+        var full = text.ToString();
+        if (IsFolder(row) && full.Length <= 1024)
+            folderPaths[row] = full;
+        return full;
     }
 
     /// <summary>Whether a row is this folder or somewhere inside it.</summary>
     public bool IsWithin(int row, int folder)
     {
-        for (var (at, steps) = (row, 0); at >= 0 && steps <= count; at = parent[at], steps++)
+        for (var (at, steps) = (row, 0); at >= 0 && steps <= MaxDepth; at = parent[at], steps++)
             if (at == folder)
                 return true;
         return false;
@@ -385,6 +396,8 @@ public sealed class SearchIndex
         while (stack.Count > 0)
         {
             var next = stack.Pop();
+            if (IsRemoved(next))
+                continue;
             for (var child = firstChild[next]; child >= 0; child = nextSibling[child])
                 stack.Push(child);
             ForgetName(next);
@@ -633,6 +646,7 @@ public sealed class SearchIndex
                     rows[used++] = row;
         }
         var renumber = new int[count];
+        Array.Fill(renumber, -1); // a row whose folder was taken out is not given another folder
         for (var index = 0; index < used; index++)
             renumber[rows[index]] = index;
         var parents = new int[used];
@@ -642,7 +656,7 @@ public sealed class SearchIndex
         for (var index = 0; index < used; index++)
         {
             var row = rows[index];
-            parents[index] = parent[row] < 0 ? -1 : renumber[parent[row]];
+            parents[index] = parent[row] < 0 || parent[row] >= count ? -1 : renumber[parent[row]];
             rowFlags[index] = (byte)(flags[row] & Kept);
             if (sizes is not null)
                 sizes[index] = size![row];
@@ -670,10 +684,54 @@ public sealed class SearchIndex
         // Linked in reverse, so each folder's children come out in their saved order.
         for (var row = parents.Length - 1; row >= 0; row--)
             index.Link(row);
+        index.Repair();
         index.Changed();
         if (sortedByName && index.InNameOrder())
             index.FinishOrder(Enumerable.Range(0, index.count).ToArray(), index.count);
         return index;
+    }
+
+    /// <summary>
+    /// Take out rows that cannot be shown: those whose folders lead back to themselves (an index
+    /// saved by an older version could hold such a loop, and drawing one froze the window) and
+    /// those with no folder that are not drives or folders at the top.
+    /// </summary>
+    private void Repair()
+    {
+        var state = new byte[count]; // 0 not seen, 1 on the walk being made, 2 fine
+        var walk = new List<int>();
+        var broken = new List<int>();
+        for (var start = 0; start < count; start++)
+        {
+            if (state[start] != 0)
+                continue;
+            walk.Clear();
+            var at = start;
+            while (at >= 0 && at < count && state[at] == 0)
+            {
+                state[at] = 1;
+                walk.Add(at);
+                at = parent[at];
+            }
+            if (at >= count || (at >= 0 && state[at] == 1))
+                broken.Add(walk[^1]); // the loop is cut where this walk closed it
+            foreach (var row in walk)
+                state[row] = 2;
+        }
+        for (var row = 0; row < count; row++)
+            if (parent[row] < 0 && !IsRoot(row) && !IsRemoved(row))
+                broken.Add(row);
+        foreach (var row in broken)
+        {
+            if (IsRemoved(row))
+                continue;
+            if (parent[row] >= count)
+                parent[row] = -1;
+            Remove(row);
+            parent[row] = -1;
+        }
+        if (broken.Count > 0)
+            Log.Warning($"Search: {broken.Count:N0} broken entries were taken out of the index");
     }
 
     /// <summary>True when the rows already come in name order (a file written by an older version may use other rules).</summary>
