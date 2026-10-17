@@ -52,7 +52,7 @@ public sealed class CleanerPage : AppPage
         total.Text = "—";
     }
 
-    protected override void Shown() => ShowOwn();
+    protected override void Shown() => _ = ShowOwn();
 
     private static long CacheSize()
     {
@@ -66,10 +66,9 @@ public sealed class CleanerPage : AppPage
         }
     }
 
-    private void ShowOwn()
+    private async Task ShowOwn()
     {
-        var cache = CacheSize();
-        var bin = RecycleBin.Items().Sum(item => item.Size);
+        var (cache, bin) = await Task.Run(() => (CacheSize(), RecycleBin.Items().Sum(item => item.Size)));
         ownText.Text = Tr.T("Cache {0}  ·  Recycle Bin {1}", Size(cache), Size(bin));
         ownText.VerticalOptions = LayoutOptions.Center;
         ownButton.IsVisible = cache + bin > 0;
@@ -101,7 +100,7 @@ public sealed class CleanerPage : AppPage
             RecycleBin.Empty();
         });
         ActivityLog.Record("cleaner", "PC Butler's cache cleared", Size(freed));
-        ShowOwn();
+        await ShowOwn();
     }
 
     private async Task Scan()
@@ -113,32 +112,55 @@ public sealed class CleanerPage : AppPage
         }
         scan.IsEnabled = false;
         status.Text = Tr.T("Looking for files…");
-        List<Doc> files;
+        // Everything slow happens away from the screen: the walk through the folders, and picking what can go.
+        // The count of folders looked at shows meanwhile, so it is plain the scan is moving.
+        var looked = 0;
+        var ticking = Dispatcher.CreateTimer();
+        ticking.Interval = TimeSpan.FromMilliseconds(400);
+        ticking.Tick += (_, _) => status.Text = Tr.T("Looking for files… {0} folder(s)", Volatile.Read(ref looked));
+        ticking.Start();
+        List<(Doc File, string Why)> picked;
         try
         {
-            files = await Task.Run(() => ToolKit.AllFiles(CancellationToken.None));
+            picked = await Task.Run(() =>
+            {
+                var old = DateTime.Now.AddMonths(-3);
+                var list = new List<(Doc File, string Why)>();
+                foreach (var file in ToolKit.AllFiles(CancellationToken.None, () => Interlocked.Increment(ref looked)))
+                {
+                    var why = ToolKit.Kind(file.Name) == "apk" ? "Installer"
+                        : file.Size >= Big ? "Large file"
+                        : file.Path.Contains("Download", StringComparison.OrdinalIgnoreCase) && file.Modified < old ? "Old download"
+                        : null;
+                    if (why is not null && file.CanDelete)
+                        list.Add((file, why));
+                }
+                return list.OrderByDescending(item => item.File.Size).ToList();
+            });
+        }
+        catch (Exception error) when (error is IOException or Java.Lang.Exception)
+        {
+            status.Text = error.Message;
+            return;
         }
         finally
         {
+            ticking.Stop();
             scan.IsEnabled = true;
         }
-        var old = DateTime.Now.AddMonths(-3);
         found.Clear();
+        found.AddRange(picked);
         ticked.Clear();
-        foreach (var file in files.OrderByDescending(file => file.Size))
-        {
-            var why = ToolKit.Kind(file.Name) == "apk" ? Tr.T("Installer")
-                : file.Size >= Big ? Tr.T("Large file")
-                : file.Path.Contains("Download", StringComparison.OrdinalIgnoreCase) && file.Modified < old ? Tr.T("Old download")
-                : null;
-            if (why is not null && file.CanDelete)
-                found.Add((file, why));
-        }
         scan.Text = Tr.T("Scan again");
         status.Text = found.Count == 0 ? "" : Tr.T("{0} file(s) found", found.Count);
         total.Text = Size(found.Sum(item => item.File.Size));
+        shownRows = Page;
         Show();
     }
+
+    /// <summary>How many files are listed at first, and added by each "Show more": a long list all at once stalls the screen.</summary>
+    private const int Page = 40;
+    private int shownRows = Page;
 
     private void Show()
     {
@@ -147,7 +169,7 @@ public sealed class CleanerPage : AppPage
         if (found.Count == 0)
             list.Children.Add(Theme.CardOf(Theme.Empty("i_circle_check_m.png", Tr.T("All clear"), Tr.T("Nothing to clean in your folders."))));
         var card = new VerticalStackLayout { Spacing = 0 };
-        foreach (var (file, why) in found.Take(150))
+        foreach (var (file, why) in found.Take(shownRows))
         {
             var mark = new Border { WidthRequest = 22, HeightRequest = 22, StrokeShape = new Microsoft.Maui.Controls.Shapes.Ellipse(), StrokeThickness = 2, VerticalOptions = LayoutOptions.Center };
             void Paint()
@@ -158,7 +180,7 @@ public sealed class CleanerPage : AppPage
                 mark.Content = on ? Theme.Icon("i_check_k.png", 13) : null;
             }
             Paint();
-            var row = ToolKit.FileRow(file, new HorizontalStackLayout { Spacing = 10, VerticalOptions = LayoutOptions.Center, Children = { Theme.Pill(why, Theme.Amber, Theme.AmberSoft), mark } });
+            var row = ToolKit.FileRow(file, new HorizontalStackLayout { Spacing = 10, VerticalOptions = LayoutOptions.Center, Children = { Theme.Pill(Tr.T(why), Theme.Amber, Theme.AmberSoft), mark } });
             row.Padding = new Thickness(16, 10);
             row.Tapped(() =>
             {
@@ -171,6 +193,8 @@ public sealed class CleanerPage : AppPage
                 card.Children.Add(Theme.Divider().Margin(16, 0, 16, 0));
             card.Children.Add(row);
         }
+        if (found.Count > shownRows)
+            card.Children.Add(Theme.Link(Tr.T("Show {0} more", Math.Min(Page, found.Count - shownRows)), () => { shownRows += Page; Show(); }).Margin(8, 4, 8, 8));
         if (found.Count > 0)
             list.Children.Add(Theme.CardOf(card, 0));
         Count();
