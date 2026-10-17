@@ -691,6 +691,9 @@ public sealed class SearchIndex
         return index;
     }
 
+    /// <summary>Broken entries taken out when this index was loaded; their folders are walked again.</summary>
+    public int Repaired { get; private set; }
+
     /// <summary>
     /// Take out rows that cannot be shown: those whose folders lead back to themselves (an index
     /// saved by an older version could hold such a loop, and drawing one froze the window) and
@@ -730,6 +733,7 @@ public sealed class SearchIndex
             Remove(row);
             parent[row] = -1;
         }
+        Repaired = broken.Count;
         if (broken.Count > 0)
             Log.Warning($"Search: {broken.Count:N0} broken entries were taken out of the index");
     }
