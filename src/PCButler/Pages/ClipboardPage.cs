@@ -14,6 +14,7 @@ public sealed class ClipboardPage : Page
     private readonly TextBox search;
     private readonly TextBlock count = Ui.Muted("", 12);
     private readonly Button pinButton;
+    private readonly Button lockButton;
     private readonly TextBox shortcut;
     private readonly CheckBox enabled;
 
@@ -118,6 +119,9 @@ public sealed class ClipboardPage : Page
             list.ContextMenu = ClipboardMenu.For(entry, Window.GetWindow(this));
         };
         pinButton = Ui.Button(Ui.T("Pin"), PinSelected);
+        // A password on an item: the same as its right-click menu, here so it can be found.
+        lockButton = Ui.Button(Ui.T("Lock"), LockSelected);
+        lockButton.ToolTip = Ui.T("Lock the chosen item with a password: its content is hidden and kept encrypted.");
         // The history: search on top, the buttons below, and only the list between them scrolls.
         var top = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 10) };
         top.Children.Add(search);
@@ -126,6 +130,7 @@ public sealed class ClipboardPage : Page
         var bar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 10, 0, 0) };
         bar.Children.Add(Ui.Button(Ui.T("Copy"), CopySelected, accent: true));
         bar.Children.Add(pinButton.Margin(6, 0, 0, 0));
+        bar.Children.Add(lockButton.Margin(6, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Delete"), DeleteSelected).Margin(6, 0, 0, 0));
         bar.Children.Add(Ui.Muted(Ui.T("Right-click an item for more: Google, tags, its link, a password."), 12).Margin(12, 0, 0, 0));
         bar.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Dock(Dock.Right));
@@ -218,7 +223,20 @@ public sealed class ClipboardPage : Page
 
     private List<ClipEntry> Selected() => list.SelectedItems.OfType<ListBoxItem>().Select(item => (ClipEntry)item.Tag).ToList();
 
-    private void ShowPinState() => pinButton.Content = Ui.T(Selected() is { Count: > 0 } chosen && chosen.All(entry => entry.Pinned) ? "Unpin" : "Pin");
+    private void ShowPinState()
+    {
+        var chosen = Selected();
+        pinButton.Content = Ui.T(chosen is { Count: > 0 } && chosen.All(entry => entry.Pinned) ? "Unpin" : "Pin");
+        lockButton.Content = Ui.T(ClipboardMenu.LockLabel(chosen.FirstOrDefault()));
+        lockButton.IsEnabled = chosen.Count == 1;
+    }
+
+    private void LockSelected()
+    {
+        if (Selected() is [var entry])
+            ClipboardMenu.ToggleLock(entry, Window.GetWindow(this));
+        ShowPinState();
+    }
 
     private void CopySelected()
     {
