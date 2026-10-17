@@ -90,6 +90,7 @@ public static class Courier
             var node = await PortalNode.Start(settings, () => Update(saved => (saved.Devices, saved.Saved, saved.Role, saved.HostNumber)
                                                                                  = (settings.Devices.ToList(), settings.Saved.ToList(), "", "")));
             node.Received += CourierService.Received;
+            node.ClipboardReceived = ClipboardSync.Received;
             Portal.Current = node;
             CourierService.Begin();
             return null;
@@ -187,7 +188,12 @@ public static class SharedFiles
         else if (intent.GetParcelableArrayListExtra(Intent.ExtraStream) is { } many)
             addresses.AddRange(many.OfType<global::Android.Net.Uri>());
         if (addresses.Count == 0)
+        {
+            // Text shared from another app (a link, a note): onto the PC's clipboard.
+            if (intent.GetStringExtra(Intent.ExtraText) is { Length: > 0 } text)
+                _ = ShareText(text);
             return;
+        }
         var folder = Path.Combine(Root, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(folder);
         var copied = new List<string>();
@@ -212,6 +218,23 @@ public static class SharedFiles
         // Shared means "send this": it goes by itself once a PC is connected (CourierPage does the sending).
         Courier.Queue(copied, sendWhenReady: true);
         MainThread.BeginInvokeOnMainThread(ShowCourier);
+    }
+
+    private static async Task ShareText(string text)
+    {
+        if (Courier.Node is null)
+            await Courier.Start();
+        // Just started, the PCs take a moment to connect.
+        for (var waited = 0; waited < 30 && !Courier.Targets(Courier.Node).Any(target => target.Ready); waited++)
+            await Task.Delay(500);
+        var (sent, problem) = await ClipboardSync.SendToAll(text);
+        if (sent > 0)
+            ClipboardSync.Add(text);
+        MainThread.BeginInvokeOnMainThread(() =>
+        {
+            var message = sent > 0 ? Tr.T("On the PC's clipboard now: press Ctrl+V there to paste it.") : problem ?? Tr.T("Connect to a PC on the Courier page first.");
+            global::Android.Widget.Toast.MakeText(global::Android.App.Application.Context, message, global::Android.Widget.ToastLength.Long)?.Show();
+        });
     }
 
     /// <summary>Bring the Courier tab to the front, where the shared files are sent and their progress shows.</summary>

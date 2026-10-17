@@ -40,6 +40,8 @@ public partial class App : Application
     public UsageMonitor Usage { get; } = new();
     /// <summary>The clipboard manager: records copies while it is on, and opens its list with the shortcut.</summary>
     public ClipboardManager Clips { get; private set; } = null!;
+    /// <summary>Copied text shared with the PCs and phones connected through Courier.</summary>
+    public ClipboardShare ClipShare { get; private set; } = null!;
     /// <summary>The performance overlay of the Benchmark page.</summary>
     public OverlayController Overlay { get; } = new();
     /// <summary>The shortcuts of the Settings page's Hotkeys tab.</summary>
@@ -153,6 +155,8 @@ public partial class App : Application
         Clips = new ClipboardManager();
         if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
             Log.Warning($"Clipboard manager: {clipboardError}");
+        ClipShare = new ClipboardShare();
+        ClipShare.Apply(ConfigStore.Load().Portal.ShareClipboard);
         Keys = new Hotkeys(RunHotkey);
         foreach (var (action, problem) in Keys.Apply(ConfigStore.Load().Hotkeys))
             Log.Warning($"Hotkey for {action}: {problem}");
@@ -663,6 +667,17 @@ public partial class App : Application
     /// notification centre, so files that came while nobody watched are not missed), and a
     /// click on it shows them.
     /// </summary>
+    /// <summary>Text from a PC or phone is on the clipboard now: a notification says so, with its start.</summary>
+    public void ClipboardArrived(string peer, string text)
+    {
+        if (exiting)
+            return;
+        var start = text.ReplaceLineEndings(" ").Trim();
+        if (start.Length > 80)
+            start = start[..80] + "…";
+        Notify("Text from {0} is on the clipboard: {1}", [peer, start]);
+    }
+
     public void PortalReceived(PortalTransfer transfer) => Dispatcher.BeginInvoke(() =>
     {
         if (exiting)

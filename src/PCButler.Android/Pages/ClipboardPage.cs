@@ -1,82 +1,62 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
-using System.Text.Json;
 using PCButler.Core;
 
 namespace PCButler.Android.Pages;
 
 /// <summary>
-/// Clipboard: bits of text kept for later (typed, or what is copied right now), pinned to the
-/// top, copied back with one tap, or sent to a connected PC through Courier as a text file.
-/// Nothing watches the clipboard in the background: text is added only when the user asks.
+/// Clipboard: bits of text kept for later (typed, copied here, or copied on a connected PC),
+/// pinned to the top, copied back with one tap, or put on a connected PC's clipboard. With
+/// "Share with my PCs" on, text a PC copies lands on this phone's clipboard, and what was
+/// copied here goes to the PCs when PC Butler comes back to the screen.
 /// </summary>
 public sealed class ClipboardPage : AppPage
 {
-    private sealed class Snippet
-    {
-        public long Id { get; set; }
-        public string Text { get; set; } = "";
-        public bool Pinned { get; set; }
-        public DateTime Saved { get; set; }
-    }
-
-    private static string StoreFile => Path.Combine(PCButler.Core.AppInfo.DataDir, "snippets.json");
     private readonly VerticalStackLayout list = new() { Spacing = 0 };
     private readonly Label count = Theme.Faint("", 12.5);
     private readonly Editor typed = new() { Placeholder = Tr.T("Type or paste text…"), AutoSize = EditorAutoSizeOption.TextChanges, MinimumHeightRequest = 120, TextColor = Theme.Text, PlaceholderColor = Theme.Muted, FontSize = 15 };
     private readonly VerticalStackLayout addBox;
+    private readonly Switch share = new() { OnColor = Theme.Primary, ThumbColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
     private Action closeAdd = () => { };
-    private List<Snippet> snippets = Load();
+    private static List<Snippet> snippets => ClipboardSync.Snippets;
 
     public ClipboardPage() : base("Clipboard", tool: true)
     {
         SetSub(Theme.Faint(Tr.T("Saved text & PC sharing"), 13));
         HeaderRight.Content = Theme.IconButton("i_plus_w.png", OpenAdd);
-        var paste = Theme.Accent(Tr.T("Save what's copied"), () => _ = SaveCopied(), "i_clipboard_k.png");
+        share.IsToggled = ClipboardSync.On;
+        share.Toggled += (_, e) => ClipboardSync.SetOn(e.Value);
+        Body.Children.Add(Theme.CardOf(Theme.Line3(null, Theme.TwoLines(Theme.Body(Tr.T("Share with my PCs"), 14.5),
+                                                                        Theme.Faint(Tr.T("Text copied on a connected PC lands here, ready to paste. What you copy here goes to the PCs when you come back to PC Butler."), 12)),
+                                                   share, 8), 16));
+        var sendCopied = Theme.Accent(Tr.T("Send what's copied to PC"), () => _ = SendCopied(), "i_send_k.png");
+        var paste = Theme.Tonal(Tr.T("Save what's copied"), () => _ = SaveCopied(), "i_clipboard_m.png");
+        (sendCopied.Margin, paste.Margin) = (new Thickness(0, 12, 0, 0), new Thickness(0, 10, 0, 0));
+        Body.Children.Add(sendCopied);
         Body.Children.Add(paste);
-        Body.Children.Add(Theme.Hint(Tr.T("Text is added only when you tap. Nothing watches the clipboard in the background.")));
         Body.Children.Add(Theme.Section(Tr.T("Saved snippets"), count));
         Body.Children.Add(list);
         var save = Theme.Accent(Tr.T("Save text"), () =>
         {
-            Add(typed.Text ?? "");
+            ClipboardSync.Add(typed.Text ?? "");
             typed.Text = "";
             closeAdd();
         });
         addBox = new VerticalStackLayout { Spacing = 12, Children = { Theme.BoxOf(typed, 12, Theme.Card), save } };
+        ClipboardSync.Changed += () => MainThread.BeginInvokeOnMainThread(Show);
         Show();
     }
 
-    private static List<Snippet> Load()
+    protected override void OnAppearing()
     {
-        try
-        {
-            return File.Exists(StoreFile) ? JsonSerializer.Deserialize<List<Snippet>>(File.ReadAllText(StoreFile)) ?? [] : [];
-        }
-        catch (Exception error) when (error is IOException or JsonException)
-        {
-            return [];
-        }
-    }
-
-    private void Save()
-    {
-        Directory.CreateDirectory(PCButler.Core.AppInfo.DataDir);
-        File.WriteAllText(StoreFile, JsonSerializer.Serialize(snippets));
+        base.OnAppearing();
+        share.IsToggled = ClipboardSync.On;
         Show();
     }
+
+    private static void Save() => ClipboardSync.Save();
 
     private void OpenAdd() => closeAdd = OpenSheet(Tr.T("Add text"), addBox);
-
-    private void Add(string text)
-    {
-        text = text.Trim();
-        if (text.Length == 0)
-            return;
-        snippets.RemoveAll(item => item.Text == text); // the same text once, on top
-        snippets.Insert(0, new Snippet { Id = DateTime.UtcNow.Ticks, Text = text, Saved = DateTime.Now });
-        Save();
-    }
 
     private async Task SaveCopied()
     {
@@ -86,7 +66,22 @@ public sealed class ClipboardPage : AppPage
             await Say(Tr.T("Nothing is copied right now."));
             return;
         }
-        Add(text);
+        ClipboardSync.Add(text);
+    }
+
+    /// <summary>What is copied right now, onto the clipboard of every connected PC.</summary>
+    private async Task SendCopied()
+    {
+        var text = await Clipboard.Default.GetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            await Say(Tr.T("Nothing is copied right now."));
+            return;
+        }
+        var (sent, problem) = await ClipboardSync.SendToAll(text);
+        if (sent > 0)
+            ClipboardSync.Add(text);
+        await Say(sent > 0 ? Tr.T("On the PC's clipboard now: press Ctrl+V there to paste it.") : problem ?? Tr.T("Connect to a PC on the Courier page first."));
     }
 
     private void Show()
@@ -100,7 +95,8 @@ public sealed class ClipboardPage : AppPage
             var label = new HorizontalStackLayout { Spacing = 6 };
             if (snippet.Pinned)
                 label.Children.Add(Theme.Icon("i_pin_m.png", 13));
-            label.Children.Add(Theme.Faint(snippet.Pinned ? Tr.T("Pinned") : snippet.Saved.ToString("g"), 11.5));
+            label.Children.Add(Theme.Faint((snippet.Pinned ? Tr.T("Pinned") : snippet.Saved.ToString("g"))
+                                           + (snippet.From.Length > 0 ? "  ·  " + Tr.T("From {0}", snippet.From) : ""), 11.5));
             var text = new Label { Text = snippet.Text, FontSize = 14.5, TextColor = Theme.Text, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 6 };
             Border copy = null!;
             copy = Theme.IconButton("i_copy_w.png", async () =>
@@ -124,7 +120,7 @@ public sealed class ClipboardPage : AppPage
         }
     }
 
-    /// <summary>The text to a connected PC, as a small text file through Courier.</summary>
+    /// <summary>The text onto a connected PC's clipboard; a PC with an older PC Butler gets it as a small text file.</summary>
     private async Task Send(Snippet snippet)
     {
         var ready = Courier.Targets(Courier.Node).Where(target => target.Ready).ToList();
@@ -140,6 +136,17 @@ public sealed class ClipboardPage : AppPage
             if (ready.FirstOrDefault(item => item.Name == name) is not { } picked)
                 return;
             target = picked;
+        }
+        if (await node.SendClipboard(target.Tag, snippet.Text) is not { } problem)
+        {
+            ActivityLog.Record("clipboard", "Text sent to a PC", target.Name);
+            await Say(Tr.T("On {0}'s clipboard now: press Ctrl+V there to paste it.", target.Name));
+            return;
+        }
+        if (problem != PortalNode.OldVersion)
+        {
+            await Say(problem);
+            return;
         }
         var file = Path.Combine(FileSystem.CacheDirectory, $"Text from phone {DateTime.Now:yyyy-MM-dd HHmmss}.txt");
         await File.WriteAllTextAsync(file, snippet.Text);
