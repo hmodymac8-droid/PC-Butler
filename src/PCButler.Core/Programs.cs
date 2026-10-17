@@ -401,21 +401,28 @@ public static partial class Programs
             }
             if (!inTable || (index + 1 < lines.Count && Rule().IsMatch(lines[index + 1])))
                 continue; // not in a table yet, or the heading of a second table
-            var parts = lines[index].Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 4)
+            var parts = lines[index].Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+            // A version winget can't read exactly is shown as "< 1.2.3": one column, two words.
+            for (var part = parts.Count - 2; part >= 0; part--)
+                if (parts[part] is "<" or ">")
+                {
+                    parts[part] += " " + parts[part + 1];
+                    parts.RemoveAt(part + 1);
+                }
+            if (parts.Count < 4)
             {
                 inTable = lines[index].Trim().Length == 0 && inTable;
                 continue;
             }
             // The source column is left out when only one source was asked, so the row then ends with the new version.
             var end = char.IsDigit(parts[^1][0]) ? 0 : 1;
-            if (parts.Length < 4 + end)
+            if (parts.Count < 4 + end)
                 continue;
             var (id, version, available) = (parts[^(3 + end)], parts[^(2 + end)], parts[^(1 + end)]);
             // A name or id cut short to fit the screen ends in "…" and can't be used to update.
             if (!PackageId().IsMatch(id) || !char.IsDigit(available[0]) || updates.Any(update => update.Id == id))
                 continue;
-            updates.Add(new ProgramUpdate(string.Join(' ', parts[..^(3 + end)]), id, version, available));
+            updates.Add(new ProgramUpdate(string.Join(' ', parts.Take(parts.Count - 3 - end)), id, version, available));
         }
         return updates;
     }
@@ -440,12 +447,69 @@ public static partial class Programs
                 Log.Warning($"winget upgrade ended with code {process.ExitCode}");
                 return null;
             }
-            return updates;
+            return SamePublisher(updates);
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             Log.Warning($"winget could not be run: {error.Message}");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The updates whose package is by the installed program's own publisher. winget pairs
+    /// a program with a package by its name alone when nothing better is known, so a
+    /// "Duplicate File Finder" of one maker can be offered another maker's program of that
+    /// name. Its package id starts with the publisher, which settles most rows at once; the
+    /// rest are asked about with "winget show". When anything is unknown the row stays.
+    /// </summary>
+    private static List<ProgramUpdate> SamePublisher(List<ProgramUpdate> updates)
+    {
+        var installed = Installed();
+        var doubtful = updates
+            .Select(update => (update, publisher: FindInstalled(update, installed)?.Publisher ?? ""))
+            .Where(pair => pair.publisher.Length > 0 && !SamePublisher(pair.update.Id.Split('.')[0], pair.publisher))
+            .ToList();
+        var wrong = doubtful.AsParallel()
+            .Where(pair => PackagePublisher(pair.update.Id) is { Length: > 0 } package && !SamePublisher(package, pair.publisher))
+            .Select(pair => pair.update)
+            .ToHashSet();
+        foreach (var update in wrong)
+            Log.Info($"winget offers {update.Id} for {update.Name}, which is by another publisher: left out");
+        return updates.Where(update => !wrong.Contains(update)).ToList();
+    }
+
+    /// <summary>Whether two publisher names are the same maker: "Microsoft Corp." and "Microsoft Corporation", "CrystalDewWorld" and "Crystal Dew World".</summary>
+    internal static bool SamePublisher(string first, string second)
+    {
+        static string Letters(string text) => new(text.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        var (a, b) = (Letters(first), Letters(second));
+        if (a.Length == 0 || b.Length == 0 || a.Contains(b) || b.Contains(a))
+            return true;
+        var (wordA, wordB) = (Letters(first.Split(' ', '.', ',')[0]), Letters(second.Split(' ', '.', ',')[0]));
+        return wordA.Length >= 3 && wordA == wordB;
+    }
+
+    /// <summary>The publisher a winget package names, or "" when winget doesn't say.</summary>
+    private static string PackagePublisher(string id)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(Winget)
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, StandardOutputEncoding = Encoding.UTF8,
+            };
+            foreach (var argument in new[] { "show", "--id", id, "--exact", "--source", "winget", "--disable-interactivity" })
+                start.ArgumentList.Add(argument);
+            using var process = Process.Start(start)!;
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            var match = Regex.Match(output, @"^Publisher:\s*(.+?)\s*$", RegexOptions.Multiline);
+            return match.Success ? match.Groups[1].Value : "";
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return "";
         }
     }
 
@@ -472,7 +536,9 @@ public static partial class Programs
     [
         new("Google Chrome", "Google.Chrome", "Google Chrome", "Web browser"),
         new("WinRAR", "RARLab.WinRAR", "WinRAR", "Opens and makes rar and zip archives"),
-        new("Visual C++ Redistributable", "Microsoft.VCRedist.2015+.x64", "Microsoft Visual C++ 2015-2022 Redistributable (x64)",
+        // Named "2015-2022" until version 14.50, "v14" since.
+        new("Visual C++ Redistributable", "Microsoft.VCRedist.2015+.x64",
+            "Microsoft Visual C++ v14 Redistributable (x64)|Microsoft Visual C++ 2015-2022 Redistributable (x64)",
             "Needed by many programs and games"),
         new(".NET Desktop Runtime 8", "Microsoft.DotNet.DesktopRuntime.8", "Microsoft Windows Desktop Runtime - 8", "Needed by many Windows programs"),
         new("Discord", "Discord.Discord", "Discord", "Voice, video and text chat"),
@@ -517,10 +583,11 @@ public static partial class Programs
     /// <summary>The installed program an app from the lists above is, or null.</summary>
     public static InstalledProgram? FindInstalled(CatalogApp app, IEnumerable<InstalledProgram> installed) =>
         app.Source == AppSource.Archive ? null
-        : installed.FirstOrDefault(program => program.Name.StartsWith(app.Match, StringComparison.OrdinalIgnoreCase)
-                                              // a whole name or word: "Git" is not "GitHub Desktop"
-                                              && (program.Name.Length == app.Match.Length
-                                                  || !app.Exact && !char.IsLetterOrDigit(program.Name[app.Match.Length])));
+        : app.Match.Split('|').Select(match => installed.FirstOrDefault(
+              program => program.Name.StartsWith(match, StringComparison.OrdinalIgnoreCase)
+                         // a whole name or word: "Git" is not "GitHub Desktop"
+                         && (program.Name.Length == match.Length || !app.Exact && !char.IsLetterOrDigit(program.Name[match.Length]))))
+            .FirstOrDefault(program => program is not null);
 
     /// <summary>
     /// The installed program a winget update is for, or null when that can't be told for
@@ -743,7 +810,7 @@ public static partial class Programs
 public enum AppSource { Winget, Store, GitHub, Archive }
 
 /// <summary>An app that can be installed from the Programs page: its name, winget package, the start of its installed name, and what it does.</summary>
-/// Id is a winget or Microsoft Store package, or "owner/repo" on GitHub. Exact: only that very name counts as installed.
+/// Id is a winget or Microsoft Store package, or "owner/repo" on GitHub. Match may list several names with "|". Exact: only that very name counts as installed.
 public sealed record CatalogApp(string Name, string Id, string Match, string Description, AppSource Source = AppSource.Winget, bool Exact = false)
 {
     /// <summary>An Archive app: its own scripts to run, in order, once it is unpacked (a .ps1 or a .vbs, then its arguments).</summary>

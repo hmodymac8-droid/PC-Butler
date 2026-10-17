@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.14
+
+- Programs, Updates: a program is no longer offered another maker's program of the same name. winget pairs programs with packages by name when it knows nothing better, so a "Duplicate File Finder" by one publisher was shown VovSoft's Duplicate File Finder 2.1 as its update. Each update is now checked against the installed program's publisher and left out when they differ.
+- Programs, Updates: programs whose version winget can only guess (shown as "< 174.2", like Ubisoft Connect or Visual Studio Build Tools) are listed now; before, they were skipped.
+- Programs, Essential: Visual C++ Redistributable shows as installed again. Since version 14.50 Windows names it "Microsoft Visual C++ v14 Redistributable", which the tab did not recognise.
+
 ## 1.22.13
 
 - Search remembers what you searched for: your recent searches (the last 30) show under the search box on the Search page, and stay after PC Butler restarts. Click one to search again, right-click it to take it out, or press Clear. A search goes in when you open a result, press Enter, or leave it unchanged for a moment.
