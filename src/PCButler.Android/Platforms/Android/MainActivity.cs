@@ -49,6 +49,14 @@ public class MainActivity : MauiAppCompatActivity
         return base.DispatchKeyEvent(e);
     }
 
+    /// <summary>Back in front: Android lets the app read the clipboard now, and what was copied meanwhile goes to the PCs.</summary>
+    public override void OnWindowFocusChanged(bool hasFocus)
+    {
+        base.OnWindowFocusChanged(hasFocus);
+        if (hasFocus)
+            _ = ClipboardSync.CheckCopied();
+    }
+
     protected override void OnNewIntent(Intent? intent)
     {
         base.OnNewIntent(intent);

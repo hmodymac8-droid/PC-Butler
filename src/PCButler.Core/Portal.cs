@@ -47,6 +47,8 @@ public sealed class PortalSettings
     [JsonPropertyName("incoming")] public string Incoming { get; set; } = Ask;
     /// <summary>The password new PCs must give, as Portal.HashPassword made it; "" = none set.</summary>
     [JsonPropertyName("password")] public string Password { get; set; } = "";
+    /// <summary>Share copied text with the connected PCs and phones: text they send lands on this clipboard, and (on a PC) what is copied here goes to them.</summary>
+    [JsonPropertyName("share_clipboard")] public bool ShareClipboard { get; set; } = true;
 
     /// <summary>Before 1.22 a PC was the host or a client ("host", "client"); read once, to bring its settings over.</summary>
     [JsonPropertyName("role")] public string Role { get; set; } = "";
@@ -308,6 +310,14 @@ public sealed partial class PortalNode
     public event Action<string>? Attention;
     /// <summary>Files from another PC arrived, all of them: the transfer says what and where. Raised on a background thread.</summary>
     public event Action<PortalTransfer>? Received;
+    /// <summary>
+    /// Copied text from another PC or phone: it returns whether it was taken (the user may
+    /// have switched clipboard sharing off). Called on a background thread. Unset, text is refused.
+    /// </summary>
+    public Func<PortalPeer, string, bool>? ClipboardReceived { get; set; }
+
+    /// <summary>The most text one clipboard can carry across.</summary>
+    public const int MaxClipboard = 1 << 20;
 
     private PortalNode(X509Certificate2 certificate, PortalSettings settings, Action save)
     {
@@ -776,6 +786,40 @@ public sealed partial class PortalNode
         }
     }
 
+    /// <summary>
+    /// Put text on the clipboard of a connected PC or phone. Null when it is there; else why
+    /// not, in words ("Old" when the other side's PC Butler is too old to take it).
+    /// </summary>
+    public async Task<string?> SendClipboard(PortalPeer peer, string text)
+    {
+        if (text.Length == 0 || text.Length > MaxClipboard)
+            return Tr.T("The text is empty or too long.");
+        if (peer.Tunnel is not { } via)
+            return Tr.T("the other PC is not connected");
+        try
+        {
+            using var client = Client(via, peer.Id, out _);
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
+            limit.CancelAfter(TimeSpan.FromSeconds(20));
+            using var answer = await client.PostAsJsonAsync($"{Api}/clipboard", new { text }, limit.Token);
+            return answer.StatusCode switch
+            {
+                HttpStatusCode.OK => null,
+                HttpStatusCode.NotFound => OldVersion,
+                HttpStatusCode.Forbidden => Tr.T("the other PC no longer trusts this one; pair them again"),
+                HttpStatusCode.Conflict => Tr.T("{0} has clipboard sharing switched off.", peer.Name),
+                _ => Tr.T("the other PC could not be reached"),
+            };
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
+        {
+            return Tr.T("the other PC could not be reached");
+        }
+    }
+
+    /// <summary>What SendClipboard says when the other side's PC Butler has no clipboard sharing yet.</summary>
+    public const string OldVersion = "Old";
+
     /// <summary>Tell the receiving PC that the sender holds this transfer, or lets it go on. A PC that does not know the request is not troubled.</summary>
     private async Task Hold(HttpClient client, PortalTransfer transfer, bool on)
     {
@@ -866,6 +910,19 @@ public sealed partial class PortalNode
                 case ["send", "offer"] when method == "POST":
                     await Offer(context, peer);
                     break;
+                case ["clipboard"] when method == "POST":
+                {
+                    var body = await context.ReadJson();
+                    var text = body.TryGetProperty("text", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+                    if (text.Length == 0 || text.Length > MaxClipboard)
+                    {
+                        await Json(context, 400, new { });
+                        break;
+                    }
+                    var taken = ClipboardReceived?.Invoke(peer, text) == true;
+                    await Json(context, taken ? 200 : 409, new { taken });
+                    break;
+                }
                 case ["send", var id] when JobPattern().IsMatch(id) && jobs.TryGetValue(id, out var job) && job.PeerId == peer.Id:
                     if (method == "DELETE")
                     {

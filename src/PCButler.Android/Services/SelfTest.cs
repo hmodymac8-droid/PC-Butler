@@ -61,6 +61,14 @@ public static class SelfTest
             while (back.Running && clock.Elapsed < TimeSpan.FromSeconds(60))
                 await Task.Delay(100);
             Say($"SELFTEST: back to the client {(back.State == "done" ? "ok" : "FAILED " + back.Note)}");
+            string? got = null;
+            host.ClipboardReceived = (_, text) => { got = text; return true; };
+            var sentText = "Clipboard test مرحبا " + Guid.NewGuid();
+            var problem = await client.SendClipboard(hostPeer, sentText);
+            Say($"SELFTEST: clipboard {(problem is null && got == sentText ? "ok" : "FAILED " + problem)}");
+            host.ClipboardReceived = (_, _) => false;
+            problem = await client.SendClipboard(hostPeer, "x");
+            Say($"SELFTEST: clipboard switched off {(problem is not null && problem != PortalNode.OldVersion ? "ok: " + problem : "FAILED " + problem)}");
             await client.Stop();
             await host.Stop();
             Say("SELFTEST: DONE");

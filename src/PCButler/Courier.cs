@@ -99,6 +99,7 @@ public static class Courier
                                            = (settings.Devices.ToList(), settings.Saved.ToList(), "", ""))), local: local);
             node.Attention += App.Current.PortalNeedsAttention;
             node.Received += App.Current.PortalReceived;
+            node.ClipboardReceived = App.Current.ClipShare.Received;
             Portal.Current = node;
             return null;
         }

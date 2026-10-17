@@ -24,6 +24,7 @@ public sealed class PortalPage : Page
     private readonly TextBox connectBox;
     private readonly CheckBox autoStartSwitch;
     private readonly CheckBox widgetSwitch;
+    private readonly CheckBox clipboardSwitch;
     private readonly TextBlock firewallText = Ui.Muted("", 12);
     private readonly Button firewallButton;
     private readonly Border firewallRow;
@@ -84,6 +85,13 @@ public sealed class PortalPage : Page
             Courier.WidgetOn = on;
             App.Current.CourierWidgetChanged();
         });
+        clipboardSwitch = Ui.Switch("", true, on =>
+        {
+            if (showing)
+                return;
+            Main.UpdateConfig(config => config.Portal.ShareClipboard = on);
+            App.Current.ClipShare.Apply(on);
+        });
         var rows = new StackPanel();
         incomingBox.Items.Add(new ComboBoxItem { Content = Ui.T("Ask me to allow it"), Tag = PortalSettings.Ask });
         incomingBox.Items.Add(new ComboBoxItem { Content = Ui.T("Ask for a password"), Tag = PortalSettings.WithPassword });
@@ -100,6 +108,8 @@ public sealed class PortalPage : Page
         rows.Children.Add(Ui.SettingRow(Ui.T("Start with PC Butler"), Ui.T("Reachable, and connected to your PCs, as soon as PC Butler runs, without a click."), autoStartSwitch));
         rows.Children.Add(Ui.SettingRow(Ui.T("Show the Courier widget"), Ui.T("A small window while PCs are connected: drop files on it to send them, and watch them go."),
                                         widgetSwitch));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Share the clipboard"), Ui.T("Text copied here goes to your connected PCs and phones, and text they send lands on this clipboard, ready for Ctrl+V."),
+                                        clipboardSwitch));
         firewallButton = Ui.Button(Ui.T("Allow"), AllowFirewall);
         firewallRow = Ui.SettingRow(Ui.Text(Ui.T("Windows firewall"), 13, weight: FontWeights.Bold), firewallText, firewallButton);
         rows.Children.Add(firewallRow);
@@ -124,6 +134,7 @@ public sealed class PortalPage : Page
         pcCard.Controls.Children.Add(askAgainButton);
         pcCard.Controls.Children.Add(Ui.Button(Ui.T("Send files…"), SendFiles).Margin(6));
         pcCard.Controls.Children.Add(Ui.Button(Ui.T("Send folder…"), SendFolder).Margin(6));
+        pcCard.Controls.Children.Add(Ui.Button(Ui.T("Send clipboard"), SendClipboard).Margin(6));
         pcCard.Controls.Children.Add(Ui.Button(Ui.T("Rename…"), RenameSelected).Margin(6));
         pcCard.Controls.Children.Add(Ui.Button(Ui.T("Ask before taking files: on/off"), ToggleAuto).Margin(6));
         pcCard.Controls.Children.Add(Ui.Button(Ui.T("Remove"), RemoveSelected).Margin(6));
@@ -524,6 +535,7 @@ public sealed class PortalPage : Page
         incomingBox.SelectedIndex = Settings.Incoming == PortalSettings.WithPassword ? 1 : 0;
         passwordButton.Visibility = Settings.Incoming == PortalSettings.WithPassword ? Visibility.Visible : Visibility.Collapsed;
         widgetSwitch.IsChecked = Settings.Widget;
+        clipboardSwitch.IsChecked = Settings.ShareClipboard;
         showing = false;
         // Every PC takes connections it did not start, so the firewall must let them in.
         // Asking the firewall runs a Windows tool, which takes a moment: asked once in the background, then remembered.
@@ -700,6 +712,31 @@ public sealed class PortalPage : Page
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = Ui.T("Files to send to {0}", target.Name) };
         if (dialog.ShowDialog(Window.GetWindow(this)) == true)
             SendTo(target, dialog.FileNames);
+    }
+
+    /// <summary>What is copied on this PC, as text, onto the chosen PC's or phone's clipboard.</summary>
+    private async void SendClipboard()
+    {
+        if (Chosen() is not { } target || Courier.Node is not { } node)
+            return;
+        string text;
+        try
+        {
+            text = Clipboard.ContainsText() ? Clipboard.GetText() : "";
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            text = "";
+        }
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Ui.Info("Courier", Ui.T("No text is copied right now."));
+            return;
+        }
+        var problem = await node.SendClipboard(target, text);
+        if (problem == PortalNode.OldVersion)
+            problem = Ui.T("The other side has an older PC Butler: update it to share the clipboard.");
+        Ui.Info("Courier", problem ?? Ui.T("The copied text is on {0}'s clipboard now.", target.Name));
     }
 
     private void SendFolder()
