@@ -3,6 +3,14 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.12
+
+- Clipboard sharing between the phone and the PC, for real now: with Courier connected, text copied on the PC lands on the phone's clipboard (and in its Clipboard page), ready to paste. On the phone, "Send what's copied to PC" (or the Send to PC button on a saved text) puts the text straight on the PC's clipboard, ready for Ctrl+V, instead of sending a text file. What was copied on the phone also goes to the PC by itself when you come back to PC Butler. A "Share the clipboard" switch on the Courier page (and "Share with my PCs" on the phone) turns it off; text that password managers mark as private is never sent.
+- The PC's Courier page has a Send clipboard button for the selected PC or phone.
+- On the phone, text shared to PC Butler from another app (Share > PC Butler) goes onto the PC's clipboard; before, it was dropped.
+- Fixed on the phone: after opening a tool, its tab could keep showing that tool (the Courier tab showed Search); switching tabs now shows the tab's own page.
+- Fixed on the phone: Duplicates kept saying "Comparing … file(s)…" under the results after the search had finished.
+
 ## 1.22.11
 
 - Search: when broken entries are taken out of the saved index, the drives are indexed again in the background, so the files that were under them can be found again.
