@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.13
+
+- Search remembers what you searched for: your recent searches (the last 30) show under the search box on the Search page, and stay after PC Butler restarts. Click one to search again, right-click it to take it out, or press Clear. A search goes in when you open a result, press Enter, or leave it unchanged for a moment.
+
 ## 1.22.12
 
 - Clipboard sharing between the phone and the PC, for real now: with Courier connected, text copied on the PC lands on the phone's clipboard (and in its Clipboard page), ready to paste. On the phone, "Send what's copied to PC" (or the Send to PC button on a saved text) puts the text straight on the PC's clipboard, ready for Ctrl+V, instead of sending a text file. What was copied on the phone also goes to the PC by itself when you come back to PC Butler. A "Share the clipboard" switch on the Courier page (and "Share with my PCs" on the phone) turns it off; text that password managers mark as private is never sent.
