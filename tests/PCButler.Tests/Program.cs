@@ -887,7 +887,7 @@ Section("courier IDs");
     Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(tuneRoot, throwOnMissingSubKey: false);
     Check(TuneUp.ForLevel("low").Count >= 3 && TuneUp.Levels.Zip(TuneUp.Levels.Skip(1)).All(pair => TuneUp.ForLevel(pair.First).All(TuneUp.ForLevel(pair.Second).Contains)
               && TuneUp.ForLevel(pair.First).Count < TuneUp.ForLevel(pair.Second).Count)
-          && TuneUp.ForLevel("extreme").Count == TuneUp.Catalogue.Count(tweak => tweak.Group == "tune") && !TuneUp.ForLevel("extreme").Contains(TuneUp.WindowsUpdate)
+          && TuneUp.ForLevel("extreme").Count == TuneUp.Catalogue.Count(tweak => tweak.Group == "tune" && tweak.Level >= 1) && !TuneUp.ForLevel("extreme").Contains("indexing") && !TuneUp.ForLevel("extreme").Contains(TuneUp.WindowsUpdate)
           && TuneUp.ForLevel("low").All(key => !TuneUp.Catalogue.First(tweak => tweak.Key == key).Admin)
           && TuneUp.Catalogue.Select(tweak => tweak.Key).Distinct().Count() == TuneUp.Catalogue.Length
           && TuneUp.Catalogue.All(tweak => tweak.Steps.Length > 0 && tweak.Admin == tweak.Steps.Any(step => step is ServiceStep or RegistryStep { Machine: true })),
