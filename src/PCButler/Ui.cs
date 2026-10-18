@@ -317,7 +317,7 @@ public static class Ui
     // --- lists ---
 
     /// <summary>
-    /// A dark list with columns. first = (title, width, cell template: "FileCell", "CheckCell" or
+    /// A dark list with columns. first = (title, width, cell template: "FileCell", "CheckFileCell", "CheckCell" or
     /// "PlainCell"); the other columns show Row.Cells in order. The first column takes up the
     /// slack, and gives some back when the window is narrow.
     /// </summary>

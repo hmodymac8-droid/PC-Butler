@@ -27,6 +27,7 @@ public readonly record struct SortResult(int Count, List<string> Errors, int Del
 ///   "deleted"  - the file (at destination, or at source if destination is "") was sent to the Recycle Bin
 ///   "erased"   - the same, but deleted for good (only on request), so no undo
 ///   "restored" - a deleted file that was never moved was brought back to source
+///   "linked"   - moved to another drive with a link left at source (see DriveMover); "undone" once moved back
 /// Nothing is ever removed from the log.
 /// </summary>
 public sealed class Run
@@ -94,11 +95,11 @@ public static class History
 
     public static bool IsActive(List<string> move) => move.Count == 2;
 
-    public static bool CanUndo(List<string> move) => IsActive(move) || move[2] == "deleted";
+    public static bool CanUndo(List<string> move) => IsActive(move) || move[2] is "deleted" or DriveMover.Linked;
 
     /// <summary>Where the move's file is now, or null if it is in the Recycle Bin or gone.</summary>
     public static string? CurrentPath(List<string> move) =>
-        IsActive(move) ? move[1] : move[2] is "deleted" or "erased" ? null : move[0];
+        IsActive(move) || move[2] == DriveMover.Linked ? move[1] : move[2] is "deleted" or "erased" ? null : move[0];
 
     /// <summary>The most recent run that still has moves which can be undone.</summary>
     public static Run? LastActiveRun() => Enumerable.Reverse(Load()).FirstOrDefault(run => run.Moves.Any(IsActive));
@@ -310,7 +311,8 @@ public static class Sorter
                 if (!runs.TryGetValue(runTime, out var run) || index < 0 || index >= run.Moves.Count)
                     continue;
                 var move = run.Moves[index];
-                if (!History.CanUndo(move))
+                // A move to another drive is copied back with its own progress window (DriveMover.MoveBack).
+                if (!History.CanUndo(move) || move is [_, _, DriveMover.Linked])
                     continue;
                 string source = move[0], destination = move[1];
                 try
