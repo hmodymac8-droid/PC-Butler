@@ -10,12 +10,22 @@ using PCButler.Core;
 
 namespace PCButler;
 
-/// <summary>The control panel: sidebar, top bar, the eight pages and the status bar.</summary>
+/// <summary>
+/// The control panel: sidebar, top bar, the pages and the status bar. The sidebar lists groups of
+/// pages (Files, Clean up, Speed, Share &amp; protect); a group's pages are tabs across its top.
+/// Search and History are reached from the top bar, since they cover every group.
+/// </summary>
 public sealed partial class MainWindow : Window
 {
     private const double CompactBelow = 720; // shorter than this, the summary cards and small print go
     private readonly Sidebar sidebar;
     private readonly TopBar topBar = new();
+    private readonly GroupTabs groupTabs;
+    /// <summary>The sidebar's groups, each with its pages in tab order.</summary>
+    private readonly Dictionary<string, string[]> groups = [];
+    /// <summary>The page each group opens at: the one used last.</summary>
+    private readonly Dictionary<string, string> lastTab = [];
+    private readonly Dictionary<string, string> badges = [];
     private readonly Grid pageHost = new();
     /// <summary>Every page, built the first time it is opened: building all of them at once made the window slow to appear.</summary>
     private readonly Dictionary<string, (Func<Page> Make, Page? Page, string Name)> pages = [];
@@ -61,6 +71,14 @@ public sealed partial class MainWindow : Window
             Ui.Tone(System.IO.Path.GetFileName(category.Folder)); // fixes each folder's tile colour, in settings order
 
         sidebar = new Sidebar(ShowPage);
+        groupTabs = new GroupTabs(ShowPage);
+        topBar.Searched += text =>
+        {
+            ShowPage("search");
+            if (text.Length > 0)
+                SearchPage.SearchFor(text);
+        };
+        topBar.HistoryClicked += () => ShowPage("history");
         var main = new DockPanel();
         main.Children.Add(topBar.Dock(Dock.Top));
 
@@ -86,32 +104,48 @@ public sealed partial class MainWindow : Window
         backgroundLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         bar.Children.Add(backgroundLabel);
         main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
+        main.Children.Add(groupTabs.Dock(Dock.Top));
         main.Children.Add(pageHost);
 
-        // (key, icon, sidebar name, how to build the page, in the sidebar's bottom group)
-        foreach (var (key, glyph, name, make, bottom) in new (string, string, string, Func<Page>, bool)[]
+        // (key, icon, name, how to build the page)
+        foreach (var (key, glyph, name, make) in new (string, string, string, Func<Page>)[]
                  {
-                     ("home", "\uE80F", "Home", () => new HomePage(this), false),
-                     ("search", "\uE721", "Search", () => new SearchPage(this), false),
-                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this), false),
-                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this), false),
-                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this), false),
-                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this), false),
-                     ("booster", "\uE945", "Booster", () => new BoosterPage(this), false),
-                     ("benchmark", "", "Benchmark", () => new BenchmarkPage(this), false),
-                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this), false),
-                     ("internet", "\uE774", "Internet", () => new InternetPage(this), false),
-                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this), false),
-                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this), false),
-                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this), false),
-                     ("vault", "\uE72E", "Vault", () => new VaultPage(this), false),
-                     ("history", "\uE81C", "History", () => new HistoryPage(this), false),
-                     ("settings", "\uE713", "Settings", () => new SettingsPage(this), true),
-                     ("about", "\uE946", "Help & about", () => new AboutPage(this), true),
+                     ("home", "\uE80F", "Home", () => new HomePage(this)),
+                     ("search", "\uE721", "Search", () => new SearchPage(this)),
+                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this)),
+                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this)),
+                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this)),
+                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this)),
+                     ("booster", "\uE945", "Booster", () => new BoosterPage(this)),
+                     ("benchmark", "\uE9D9", "Benchmark", () => new BenchmarkPage(this)),
+                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this)),
+                     ("internet", "\uE774", "Internet", () => new InternetPage(this)),
+                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this)),
+                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this)),
+                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this)),
+                     ("vault", "\uE72E", "Vault", () => new VaultPage(this)),
+                     ("history", "\uE81C", "History", () => new HistoryPage(this)),
+                     ("settings", "\uE713", "Settings", () => new SettingsPage(this)),
+                     ("about", "\uE946", "Help & about", () => new AboutPage(this)),
                  })
         {
             pages[key] = (make, null, Ui.T(name));
             glyphs[key] = glyph;
+        }
+        // (key, icon, sidebar name, its pages in tab order, in the sidebar's bottom group). A group of one page has the page's key.
+        foreach (var (key, glyph, name, members, bottom) in new (string, string, string, string[], bool)[]
+                 {
+                     ("home", "\uE80F", "Home", ["home"], false),
+                     ("files", "\uE8B7", "Files", ["preview", "duplicates", "storage"], false),
+                     ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"], false),
+                     ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"], false),
+                     ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"], false),
+                     ("settings", "\uE713", "Settings", ["settings"], true),
+                     ("about", "\uE946", "Help & about", ["about"], true),
+                 })
+        {
+            groups[key] = members;
+            lastTab[key] = members[0];
             sidebar.Add(key, glyph, Ui.T(name), bottom);
         }
         sidebar.ShowStorage(ConfigStore.DetectDownloadsFolder());
@@ -182,19 +216,37 @@ public sealed partial class MainWindow : Window
         return page;
     }
 
+    /// <summary>Show a page by its key, or a group by its key (at the page used there last).</summary>
     public void ShowPage(string key)
     {
+        if (!pages.ContainsKey(key))
+            key = lastTab[key];
+        string? group = groups.FirstOrDefault(entry => entry.Value.Contains(key)).Key;
         foreach (var page in Built)
             page.Visibility = Visibility.Collapsed;
         var shown = Page(key);
         var name = pages[key].Name;
         shown.Visibility = Visibility.Visible;
-        sidebar.Select(key);
+        sidebar.Select(group); // none for Search and History, which open from the top bar
+        if (group is not null)
+        {
+            lastTab[group] = key;
+            groupTabs.Show(groups[group].Select(member => (member, glyphs[member], pages[member].Name)).ToList(), key, badges);
+        }
+        else
+            groupTabs.Visibility = Visibility.Collapsed;
         topBar.SetPage(glyphs[key], name);
         shown.Shown();
     }
 
-    public void SetBadge(string key, string text) => sidebar.SetBadge(key, text);
+    /// <summary>A count on a page's tab, and on its group in the sidebar.</summary>
+    public void SetBadge(string key, string text)
+    {
+        badges[key] = text;
+        groupTabs.SetBadge(key, text);
+        if (groups.FirstOrDefault(entry => entry.Value.Contains(key)).Key is { } group)
+            sidebar.SetBadge(group, text);
+    }
 
     /// <summary>Change settings on top of what is on disk, since the tray menu writes there too.</summary>
     public void UpdateConfig(Action<Config> change)
