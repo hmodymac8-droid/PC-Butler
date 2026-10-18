@@ -180,12 +180,14 @@ public sealed class Sidebar : Border
 
     public void SetBadge(string key, string text) => items[key].SetBadge(text);
 
-    public void Select(string key)
+    /// <summary>Mark the current entry; null marks none (a page reached from the top bar).</summary>
+    public void Select(string? key)
     {
         if (selected is not null)
             items[selected].SetCurrent(false);
         selected = key;
-        items[key].SetCurrent(true);
+        if (key is not null)
+            items[key].SetCurrent(true);
     }
 
     /// <summary>Fill the storage bar from the drive the folder is on.</summary>
@@ -291,13 +293,26 @@ public sealed class NavItem : Border
     }
 }
 
-/// <summary>A strip across the top of the page area: where you are, and how things stand.</summary>
+/// <summary>
+/// A strip across the top of the page area: where you are, the search box, History, and how
+/// things stand. Typing in the search box opens the Search page with what was typed, and the
+/// typing carries on there.
+/// </summary>
 public sealed class TopBar : Border
 {
     private readonly TextBlock page = Ui.Text("", 15, weight: FontWeights.SemiBold);
     private readonly TextBlock pageGlyph = Ui.Glyph("", 16);
     private readonly TextBlock dot = Ui.Text("●", 11, "Primary");
     private readonly TextBlock status = Ui.Muted("", 13).Margin(8);
+    private readonly TextBox search = Ui.Field(width: 300, hint: Ui.T("Search files and folders…"));
+    private readonly Border history;
+    private bool handingOver;
+
+    /// <summary>Something was typed in the search box (or Enter pressed in it, with nothing typed).</summary>
+    public event Action<string>? Searched;
+
+    /// <summary>The History button was clicked.</summary>
+    public event Action? HistoryClicked;
 
     public TopBar()
     {
@@ -307,6 +322,40 @@ public sealed class TopBar : Border
         var row = new DockPanel { LastChildFill = false, Margin = new Thickness(30, 0, 30, 0) };
         row.Children.Add(Ui.Row(0, pageGlyph, page.Margin(10)));
         row.Children.Add(Ui.Row(0, dot, status, Ui.Glyph("\uEA18", 15, "Primary").Margin(14)).Dock(Dock.Right));
+
+        var historyGlyph = Ui.Glyph("\uE81C", 15);
+        var historyText = Ui.Muted(Ui.T("History"), 13).Margin(7);
+        history = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 6, 12, 6), Cursor = Cursors.Hand, Background = Brushes.Transparent,
+                               VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0), Child = Ui.Row(0, historyGlyph, historyText),
+                               ToolTip = Ui.T("Everything PC Butler moved, cleaned or shredded, with undo") };
+        System.Windows.Automation.AutomationProperties.SetName(history, Ui.T("History"));
+        history.MouseEnter += (_, _) => (history.Background, historyGlyph.Foreground, historyText.Foreground) = (Ui.Paint("Secondary"), Ui.Paint("Text"), Ui.Paint("Text"));
+        history.MouseLeave += (_, _) => (history.Background, historyGlyph.Foreground, historyText.Foreground) = (Brushes.Transparent, Ui.Paint("Muted"), Ui.Paint("Muted"));
+        history.MouseLeftButtonUp += (_, _) => HistoryClicked?.Invoke();
+        row.Children.Add(history.Dock(Dock.Right));
+
+        search.VerticalAlignment = VerticalAlignment.Center;
+        System.Windows.Automation.AutomationProperties.SetName(search, Ui.T("Search"));
+        search.TextChanged += (_, _) =>
+        {
+            if (handingOver || search.Text.Length == 0)
+                return;
+            var text = search.Text;
+            handingOver = true;
+            search.Text = ""; // the Search page's own box takes over
+            handingOver = false;
+            Searched?.Invoke(text);
+        };
+        search.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter)
+                return;
+            e.Handled = true;
+            Searched?.Invoke("");
+        };
+        var searchRow = Ui.Row(0, Ui.Glyph("\uE721", 15), search.Margin(8));
+        searchRow.Margin = new Thickness(0, 0, 14, 0);
+        row.Children.Add(searchRow.Dock(Dock.Right));
         Child = row;
     }
 
@@ -316,6 +365,72 @@ public sealed class TopBar : Border
     {
         status.Text = text;
         dot.Foreground = color;
+    }
+}
+
+/// <summary>
+/// The tabs across the top of a group of pages (Files: Sorter, Duplicates, Storage): one click
+/// switches page, and the current one is marked like the sidebar's.
+/// </summary>
+public sealed class GroupTabs : Border
+{
+    private readonly StackPanel row = new() { Orientation = Orientation.Horizontal };
+    private readonly Dictionary<string, (Border Tab, TextBlock Glyph, TextBlock Text, TextBlock Badge)> tabs = [];
+    private readonly Action<string> onSelect;
+    private string? current;
+
+    public GroupTabs(Action<string> onSelect)
+    {
+        this.onSelect = onSelect;
+        Padding = new Thickness(30, 12, 30, 0);
+        Child = row;
+    }
+
+    /// <summary>Show these pages as tabs, with one of them current. Fewer than two hides the strip.</summary>
+    public void Show(IReadOnlyList<(string Key, string Glyph, string Name)> pages, string currentKey, IReadOnlyDictionary<string, string> badges)
+    {
+        Visibility = pages.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        if (!pages.Select(page => page.Key).SequenceEqual(tabs.Keys))
+        {
+            row.Children.Clear();
+            tabs.Clear();
+            foreach (var (key, glyph, name) in pages)
+            {
+                var icon = Ui.Glyph(glyph, 14);
+                var text = Ui.Text(name, 13.5).Margin(8);
+                var badge = Ui.Text("", 11, "Primary", FontWeights.SemiBold).Margin(7);
+                var tab = new Border { CornerRadius = new CornerRadius(8), Padding = new Thickness(14, 7, 14, 7), Margin = new Thickness(0, 0, 6, 0),
+                                       Cursor = Cursors.Hand, Background = Brushes.Transparent, BorderThickness = new Thickness(1),
+                                       Child = Ui.Row(0, icon, text, badge) };
+                System.Windows.Automation.AutomationProperties.SetName(tab, name);
+                tab.MouseEnter += (_, _) => Paint(key);
+                tab.MouseLeave += (_, _) => Paint(key);
+                tab.MouseLeftButtonUp += (_, _) => onSelect(key);
+                tabs[key] = (tab, icon, text, badge);
+                row.Children.Add(tab);
+            }
+        }
+        current = currentKey;
+        foreach (var key in tabs.Keys)
+        {
+            tabs[key].Badge.Text = badges.TryGetValue(key, out var value) ? value : "";
+            Paint(key);
+        }
+    }
+
+    public void SetBadge(string key, string text)
+    {
+        if (tabs.TryGetValue(key, out var tab))
+            tab.Badge.Text = text;
+    }
+
+    private void Paint(string key)
+    {
+        var (tab, glyph, text, _) = tabs[key];
+        var on = key == current;
+        tab.Background = on ? Ui.Paint("PrimaryTint") : tab.IsMouseOver ? Ui.Paint("Secondary") : Brushes.Transparent;
+        tab.BorderBrush = on ? Ui.Paint("Primary") : Ui.Paint("Line");
+        glyph.Foreground = text.Foreground = Ui.Paint(on ? "Primary" : tab.IsMouseOver ? "Text" : "Muted");
     }
 }
 

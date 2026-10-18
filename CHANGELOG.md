@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.22
+
+- The sidebar is shorter: the pages are in five groups, and a group's pages are tabs across its top. Files has Sorter, Duplicates and Storage. Clean up has Cleaner, Programs and Shredder. Speed has Booster, Benchmark and Internet. Share & protect has Courier, Clipboard and Vault. Each group opens at the tab you used last.
+- Search is a box in the top bar, on every page: start typing and the Search page opens with what you typed, and you carry on typing there. Its keyboard shortcuts and the quick search window work as before.
+- History is a button in the top bar, since it covers what every page did.
+
 ## 1.22.21
 
 - The tray icon's panel is a little smaller: tighter tiles, text and spacing, so it takes less of the screen.
