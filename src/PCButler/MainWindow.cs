@@ -13,7 +13,6 @@ namespace PCButler;
 /// <summary>
 /// The control panel: sidebar, top bar, the pages and the status bar. The sidebar folds related
 /// pages into groups (Files, Clean up, Speed, Share &amp; protect) that open in place when clicked.
-/// Search and History are reached from the top bar, since they cover every page.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -65,13 +64,6 @@ public sealed partial class MainWindow : Window
             Ui.Tone(System.IO.Path.GetFileName(category.Folder)); // fixes each folder's tile colour, in settings order
 
         sidebar = new Sidebar(ShowPage);
-        topBar.Searched += text =>
-        {
-            ShowPage("search");
-            if (text.Length > 0)
-                SearchPage.SearchFor(text);
-        };
-        topBar.HistoryClicked += () => ShowPage("history");
         var main = new DockPanel();
         main.Children.Add(topBar.Dock(Dock.Top));
 
@@ -128,12 +120,13 @@ public sealed partial class MainWindow : Window
         foreach (var (key, glyph, name, members) in new (string, string, string, string[])[]
                  {
                      ("home", "", "", []),
-                     ("files", "\uE8B7", "Files", ["preview", "duplicates", "storage"]),
+                     ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
                      ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
                      ("speed", "\uE945", "Speed", ["booster", "internet"]),
-                     ("benchmark", "", "", []),
                      ("share", "\uE72D", "Share & protect", ["portal", "vault"]),
+                     ("benchmark", "", "", []),
                      ("clipboard", "", "", []),
+                     ("history", "", "", []),
                  })
         {
             if (members.Length == 0)
@@ -218,7 +211,7 @@ public sealed partial class MainWindow : Window
         var shown = Page(key);
         var name = pages[key].Name;
         shown.Visibility = Visibility.Visible;
-        sidebar.Select(key); // opens its group; Search and History, in the top bar, mark nothing
+        sidebar.Select(key); // and opens its group
         topBar.SetPage(glyphs[key], name);
         shown.Shown();
     }
