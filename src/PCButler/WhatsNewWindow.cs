@@ -9,13 +9,13 @@ namespace PCButler;
 /// <summary>
 /// What each version brought, newest first. Opens by itself once after an update, short:
 /// only the versions since the one used before, each change cut to its first sentence, with
-/// "Show the details" for the rest. From Help &amp; about it shows every version in full.
+/// "Show the details" for the rest. From Help &amp; about it shows every version, in short the same way.
 /// </summary>
 public sealed class WhatsNewWindow : Window
 {
     private readonly StackPanel log = new() { Margin = new Thickness(0, 0, 12, 0) };
 
-    /// <summary>since: the version used before this update (only what came after it, in short); null for the whole history.</summary>
+    /// <summary>since: the version used before this update (only what came after it); null for the whole history.</summary>
     public WhatsNewWindow(string? since = null)
     {
         Ui.StyleWindow(this);
@@ -33,21 +33,16 @@ public sealed class WhatsNewWindow : Window
         close.IsDefault = close.IsCancel = true;
         var bottom = new DockPanel { Margin = new Thickness(0, 16, 0, 0), LastChildFill = false };
         bottom.Children.Add(close.Dock(Dock.Right));
-        if (since is not null)
+        Show(since, brief: true);
+        if (log.Children.Count == 0)
+            Show(null, brief: true); // an unknown older version: the whole history, in short
+        Button? details = null;
+        details = Ui.Button(Ui.T("Show the details"), () =>
         {
-            Show(since, brief: true);
-            if (log.Children.Count == 0)
-                Show(null, brief: true); // an unknown older version: the latest one, in short
-            Button? details = null;
-            details = Ui.Button(Ui.T("Show the details"), () =>
-            {
-                Show(null, brief: false);
-                details!.Visibility = Visibility.Collapsed;
-            });
-            bottom.Children.Add(details.Dock(Dock.Left));
-        }
-        else
             Show(null, brief: false);
+            details!.Visibility = Visibility.Collapsed;
+        });
+        bottom.Children.Add(details.Dock(Dock.Left));
 
         page.Children.Add(Ui.Text(Ui.T(Ui.Eyebrow), 10, "Primary", FontWeights.Bold).Margin(0, 0, 0, 4).Dock(Dock.Top));
         var title = Ui.Text(Ui.T("What's new"), 27, weight: FontWeights.Bold);
@@ -58,14 +53,14 @@ public sealed class WhatsNewWindow : Window
         Content = page;
     }
 
-    /// <summary>Fill the list: the versions after since (or all of them; with since null and brief, only the newest), in short or in full.</summary>
+    /// <summary>Fill the list: the versions after since (or all of them), in short or in full.</summary>
     private void Show(string? since, bool brief)
     {
         log.Children.Clear();
         var entries = Changelog.Entries(Tr.IsArabic);
         var shown = since is not null && Version.TryParse(since, out var before)
             ? entries.Where(entry => Version.TryParse(entry.Version, out var version) && version > before).ToList()
-            : brief ? entries.Take(1).ToList() : entries;
+            : entries;
         foreach (var entry in shown)
         {
             var current = entry.Version == AppInfo.Version;
