@@ -1945,5 +1945,19 @@
  "Ended app ({0})": "تطبيق انتهى ({0})",
  "Over every network adapter": "عبر كل محوّلات الشبكة",
  "{0} in all": "{0} إجمالًا",
- "Forget the record of how much went over the internet each day?": "نسيان سجل ما مرّ عبر الإنترنت كل يوم؟"
+ "Forget the record of how much went over the internet each day?": "نسيان سجل ما مرّ عبر الإنترنت كل يوم؟",
+ "Share of the traffic": "حصته من الحركة",
+ "Speed (average of 10 s)": "السرعة (متوسط 10 ثوانٍ)",
+ "Nothing is using the internet right now.": "لا شيء يستخدم الإنترنت الآن.",
+ "Waiting for the helper's first counts…": "بانتظار أول أرقام من المساعد…",
+ "Start the helper to see which apps are using the internet.": "شغّل المساعد لترى أي التطبيقات تستخدم الإنترنت.",
+ "Share": "الحصة",
+ "Show history": "عرض السجل",
+ "Hide history": "إخفاء السجل",
+ "This week": "هذا الأسبوع",
+ "Ended apps": "تطبيقات انتهت",
+ "Press Start to see which apps are using the internet.": "اضغط «ابدأ» لترى أي التطبيقات تستخدم الإنترنت.",
+ "On: each app's traffic is being counted. Press Stop to stop counting.": "يعمل: تُحسب حركة كل تطبيق. اضغط «إيقاف» لإيقاف العدّ.",
+ "Off. Press Start to count which apps use the internet (Windows asks for administrator rights). Press Stop at any time.": "متوقف. اضغط «ابدأ» لحساب التطبيقات التي تستخدم الإنترنت (سيطلب ويندوز صلاحيات المسؤول). ويمكنك الضغط على «إيقاف» في أي وقت.",
+ "Start": "ابدأ"
 }

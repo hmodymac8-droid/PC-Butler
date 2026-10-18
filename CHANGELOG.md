@@ -5,7 +5,11 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.22.19
 
-- Internet: the "Internet usage" section starts folded, showing only its title. Click the title to open it and see the totals, the period, and the lists by app and by day; click it again to fold it away. The tracker keeps counting either way.
+- Internet: the "Internet usage" section starts folded, showing only its title. Click the title to open it; click it again to fold it away. The tracker keeps counting either way.
+- Internet: the section is simpler. It shows only the apps using the internet right now; the period choice and the lists by app and by day are gone. A "Show history" button at the bottom shows how much was downloaded and uploaded today, this week or this month, with the switch to turn tracking off and Clear.
+- Internet: the list of apps using the internet right now stays steady. Each app shows its share of the traffic as a bar and a percentage, and its speed averaged over the last 10 seconds; an app stays listed until it has been quiet for a minute, and the order changes only every few seconds instead of jumping around every second.
+- Internet: an app made of several programs is one row. SteelSeries GG, for example, runs its engine, Sonar and more, which showed as separate rows; now they are added together under "SteelSeries" (programs are grouped by their maker, Windows' own programs keep their names). Apps that have ended share one "Ended apps" row instead of one row each.
+- Internet: counting which apps use the internet is optional and in your hands. "Which apps use it" has a Start button (Windows asks for administrator rights) and, while counting, a Stop button; it stays off until you press Start.
 
 ## 1.22.18
 

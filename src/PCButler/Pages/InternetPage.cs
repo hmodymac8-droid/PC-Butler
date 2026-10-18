@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
-using System.Diagnostics;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,7 +10,7 @@ namespace PCButler;
 
 /// <summary>
 /// Internet: this PC's addresses, the speed test (download, upload and response time), and
-/// the usage tracker (how much went over the network each day, and which apps used it).
+/// the usage tracker (which apps use the internet right now, and how much went over it today, this week or this month).
 /// </summary>
 public sealed class InternetPage : Page
 {
@@ -26,9 +25,9 @@ public sealed class InternetPage : Page
     // The tracker.
     private readonly ComboBox period = new() { Width = 150, VerticalAlignment = VerticalAlignment.Center };
     private readonly StatCard[] usageCards;
-    private readonly ListView nowList;
-    private readonly ListView appList;
-    private readonly ListView dayList;
+    private readonly LiveNetList liveList = new();
+    private readonly StackPanel history = new() { Visibility = Visibility.Collapsed };
+    private readonly Button historyButton;
     private readonly TextBlock perAppNote = Ui.Muted("", 12, wrap: true);
     private readonly Button perAppButton;
     private readonly DispatcherTimer tick = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -74,46 +73,38 @@ public sealed class InternetPage : Page
         panel.Margin = new Thickness(0, 0, 0, 16);
         ShowHistory(SpeedTest.History());
 
-        // --- the tracker: how much went over the network, and which apps used it ---
+        // --- the tracker: which apps use the internet now; the totals of a period on request ---
         var tracker = new CardPanel("Internet usage", "");
-        foreach (var choice in new[] { "Today", "Yesterday", "Last 7 days", "Last 30 days", "This month", "Last 90 days" })
+        var trackerBody = new StackPanel { Margin = new Thickness(20, 6, 20, 14) };
+        perAppButton = Ui.Button(Ui.T("Start"), TogglePerApp);
+        trackerBody.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Which apps use it"), 13, weight: FontWeights.Bold), perAppNote, perAppButton, first: true));
+        trackerBody.Children.Add(Caption("Using the internet now").Margin(0, 12, 0, 6));
+        trackerBody.Children.Add(liveList);
+
+        // At the bottom: the history, shown when asked for.
+        historyButton = Ui.Button(Ui.T("Show history"), ToggleHistory);
+        historyButton.HorizontalAlignment = HorizontalAlignment.Left;
+        historyButton.Margin = new Thickness(0, 14, 0, 0);
+        trackerBody.Children.Add(historyButton);
+        foreach (var choice in new[] { "Today", "This week", "This month" })
             period.Items.Add(new ComboBoxItem { Content = Ui.T(choice), Tag = choice });
         period.SelectedIndex = 0;
         period.SelectionChanged += (_, _) => ShowUsage();
-        tracker.Controls.Children.Add(period);
-        tracker.Controls.Children.Add(Ui.Button(Ui.T("Clear"), ClearUsage).Margin(6));
-        var trackerBody = new StackPanel { Margin = new Thickness(20, 6, 20, 14) };
-        trackerBody.Children.Add(Ui.SettingRow(Ui.T("Track internet usage"),
-                                               Ui.T("Counts what this PC downloads and uploads each day, over every network adapter (Wi-Fi, cable, phone). "
-                                                    + "Only the amounts are counted, on this PC, never what was sent."),
-                                               Ui.Switch("", main.Config.TrackInternet, on =>
-                                               {
-                                                   Main.UpdateConfig(config => config.TrackInternet = on);
-                                                   App.Current.TrackInternet(on);
-                                                   ShowUsage();
-                                               }), first: true));
-        var (cardRow, cards) = StatCard.MakeRow(("Downloaded", ""), ("Uploaded", ""), ("Right now", ""));
+        history.Children.Add(Ui.Row(8, period, Ui.Button(Ui.T("Clear"), ClearUsage)).Margin(0, 12, 0, 0));
+        var (cardRow, cards) = StatCard.MakeRow(("Downloaded", ""), ("Uploaded", ""), ("Total", ""));
         usageCards = cards;
-        cardRow.Margin = new Thickness(0, 14, 0, 14);
-        trackerBody.Children.Add(cardRow);
-
-        perAppButton = Ui.Button(Ui.T("Start the helper"), StartPerApp);
-        trackerBody.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Which apps use it"), 13, weight: FontWeights.Bold), perAppNote, perAppButton));
-        nowList = Ui.List(("Using the internet now", 260, "PlainCell"), ("Download", 140), ("Upload", 140));
-        nowList.MinHeight = 110;
-        nowList.MaxHeight = 260;
-        trackerBody.Children.Add(Caption("Right now").Margin(0, 12, 0, 6));
-        trackerBody.Children.Add(nowList);
-        appList = Ui.List(("App", 260, "PlainCell"), ("Downloaded", 140), ("Uploaded", 140), ("Total", 140));
-        appList.MinHeight = 140;
-        appList.MaxHeight = 340;
-        trackerBody.Children.Add(Caption("By app, in this period").Margin(0, 14, 0, 6));
-        trackerBody.Children.Add(appList);
-        dayList = Ui.List(("Day", 260, "PlainCell"), ("Downloaded", 140), ("Uploaded", 140), ("Total", 140));
-        dayList.MinHeight = 110;
-        dayList.MaxHeight = 300;
-        trackerBody.Children.Add(Caption("By day").Margin(0, 14, 0, 6));
-        trackerBody.Children.Add(dayList);
+        cardRow.Margin = new Thickness(0, 12, 0, 12);
+        history.Children.Add(cardRow);
+        history.Children.Add(Ui.SettingRow(Ui.T("Track internet usage"),
+                                           Ui.T("Counts what this PC downloads and uploads each day, over every network adapter (Wi-Fi, cable, phone). "
+                                                + "Only the amounts are counted, on this PC, never what was sent."),
+                                           Ui.Switch("", main.Config.TrackInternet, on =>
+                                           {
+                                               Main.UpdateConfig(config => config.TrackInternet = on);
+                                               App.Current.TrackInternet(on);
+                                               ShowUsage();
+                                           }), first: true));
+        trackerBody.Children.Add(history);
         tracker.SetBody(trackerBody);
         tracker.MakeFoldable(open: false); // closed until its heading is clicked
 
@@ -132,35 +123,39 @@ public sealed class InternetPage : Page
 
     private static TextBlock Caption(string text) => Ui.Text(Ui.T(text), 13, weight: FontWeights.Bold);
 
-    private (DateTime First, DateTime Last) Period() => ((period.SelectedItem as ComboBoxItem)?.Tag as string) switch
+    private (DateTime First, DateTime Last) Period()
     {
-        "Yesterday" => (DateTime.Today.AddDays(-1), DateTime.Today.AddDays(-1)),
-        "Last 7 days" => (DateTime.Today.AddDays(-6), DateTime.Today),
-        "Last 30 days" => (DateTime.Today.AddDays(-29), DateTime.Today),
-        "This month" => (new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1), DateTime.Today),
-        "Last 90 days" => (DateTime.Today.AddDays(-89), DateTime.Today),
-        _ => (DateTime.Today, DateTime.Today),
-    };
-
-    /// <summary>Once a second: the speed right now and the apps using the internet; every ten seconds, the totals.</summary>
-    private void Tick()
-    {
-        if (App.Current.NetTracker is { } tracker)
+        var today = DateTime.Today;
+        return ((period.SelectedItem as ComboBoxItem)?.Tag as string) switch
         {
-            var (down, up) = tracker.Speed;
-            usageCards[2].Set("↓ " + NetworkMeter.Megabits(down), "Mbps", Ui.T("↑ {0} Mbps up", NetworkMeter.Megabits(up)));
-        }
-        else
-            usageCards[2].Set("—", "", Ui.T("The tracker is off."));
-        ShowNow();
-        if (++ticks % 10 == 0)
+            "This week" => (today.AddDays(-((7 + (int)today.DayOfWeek - (int)System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek) % 7)), today),
+            "This month" => (new DateTime(today.Year, today.Month, 1), today),
+            _ => (today, today),
+        };
+    }
+
+    private void ToggleHistory()
+    {
+        var open = history.Visibility != Visibility.Visible;
+        history.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        historyButton.Content = Ui.T(open ? "Hide history" : "Show history");
+        if (open)
             ShowUsage();
     }
 
-    /// <summary>Which apps send and receive right now, from the helper's counts a second apart.</summary>
+    /// <summary>Once a second: the apps using the internet; every ten seconds, the history's totals while it shows.</summary>
+    private void Tick()
+    {
+        ShowNow();
+        if (++ticks % 10 == 0 && history.Visibility == Visibility.Visible)
+            ShowUsage();
+    }
+
+    /// <summary>Which apps send and receive right now: the helper's counts a second apart, handed to the steady list.</summary>
     private void ShowNow()
     {
-        var net = NetMeter.Latest();
+        var counting = App.Current.CountingAppTraffic && AdminHelper.Running;
+        var net = counting ? NetMeter.Latest() : null;
         var at = Environment.TickCount64;
         var rows = new Dictionary<string, (long Down, long Up)>(StringComparer.OrdinalIgnoreCase);
         if (net is not null && lastNet is not null && at - lastNetAt > 200)
@@ -168,71 +163,60 @@ public sealed class InternetPage : Page
             var seconds = (at - lastNetAt) / 1000.0;
             foreach (var (pid, (sent, received)) in net)
             {
-                var (sentBefore, receivedBefore) = lastNet.GetValueOrDefault(pid);
+                // A process seen for the first time has no "before": its whole count so far is not one second's traffic.
+                if (!lastNet.TryGetValue(pid, out var before))
+                    continue;
+                var (sentBefore, receivedBefore) = before;
                 var (up, down) = (Math.Max(0, sent - sentBefore), Math.Max(0, received - receivedBefore));
                 if (up + down == 0)
                     continue;
                 var name = NameOf(pid);
                 var (downSoFar, upSoFar) = rows.GetValueOrDefault(name);
-                rows[name] = (downSoFar + (long)(down / seconds), upSoFar + (long)(up / seconds));
+                rows[name] = (downSoFar + (long)(down / seconds), upSoFar + (long)(up / seconds)); // bytes in one second
             }
+            liveList.Add(rows);
         }
+        else if (net is null)
+            liveList.Clear(Ui.T(counting ? "Waiting for the helper's first counts…" : "Press Start to see which apps are using the internet."));
         (lastNet, lastNetAt) = (net, at);
-        nowList.ItemsSource = rows.OrderByDescending(row => row.Value.Down + row.Value.Up).Take(20).Select(row => new Row
-        {
-            Name = row.Key, Cells = [Ui.FormatSize(row.Value.Down) + "/s", Ui.FormatSize(row.Value.Up) + "/s"],
-        }).ToList();
-        var helper = AdminHelper.Running;
-        perAppNote.Text = Ui.T(helper
-            ? "The helper is counting each app's traffic. It stops when PC Butler closes."
-            : "Windows only tells an administrator which app sends what, so apps are counted while the helper runs. The totals need no helper.");
-        perAppButton.Visibility = helper ? Visibility.Collapsed : Visibility.Visible;
+        perAppNote.Text = Ui.T(counting
+            ? "On: each app's traffic is being counted. Press Stop to stop counting."
+            : "Off. Press Start to count which apps use the internet (Windows asks for administrator rights). Press Stop at any time.");
+        perAppButton.Content = Ui.T(counting ? "Stop" : "Start");
     }
 
+    /// <summary>The row a process counts in: one per app, so an app made of several programs (SteelSeries GG) is one row.</summary>
     private string NameOf(int pid)
     {
         if (names.TryGetValue(pid, out var known))
             return known;
-        string name;
-        try
-        {
-            using var process = Process.GetProcessById(pid);
-            name = process.ProcessName;
-        }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException)
-        {
-            name = Ui.T("Ended app ({0})", pid);
-        }
-        return names[pid] = name;
+        // An app that has ended is not remembered under its number: all of them share one row.
+        return AppNames.Of(pid) is { } name ? names[pid] = name : Ui.T("Ended apps");
     }
 
-    /// <summary>The totals of the chosen period: the cards, each app, and each day.</summary>
+    /// <summary>The history: what went over the network in the chosen period.</summary>
     private void ShowUsage()
     {
         var (first, last) = Period();
         var used = NetUsageLog.Between(first, last);
         var (sent, received) = (used.Sum(day => day.Use.Sent), used.Sum(day => day.Use.Received));
-        usageCards[0].Set(Ui.FormatSize(received), "", Main.Config.TrackInternet ? Ui.T("Over every network adapter") : Ui.T("The tracker is off."));
-        usageCards[1].Set(Ui.FormatSize(sent), "", Ui.T("{0} in all", Ui.FormatSize(sent + received)));
-        dayList.ItemsSource = used.Select(day => new Row
-        {
-            Name = day.Day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) + "   " + Ui.T(day.Day.DayOfWeek.ToString()),
-            Cells = [Ui.FormatSize(day.Use.Received), Ui.FormatSize(day.Use.Sent), Ui.FormatSize(day.Use.Sent + day.Use.Received)],
-        }).ToList();
-        // Per app, from the record of what each app uses: only what the helper counted is known.
-        appList.ItemsSource = AppUsageLog.Report(first, last).Where(row => row.Use.NetSeconds > 0 && row.Use.Sent + row.Use.Received > 0)
-            .OrderByDescending(row => row.Use.Sent + row.Use.Received).Select(row => new Row
-            {
-                Name = row.App, Cells = [Ui.FormatSize(row.Use.Received), Ui.FormatSize(row.Use.Sent), Ui.FormatSize(row.Use.Sent + row.Use.Received)],
-            }).ToList();
+        var note = Main.Config.TrackInternet ? Ui.T("Over every network adapter") : Ui.T("The tracker is off.");
+        usageCards[0].Set(Ui.FormatSize(received), "", note);
+        usageCards[1].Set(Ui.FormatSize(sent), "", note);
+        usageCards[2].Set(Ui.FormatSize(sent + received), "", note);
     }
 
-    private async void StartPerApp()
+    /// <summary>Start or stop counting which apps use the internet; the choice is remembered.</summary>
+    private async void TogglePerApp()
     {
         perAppButton.IsEnabled = false;
-        if (await Admin.Ensure("Internet", Ui.T("Windows only tells an administrator how much each app sends and receives over the internet, so counting it "
-                                                + "needs administrator rights. Only the amounts are counted, never what is sent.")))
-            await Task.Run(() => AdminHelper.Send("net", ["on"], 10));
+        var on = !(App.Current.CountingAppTraffic && AdminHelper.Running);
+        if (!on || await Admin.Ensure("Internet", Ui.T("Windows only tells an administrator how much each app sends and receives over the internet, so counting it "
+                                                       + "needs administrator rights. Only the amounts are counted, never what is sent.")))
+        {
+            Main.UpdateConfig(config => config.CountAppTraffic = on);
+            await App.Current.CountAppTraffic(on);
+        }
         perAppButton.IsEnabled = true;
         ShowNow();
     }
