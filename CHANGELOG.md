@@ -6,6 +6,7 @@ Each version is a `## heading` followed by `- ` lines.
 ## 1.22.19
 
 - Internet: the "Internet usage" section starts folded, showing only its title. Click the title to open it and see the totals, the period, and the lists by app and by day; click it again to fold it away. The tracker keeps counting either way.
+- Internet: the list of apps using the internet right now stays steady. Each app shows its share of the traffic as a bar and a percentage, and its speed averaged over the last 10 seconds; an app stays listed until it has been quiet for a minute, and the order changes only every few seconds instead of jumping around every second. The "By app" list shows each app's share of the period too.
 
 ## 1.22.18
 

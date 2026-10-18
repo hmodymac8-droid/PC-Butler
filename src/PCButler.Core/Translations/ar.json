@@ -1945,5 +1945,11 @@
  "Ended app ({0})": "تطبيق انتهى ({0})",
  "Over every network adapter": "عبر كل محوّلات الشبكة",
  "{0} in all": "{0} إجمالًا",
- "Forget the record of how much went over the internet each day?": "نسيان سجل ما مرّ عبر الإنترنت كل يوم؟"
+ "Forget the record of how much went over the internet each day?": "نسيان سجل ما مرّ عبر الإنترنت كل يوم؟",
+ "Share of the traffic": "حصته من الحركة",
+ "Speed (average of 10 s)": "السرعة (متوسط 10 ثوانٍ)",
+ "Nothing is using the internet right now.": "لا شيء يستخدم الإنترنت الآن.",
+ "Waiting for the helper's first counts…": "بانتظار أول أرقام من المساعد…",
+ "Start the helper to see which apps are using the internet.": "شغّل المساعد لترى أي التطبيقات تستخدم الإنترنت.",
+ "Share": "الحصة"
 }
