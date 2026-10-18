@@ -78,6 +78,21 @@ public sealed class TrayFlyout : Window
         };
         update.MouseLeftButtonUp += (_, _) => Act(() => App.Current.InstallAvailableUpdate());
 
+        // --- Resume yesterday, when there is something from before the restart to open again ---
+        var resume = new Border
+        {
+            Background = Ui.Paint("Secondary"), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 9, 12, 10),
+            Margin = new Thickness(0, 10, 0, 0), Cursor = Cursors.Hand, Visibility = Visibility.Collapsed,
+        };
+        if (App.Current.ResumeAvailable is { } previous)
+        {
+            var words = new StackPanel { Children = { Ui.Text(Ui.T("Resume yesterday"), 12.5, "Primary", FontWeights.SemiBold), Ui.Muted(App.ResumeSummary(previous), 11.5) } };
+            resume.Child = Ui.Row(10, Ui.Glyph("\uE81C", 15, "Primary"), words);
+            resume.ToolTip = Ui.T("Open again the apps, folders and files that were open before Windows restarted.");
+            resume.Visibility = Visibility.Visible;
+            resume.MouseLeftButtonUp += (_, _) => Act(() => App.Current.ResumeYesterday());
+        }
+
         // --- Open and Exit ---
         var open = Ui.Button(Ui.T($"Open {AppInfo.Name}"), () => Act(() => App.Current.ShowMainWindow()), accent: true);
         var exit = Ui.Button(Ui.T("Exit"), () => Act(App.Current.ExitProgram));
@@ -93,7 +108,7 @@ public sealed class TrayFlyout : Window
             Background = Ui.Paint("Card"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14),
             Padding = new Thickness(14), Margin = new Thickness(8),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.4 },
-            Child = new StackPanel { Children = { head, readings, tiles, update, bottom } },
+            Child = new StackPanel { Children = { head, readings, tiles, update, resume, bottom } },
         };
 
         Deactivated += (_, _) => Dismiss();

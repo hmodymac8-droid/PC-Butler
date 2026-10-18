@@ -130,6 +130,13 @@ public partial class App : Application
             e.SetObserved();
         };
         Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
+        // Windows is about to shut down or restart: note once more what is open, for Resume yesterday.
+        // (Windows' own notice, which reaches a program that only has a tray icon open too.)
+        Microsoft.Win32.SystemEvents.SessionEnding += (_, _) =>
+        {
+            if (ConfigStore.Load().ResumeSession)
+                SessionRestore.Freeze();
+        };
 
         // The launch screen comes first; everything else waits until it is on screen.
         var launching = !arguments.Contains("--background");
@@ -165,6 +172,8 @@ public partial class App : Application
         StartBackground();
         StartCourier();
         RecordUsage(ConfigStore.Load().Usage.Record);
+        StartResume();
+        TrackInternet(ConfigStore.Load().TrackInternet);
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
 
@@ -535,6 +544,12 @@ public partial class App : Application
         // A click on a notification about files that arrived opens them where they are.
         tray.BalloonTipClicked += (_, _) =>
         {
+            if (resumeOffered)
+            {
+                resumeOffered = false;
+                ResumeYesterday();
+                return;
+            }
             if (receivedPath is not { } path)
                 return;
             if (File.Exists(path))
@@ -542,7 +557,7 @@ public partial class App : Application
             else if (Directory.Exists(path))
                 Shell.Open(path);
         };
-        tray.BalloonTipClosed += (_, _) => receivedPath = null;
+        tray.BalloonTipClosed += (_, _) => (receivedPath, resumeOffered) = (null, false);
         tray.MouseClick += (_, e) =>
         {
             if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
@@ -617,6 +632,99 @@ public partial class App : Application
         ShowMainWindow();
         window?.ShowPage("portal");
     });
+
+    // --- Resume yesterday: the apps and folders that were open before Windows restarted ---
+
+    private Timer? sessionTimer;
+    private bool resumeOffered;
+
+    /// <summary>At the start: put aside what was open before the restart, offer it back, and start noting what is open now.</summary>
+    private void StartResume()
+    {
+        if (!ConfigStore.Load().ResumeSession)
+            return;
+        SessionRestore.StartOfRun();
+        RememberSession(true);
+        if (SessionRestore.Previous() is not { } previous)
+            return;
+        Notify("Resume yesterday: click here to open again {0}.", [ResumeSummary(previous)]);
+        resumeOffered = true;
+    }
+
+    /// <summary>Note what is open every minute, or stop.</summary>
+    private void RememberSession(bool on)
+    {
+        sessionTimer?.Dispose();
+        sessionTimer = null;
+        if (on)
+            sessionTimer = new Timer(_ =>
+            {
+                if (!exiting)
+                    SessionRestore.Remember();
+            }, null, TimeSpan.FromSeconds(20), TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>The switch in Settings. Switched off, what was noted is forgotten.</summary>
+    public void SetResumeSession(bool on)
+    {
+        ChangeConfig(config => config.ResumeSession = on);
+        if (on)
+            SessionRestore.StartOfRun();
+        RememberSession(on);
+        if (!on)
+            SessionRestore.Forget();
+    }
+
+    /// <summary>What there is to resume, while the feature is on.</summary>
+    public SessionSnapshot? ResumeAvailable => ConfigStore.Load().ResumeSession ? SessionRestore.Previous() : null;
+
+    /// <summary>"5 apps, 2 folders, 3 files", in the user's language.</summary>
+    public static string ResumeSummary(SessionSnapshot snapshot)
+    {
+        var parts = new List<string>();
+        if (snapshot.Apps.Count > 0)
+            parts.Add(Ui.T("{0} app(s)", snapshot.Apps.Count));
+        if (snapshot.Folders.Count > 0)
+            parts.Add(Ui.T("{0} folder(s)", snapshot.Folders.Count));
+        if (snapshot.FileCount > 0)
+            parts.Add(Ui.T("{0} file(s)", snapshot.FileCount));
+        return string.Join(Tr.IsArabic ? "، " : ", ", parts);
+    }
+
+    /// <summary>Open again what was open before the restart (the tray panel's button, or a click on the notification). Offered once.</summary>
+    public void ResumeYesterday()
+    {
+        if (SessionRestore.Previous() is not { } previous)
+            return;
+        SessionRestore.Forget(previousOnly: true);
+        Task.Run(() =>
+        {
+            var (opened, errors) = SessionRestore.Resume(previous);
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (errors.Count > 0)
+                    Ui.ReportResult(Ui.T("Opened {0} again.", opened), errors);
+                else
+                    Notify("Opened {0} again.", [opened]);
+            });
+        });
+    }
+
+    // --- the Internet page's tracker ---
+
+    /// <summary>Counts what goes over the network each day, while the tracker is on.</summary>
+    public NetUsageRecorder? NetTracker { get; private set; }
+
+    public void TrackInternet(bool on)
+    {
+        if (on && NetTracker is null)
+            NetTracker = new NetUsageRecorder();
+        else if (!on && NetTracker is not null)
+        {
+            NetTracker.Dispose();
+            NetTracker = null;
+        }
+    }
 
     // --- the record of what each app uses (the Benchmark page's report) ---
 
@@ -849,6 +957,8 @@ public partial class App : Application
         BoostMode.Stop(); // Boost only lasts while PC Butler is running
         Overlay.Stop();
         RecordUsage(false);
+        sessionTimer?.Dispose();
+        TrackInternet(false);
         Search.Stop(); // saves the index, so the next start is instant
         courierWatch.Stop();
         courierWidget?.Close();

@@ -151,6 +151,13 @@ The look now follows that mock-up, not `docs/reference`. Its colours are in `The
 | 1.13 | Portal: files and folders between two PCs over the local network | `Portal.cs` (`PortalNode`, `Portal`), `AdminHelper` action `allow_portal` | `Pages/PortalPage.cs`, `App.PortalNeedsAttention`, drop zone entry |
 | 1.14 | The feature is renamed Courier for the user (the code still says Portal). Courier over the internet by 12-digit ID, with no server of ours | `PortalInternet.cs` (ID, reachable, `ConnectById`), `PortalDht.cs` (bencode, a minimal BitTorrent-DHT client), `PortalTunnel.cs` (`PortalLink`: one UDP socket, hole punching; `ReliableStream`: reliable ordered bytes over UDP) | `Pages/PortalPage.cs` |
 | 1.22 | File search, phase 1 of `docs/search-plan.md` (no administrator rights): Search page, Win + F search box, Search tab in Settings | `Search/` in Core: `SearchIndex`, `SearchText`, `QueryParser`, `QueryCompiler`, `Searcher`, `IndexStore`, `SearchSettings`, `VolumeSource` (`FolderScanSource`, `FolderWatcher`), `SearchEngine` | `Pages/SearchPage.cs`, `SearchResults.cs`, `SearchPopup.cs`, `WinKeyHook.cs`, `Pages/SettingsSearch.cs`, `Hotkeys` in `Overlay.cs` |
+| 1.22.17 | Drop-zone butler, Resume yesterday, internet usage tracker | `SessionRestore.cs` (`SessionSnapshot`, `StartOfRun`, `Remember`, `Freeze`, `Resume`), `NetUsage.cs` (`NetUsageLog`, `NetUsageRecorder`) | `Butler.cs`, `DropZoneWindow.cs`, `TrayFlyout.cs` (resume button), `App.xaml.cs` (`StartResume`, `ResumeYesterday`, `TrackInternet`), `Pages/InternetPage.cs`, `Pages/SettingsPage.cs` |
+
+Notes on 1.22.17:
+
+- **The butler** is drawn from WPF shapes on a 100 x 120 canvas (no images). `Butler.Mood` picks the face and animation: Ready, Napping (no input for 3 minutes, `GetLastInputInfo`), Hot (processor or graphics card at 80 °C, or without a temperature the processor at 85 % for 10 s), Catching (a drag is over the window) and Pleased (after a drop, 2.2 s). The window's background is alpha 1, not transparent, so drops on the empty parts still land.
+- **Resume yesterday** (`config.resume_session`, off by default) writes `session.json` every minute and once more on `SystemEvents.SessionEnding`. At start, a note whose boot time differs from this boot becomes `session-previous.json`, which the notification and the tray panel offer once. Apps are the owners of taskbar windows (not cloaked, not tool windows); their arguments come from `Win32_Process.CommandLine`; Store apps (under `WindowsApps`) are started by AppUserModelID through `shell:AppsFolder`. Folders come from `Shell.Application.Windows()`. Windows' own shell and PC Butler are skipped. Not tried on a real restart yet.
+- **Internet tracker** (`config.track_internet`, on): adapter byte counters every 2 s into `net-usage.json` per day (loopback and tunnel adapters left out, so a VPN is not counted twice). Per app comes from `AppUsageLog` (the helper's `net` counts), and "right now" from two `NetMeter.Latest()` readings a second apart.
 
 How search (1.22) works, for whoever continues it (phase 2 onwards is in `docs/search-plan.md`):
 
@@ -208,8 +215,7 @@ Rules the owner set for these, which still hold:
   estimated speed-up.
 
 Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); clipboard history (encrypted, off by default); global hotkeys; unpacking
-archives and cleaning names; a grouped Sorter preview; a per-file history; and a per-program
-network-usage monitor (view only, through the administrator helper).
+archives and cleaning names; a grouped Sorter preview; and a per-file history. (The per-program network monitor is on the Internet page since 1.22.17.)
 
 ### Still to do
 

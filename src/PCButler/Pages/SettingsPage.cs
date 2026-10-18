@@ -35,11 +35,13 @@ public sealed partial class SettingsPage : Page
     private readonly ListView categories;
     private readonly CheckBox autostart;
     private readonly CheckBox dropZone;
+    private readonly CheckBox resume;
 
     public override void ShowSwitches()
     {
         Match(autostart, Autostart.IsEnabled());
         Match(dropZone, Main.Config.DropZone);
+        Match(resume, Main.Config.ResumeSession);
     }
 
     public SettingsPage(MainWindow main) : base(main, "Settings", "Your folders. Your rules.")
@@ -89,8 +91,14 @@ public sealed partial class SettingsPage : Page
         }
         dropZone = Ui.Switch(Ui.T("Show the drop zone"), config.DropZone, on => App.Current.SetDropZone(on));
         quick.Children.Add(dropZone.Margin(0, 12, 0, 0));
-        quick.Children.Add(Ui.Muted(Ui.T("A small tile that stays on top of other windows. Drag files or folders onto it to sort them, lock them in "
-                                         + "the Vault, shred them or recycle them. Drag the tile to move it."), 12, wrap: true).Margin(0, 2, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("A little butler who stays on top of other windows. Drag files or folders onto him to sort them, lock them in "
+                                         + "the Vault, shred them or recycle them. He naps when the PC is idle and sweats when it runs hot. Drag him to move him."),
+                                    12, wrap: true).Margin(0, 2, 0, 0));
+        resume = Ui.Switch(Ui.T("Resume yesterday"), config.ResumeSession, on => App.Current.SetResumeSession(on));
+        quick.Children.Add(resume.Margin(0, 12, 0, 0));
+        quick.Children.Add(Ui.Muted(Ui.T("Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, one click (on the "
+                                         + "notification, or in the tray icon's panel) opens them all again. Only names and paths are noted, on this PC."),
+                                    12, wrap: true).Margin(0, 2, 0, 0));
         AddSandbox(quick);
         AddWindowsUpdates(quick);
         AddPcName(quick);
