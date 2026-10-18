@@ -484,6 +484,9 @@ public sealed partial class MainWindow : Window
 
     public static void SetAutostart(bool enabled)
     {
+        // A trial copy with its own data folder (PCBUTLER_DATA) leaves Windows' start-up list to the installed one.
+        if (Environment.GetEnvironmentVariable("PCBUTLER_DATA") is { Length: > 0 })
+            return;
         try
         {
             Autostart.Set(enabled);
