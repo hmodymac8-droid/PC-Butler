@@ -136,9 +136,9 @@ public sealed class Butler : Canvas
         });
 
         // Sweat drops by the temples, and the Zzz of a nap: drawn always, shown when the mood calls for them.
-        sweat.Children.Add(At(Drop(), 70, 28));
-        sweat.Children.Add(At(Drop(), 25, 33));
-        sweat.Children.Add(At(Drop(), 64, 22));
+        sweat.Children.Add(At(SweatDrop(), 70, 28));
+        sweat.Children.Add(At(SweatDrop(), 25, 33));
+        sweat.Children.Add(At(SweatDrop(), 64, 22));
         sweat.Visibility = Visibility.Collapsed;
         head.Children.Add(sweat);
         foreach (var (size, x, y) in new[] { (11.0, 70.0, 20.0), (14.0, 78.0, 10.0), (17.0, 86.0, -2.0) })
@@ -267,7 +267,7 @@ public sealed class Butler : Canvas
         Data = Geometry.Parse(data), Stroke = Ink, StrokeThickness = 1.6, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
     };
 
-    private static Path Drop() => new() { Data = Geometry.Parse("M 3,0 Q 6,5 6,7 A 3,3 0 0 1 0,7 Q 0,5 3,0 Z"), Fill = Sweat, Opacity = 0 };
+    private static Path SweatDrop() => new() { Data = Geometry.Parse("M 3,0 Q 6,5 6,7 A 3,3 0 0 1 0,7 Q 0,5 3,0 Z"), Fill = Sweat, Opacity = 0 };
 
     private static Ellipse Dot(double size, Brush fill) => new() { Width = size, Height = size, Fill = fill };
 
