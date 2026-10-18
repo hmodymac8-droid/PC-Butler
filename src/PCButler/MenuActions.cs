@@ -31,6 +31,9 @@ public static class MenuActions
             case "courier":
                 Share(paths);
                 break;
+            case "drive":
+                DriveMoveWindow.Move(null, paths); // logged in History, and moved back from there
+                break;
             case "shred":
                 Shred(paths);
                 break;
