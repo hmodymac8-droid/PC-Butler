@@ -731,6 +731,18 @@ public partial class App : Application
     private AppUsageRecorder? usageRecorder;
     private readonly DispatcherTimer usageWatch = new() { Interval = TimeSpan.FromSeconds(10) };
     private bool netAsked;
+    private bool? countAppTraffic;
+
+    /// <summary>Whether the helper is to count each app's traffic (the Internet page's Start and Stop).</summary>
+    public bool CountingAppTraffic => countAppTraffic ??= ConfigStore.Load().CountAppTraffic;
+
+    /// <summary>Start or stop counting each app's traffic; starting needs the helper running already.</summary>
+    public Task CountAppTraffic(bool on)
+    {
+        countAppTraffic = on;
+        netAsked = on && AdminHelper.Running;
+        return AdminHelper.Running ? Task.Run(() => AdminHelper.Send("net", [on ? "on" : "off"], 10)) : Task.CompletedTask;
+    }
 
     /// <summary>Record what each app uses, or stop. While the administrator helper runs, it is asked to count internet use per app too.</summary>
     public void RecordUsage(bool on)
@@ -756,7 +768,7 @@ public partial class App : Application
     private void WatchUsage(object? sender, EventArgs e)
     {
         var running = AdminHelper.Running;
-        if (running && !netAsked)
+        if (running && !netAsked && CountingAppTraffic)
         {
             netAsked = true;
             Task.Run(() => AdminHelper.Send("net", ["on"], 10));
