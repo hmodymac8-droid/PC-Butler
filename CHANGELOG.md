@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.19
+
+- Internet: the "Internet usage" section starts folded, showing only its title. Click the title to open it and see the totals, the period, and the lists by app and by day; click it again to fold it away. The tracker keeps counting either way.
+
 ## 1.22.18
 
 - A new, softer typeface: PC Butler now uses Nunito, with Almarai for Arabic. Text is drawn smoothly instead of being snapped to the screen's pixels, and everything is a little bigger (body text is about 16 px instead of 14), so it is easier to read.
