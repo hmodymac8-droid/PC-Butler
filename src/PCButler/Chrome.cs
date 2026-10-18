@@ -183,7 +183,7 @@ public sealed class Sidebar : Border
 
     /// <summary>
     /// A group that folds open under its heading when clicked (Files: Sorter, Duplicates, Storage),
-    /// and folds shut on a second click. Only one group is open at a time.
+    /// and folds shut on a second click. Several groups can be open at once.
     /// </summary>
     public void AddGroup(string key, string glyph, string text, IReadOnlyList<(string Key, string Glyph, string Name)> pages)
     {
@@ -200,16 +200,13 @@ public sealed class Sidebar : Border
         groups[key] = (heading, panel, pages.Select(page => page.Key).ToArray());
     }
 
-    /// <summary>Open a group (closing the others), or close it when it is already open.</summary>
+    /// <summary>Open a group, or close it when it is already open. The other groups stay as they are.</summary>
     private void Fold(string key, bool open = false)
     {
-        var opening = open || groups[key].Pages.Visibility != Visibility.Visible;
-        foreach (var (name, (heading, pages, _)) in groups)
-        {
-            var shown = opening && name == key;
-            pages.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
-            heading.SetOpen(shown);
-        }
+        var (heading, pages, _) = groups[key];
+        var shown = open || pages.Visibility != Visibility.Visible;
+        pages.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        heading.SetOpen(shown);
     }
 
     public void SetBadge(string key, string text)
