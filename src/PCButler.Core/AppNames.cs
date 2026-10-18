@@ -44,6 +44,8 @@ public static partial class AppNames
             var company = FileVersionInfo.GetVersionInfo(exe).CompanyName?.Trim();
             if (string.IsNullOrEmpty(company) || company.Contains("Microsoft", StringComparison.OrdinalIgnoreCase))
                 return null;
+            if (company.Equals("hmodymac8-droid", StringComparison.OrdinalIgnoreCase))
+                return "PC Butler"; // PC Butler's own programs
             var shortName = Suffix().Replace(company, "").Trim(' ', ',', '.');
             return shortName.Length > 0 ? shortName : company;
         }
@@ -54,7 +56,7 @@ public static partial class AppNames
     }
 
     // "SteelSeries ApS", "Google LLC", "Valve Corp.", "Discord Inc." → the name alone.
-    [GeneratedRegex(@"[,\s]+(Inc|Incorporated|LLC|L\.L\.C|Ltd|Limited|Corp|Corporation|Co|Company|GmbH|AG|ApS|A/S|AB|AS|SA|S\.A|SAS|BV|B\.V|NV|Oy|Pty|PLC|KK|S\.r\.l|SRL)\.?\s*$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"[,\s]+(Inc|Incorporated|LLC|L\.L\.C|Ltd|Limited|Corp|Corporation|Co|Company|GmbH|AG|ApS|A/S|AB|AS|SA|S\.A|SAS|BV|B\.V|NV|Oy|Pty|PLC|KK|PBC|S\.r\.l|SRL)\.?\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex Suffix();
 
     private static string ProgramFile(int pid)

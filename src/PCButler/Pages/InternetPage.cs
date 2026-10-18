@@ -76,7 +76,7 @@ public sealed class InternetPage : Page
         // --- the tracker: which apps use the internet now; the totals of a period on request ---
         var tracker = new CardPanel("Internet usage", "");
         var trackerBody = new StackPanel { Margin = new Thickness(20, 6, 20, 14) };
-        perAppButton = Ui.Button(Ui.T("Start the helper"), StartPerApp);
+        perAppButton = Ui.Button(Ui.T("Start"), TogglePerApp);
         trackerBody.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Which apps use it"), 13, weight: FontWeights.Bold), perAppNote, perAppButton, first: true));
         trackerBody.Children.Add(Caption("Using the internet now").Margin(0, 12, 0, 6));
         trackerBody.Children.Add(liveList);
@@ -154,7 +154,8 @@ public sealed class InternetPage : Page
     /// <summary>Which apps send and receive right now: the helper's counts a second apart, handed to the steady list.</summary>
     private void ShowNow()
     {
-        var net = NetMeter.Latest();
+        var counting = App.Current.CountingAppTraffic && AdminHelper.Running;
+        var net = counting ? NetMeter.Latest() : null;
         var at = Environment.TickCount64;
         var rows = new Dictionary<string, (long Down, long Up)>(StringComparer.OrdinalIgnoreCase);
         if (net is not null && lastNet is not null && at - lastNetAt > 200)
@@ -176,13 +177,12 @@ public sealed class InternetPage : Page
             liveList.Add(rows);
         }
         else if (net is null)
-            liveList.Clear(Ui.T(AdminHelper.Running ? "Waiting for the helper's first counts…" : "Start the helper to see which apps are using the internet."));
+            liveList.Clear(Ui.T(counting ? "Waiting for the helper's first counts…" : "Press Start to see which apps are using the internet."));
         (lastNet, lastNetAt) = (net, at);
-        var helper = AdminHelper.Running;
-        perAppNote.Text = Ui.T(helper
-            ? "The helper is counting each app's traffic. It stops when PC Butler closes."
-            : "Windows only tells an administrator which app sends what, so apps are counted while the helper runs. The totals need no helper.");
-        perAppButton.Visibility = helper ? Visibility.Collapsed : Visibility.Visible;
+        perAppNote.Text = Ui.T(counting
+            ? "On: each app's traffic is being counted. Press Stop to stop counting."
+            : "Off. Press Start to count which apps use the internet (Windows asks for administrator rights). Press Stop at any time.");
+        perAppButton.Content = Ui.T(counting ? "Stop" : "Start");
     }
 
     /// <summary>The row a process counts in: one per app, so an app made of several programs (SteelSeries GG) is one row.</summary>
@@ -206,12 +206,17 @@ public sealed class InternetPage : Page
         usageCards[2].Set(Ui.FormatSize(sent + received), "", note);
     }
 
-    private async void StartPerApp()
+    /// <summary>Start or stop counting which apps use the internet; the choice is remembered.</summary>
+    private async void TogglePerApp()
     {
         perAppButton.IsEnabled = false;
-        if (await Admin.Ensure("Internet", Ui.T("Windows only tells an administrator how much each app sends and receives over the internet, so counting it "
-                                                + "needs administrator rights. Only the amounts are counted, never what is sent.")))
-            await Task.Run(() => AdminHelper.Send("net", ["on"], 10));
+        var on = !(App.Current.CountingAppTraffic && AdminHelper.Running);
+        if (!on || await Admin.Ensure("Internet", Ui.T("Windows only tells an administrator how much each app sends and receives over the internet, so counting it "
+                                                       + "needs administrator rights. Only the amounts are counted, never what is sent.")))
+        {
+            Main.UpdateConfig(config => config.CountAppTraffic = on);
+            await App.Current.CountAppTraffic(on);
+        }
         perAppButton.IsEnabled = true;
         ShowNow();
     }
