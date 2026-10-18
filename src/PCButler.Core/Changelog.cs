@@ -35,6 +35,13 @@ public static class Changelog
     /// list should be shown. lastSeen is the version saved in the settings ("" before 1.8,
     /// and on a first start, when there is nothing to compare with and nothing to announce).
     /// </summary>
+    /// <summary>A change in short: its first sentence ("Internet: the list stays steady." of a longer note).</summary>
+    public static string Headline(string change)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(change, @"^.+?[.!?](?=\s|$)");
+        return match.Success ? match.Value : change;
+    }
+
     public static bool ShouldShow(string lastSeen, bool firstStart) =>
         !firstStart && lastSeen != AppInfo.Version;
 }
