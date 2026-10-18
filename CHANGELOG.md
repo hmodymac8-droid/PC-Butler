@@ -5,6 +5,7 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.22.20
 
+- What's new is short now. After an update it shows only what changed since the version you had, one line per change, with "Show the details" for the full notes. Help & about still shows every version in full.
 - The drop zone looks as it did before 1.22.17 again: the little butler is gone, and everything the drop zone does works as before.
 - Move drives: move a big folder or game (or a file) from one drive to another to free space, while Windows and your apps still find it where they expect it. It is copied to the drive you choose (into a "PC Butler moved" folder), every file is checked, a link is left in its old place, and only then is the original removed. If anything goes wrong, nothing changes. Something in use (a game that is running) is not moved until it is closed, and Windows' own folders are never moved. Start it from the right-click menu in Search, from Storage, or from File Explorer's PC Butler menu ("Move drives…"). A folder always gets a link; a single file only when Windows' Developer Mode is on, otherwise it is moved without one.
 - History: every move to another drive is saved there with the status "Moved drives", and Undo brings it back to exactly where it was and removes the link (with a progress window, as big folders take a while).
