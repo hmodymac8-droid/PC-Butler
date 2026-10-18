@@ -35,6 +35,8 @@ public sealed class StoragePage : Page
     private readonly TreemapView map = new();
     private readonly TextBlock mapPath = Ui.Muted("", 13);
     private readonly Button upButton;
+    private readonly StackPanel mapChosen;
+    private readonly TextBlock mapChosenText = Ui.Text("", 13, weight: FontWeights.SemiBold);
     private readonly ComboBox minimumSize = new() { Width = 110 };
     private readonly ComboBox unusedFor = new() { Width = 130 };
     private readonly ListView bigList;
@@ -72,7 +74,18 @@ public sealed class StoragePage : Page
         var mapBar = new DockPanel { LastChildFill = false };
         mapBar.Children.Add(upButton);
         mapBar.Children.Add(mapPath.Margin(10));
-        mapBar.Children.Add(Ui.Muted(Ui.T("Click a folder to look inside. Right-click for more.")).Dock(Dock.Right));
+        mapBar.Children.Add(Ui.Muted(Ui.T("Click a folder to look inside. Ctrl+click to choose several. Right-click for more.")).Dock(Dock.Right));
+        // What was chosen with Ctrl+click, and what can be done with it.
+        mapChosen = Ui.Row(8, mapChosenText, Ui.Button(Ui.T("Move drives…"), () => MoveDrives(map.Marked.ToList())),
+                           Ui.Button(Ui.T("Clear"), map.ClearMarks));
+        mapChosen.Visibility = Visibility.Collapsed;
+        mapBar.Children.Add(mapChosen.Margin(16));
+        map.MarksChanged += () =>
+        {
+            mapChosen.Visibility = map.Marked.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            mapChosenText.Text = Ui.T("{0} chosen", map.Marked.Count);
+        };
+        map.MoveDrives += items => MoveDrives(items);
         var mapBody = new DockPanel { Margin = new Thickness(10) };
         mapBody.Children.Add(mapBar.Dock(Dock.Bottom));
         mapBody.Children.Add(new Border { Child = map, Margin = new Thickness(0, 0, 0, 8), ClipToBounds = true });
@@ -92,12 +105,14 @@ public sealed class StoragePage : Page
         unusedFor.SelectedIndex = 3;
         minimumSize.SelectionChanged += (_, _) => RenderBigFiles();
         unusedFor.SelectionChanged += (_, _) => RenderBigFiles();
-        bigList = Ui.List(("File name", 340, "FileCell"), ("Size", 100), ("Last used", 140), ("Folder", 380));
-        Ui.AttachFileMenu(bigList, row => ((BigFile)row.Tag!).Path, AfterDelete);
+        bigList = Ui.List(("File name", 360, "CheckFileCell"), ("Size", 100), ("Last used", 140), ("Folder", 380));
+        Ui.AttachFileMenu(bigList, row => ((BigFile)row.Tag!).Path, AfterDelete, ("Move drives…", _ => MoveDrives(Chosen().Select(file => file.Path).ToList())));
         var bigBar = new DockPanel { LastChildFill = false };
         bigBar.Children.Add(Ui.Row(0, Ui.Text(Ui.T("Bigger than")), minimumSize.Margin(8), Ui.Text(Ui.T("Not used for")).Margin(16),
                                    unusedFor.Margin(8), bigSummary.Margin(16)));
-        bigBar.Children.Add(Ui.Button(Ui.T("Move selected to Recycle Bin"), DeleteSelected, accent: true).Dock(Dock.Right));
+        bigBar.Children.Add(Ui.Row(8, Ui.Button(Ui.T("Select all"), () => TickAll(true)), Ui.Button(Ui.T("Select none"), () => TickAll(false)),
+                                   Ui.Button(Ui.T("Move drives…"), () => MoveDrives(Chosen().Select(file => file.Path).ToList())),
+                                   Ui.Button(Ui.T("Move selected to Recycle Bin"), DeleteSelected, accent: true)).Dock(Dock.Right));
         var bigBody = new DockPanel { Margin = new Thickness(10) };
         bigBody.Children.Add(bigBar.Dock(Dock.Bottom));
         bigBody.Children.Add(new Border { Child = bigList, Margin = new Thickness(0, 0, 0, 8) });
@@ -279,6 +294,7 @@ public sealed class StoragePage : Page
     private void ShowResult(StorageResult scanned)
     {
         result = scanned;
+        map.ClearMarks();
         var root = scanned.Root;
         var parts = Ui.FormatSize(root.Size).Split(' ');
         stats[0].Set(parts[0], parts[1], root.Path);
@@ -317,12 +333,41 @@ public sealed class StoragePage : Page
             : Ui.T("No files match.");
     }
 
+    /// <summary>The files ticked in the list; with none ticked, the rows selected (Ctrl or Shift for several).</summary>
+    private List<BigFile> Chosen()
+    {
+        var rows = bigList.ItemsSource as IEnumerable<Row> ?? [];
+        var ticked = rows.Where(row => row.Checked).ToList();
+        return (ticked.Count > 0 ? ticked : Ui.Selected(bigList)).Select(row => (BigFile)row.Tag!).ToList();
+    }
+
+    private void TickAll(bool on)
+    {
+        foreach (var row in bigList.ItemsSource as IEnumerable<Row> ?? [])
+            row.Checked = on;
+    }
+
+    /// <summary>Move files or folders to another drive with a link left behind; History can move them back.</summary>
+    private void MoveDrives(List<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            Ui.Info("Storage", Ui.T("Tick one or more files in the list first."));
+            return;
+        }
+        if (!DriveMoveWindow.Move(Window.GetWindow(this), paths))
+            return;
+        map.ClearMarks();
+        AfterDelete();
+        status.Text = Ui.T("Moved. Scan again to see the new sizes.");
+    }
+
     private void DeleteSelected()
     {
-        var files = Ui.Selected(bigList).Select(row => (BigFile)row.Tag!).ToList();
+        var files = Chosen();
         if (files.Count == 0)
         {
-            Ui.Info("Storage", Ui.T("Select one or more files in the list first (Ctrl or Shift for several)."));
+            Ui.Info("Storage", Ui.T("Tick one or more files in the list first."));
             return;
         }
         if (!Ui.Ask("Storage", Ui.T("Move {0} file(s) ({1}) to the Recycle Bin?\n\nYou can bring them back from History.",
@@ -336,7 +381,7 @@ public sealed class StoragePage : Page
     /// <summary>Files deleted from the list leave it; the map keeps its numbers until the next scan.</summary>
     private void AfterDelete()
     {
-        result?.BigFiles.RemoveAll(file => !File.Exists(file.Path));
+        result?.BigFiles.RemoveAll(file => !File.Exists(file.Path) || DriveMover.IsLink(file.Path));
         RenderBigFiles();
         Main.RefreshPreview();
     }
@@ -354,6 +399,26 @@ public sealed class TreemapView : Canvas
 
     public StorageNode? Node { get; private set; }
     public event Action<StorageNode>? Opened;
+    /// <summary>The paths chosen with Ctrl+click, kept while moving around the map.</summary>
+    public HashSet<string> Marked { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public event Action? MarksChanged;
+    /// <summary>"Move drives…" from a block's right-click menu: the chosen paths, that block's included.</summary>
+    public event Action<List<string>>? MoveDrives;
+
+    public void ClearMarks()
+    {
+        Marked.Clear();
+        MarksChanged?.Invoke();
+        Draw();
+    }
+
+    private void ToggleMark(string path)
+    {
+        if (!Marked.Remove(path))
+            Marked.Add(path);
+        MarksChanged?.Invoke();
+        Draw();
+    }
 
     public TreemapView()
     {
@@ -429,9 +494,24 @@ public sealed class TreemapView : Canvas
                     label.Children.Add(Ui.Muted(Ui.FormatSize(item.Size), 12));
                 block.Child = label;
             }
+            var marked = item.Path.Length > 0 && Marked.Contains(item.Path);
+            Brush Edge() => marked ? Ui.Paint("Primary") : new SolidColorBrush(Mix(0.55));
+            block.BorderBrush = Edge();
+            if (marked)
+            {
+                block.BorderThickness = new Thickness(2);
+                block.Background = new SolidColorBrush(Mix(0.4));
+            }
             block.MouseEnter += (_, _) => block.BorderBrush = Ui.Paint("Text");
-            block.MouseLeave += (_, _) => block.BorderBrush = new SolidColorBrush(Mix(0.55));
-            block.MouseLeftButtonUp += (_, _) => Opened?.Invoke(item);
+            block.MouseLeave += (_, _) => block.BorderBrush = Edge();
+            block.MouseLeftButtonUp += (_, _) =>
+            {
+                // Ctrl+click chooses (or unchooses) it; a plain click opens a folder.
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && item.Path.Length > 0)
+                    ToggleMark(item.Path);
+                else
+                    Opened?.Invoke(item);
+            };
             if (item.Path.Length > 0)
             {
                 var menu = new ContextMenu();
@@ -442,6 +522,9 @@ public sealed class TreemapView : Canvas
                 }
                 else
                     menu.Items.Add(Ui.Item("Show in File Explorer", () => Shell.Reveal(item.Path)));
+                menu.Items.Add(new Separator());
+                menu.Items.Add(Ui.Item(marked ? "Unchoose" : "Choose (Ctrl+click)", () => ToggleMark(item.Path)));
+                menu.Items.Add(Ui.Item("Move drives…", () => MoveDrives?.Invoke(Marked.Append(item.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList())));
                 block.ContextMenu = menu;
             }
             SetLeft(block, x + 1);
