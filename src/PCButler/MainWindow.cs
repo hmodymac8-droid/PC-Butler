@@ -18,8 +18,6 @@ namespace PCButler;
 public sealed partial class MainWindow : Window
 {
     private const double CompactBelow = 720; // shorter than this, the summary cards and small print go
-    /// <summary>A copy started only to look around (PCBUTLER_PREVIEW=1): closing the window ends it instead of keeping it in the tray.</summary>
-    private static readonly bool LookOnly = Environment.GetEnvironmentVariable("PCBUTLER_PREVIEW") == "1";
     private readonly Sidebar sidebar;
     private readonly TopBar topBar = new();
     private readonly GroupTabs groupTabs;
@@ -165,7 +163,7 @@ public sealed partial class MainWindow : Window
         {
             if (!Built.All(page => page.CanClose()))
                 e.Cancel = true;
-            else if (!quitting && !LookOnly)
+            else if (!quitting)
             {
                 // Closed to the tray, the window is kept (hidden), so opening it again is instant.
                 e.Cancel = true;
