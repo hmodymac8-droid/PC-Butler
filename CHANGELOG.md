@@ -3,6 +3,11 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.21
+
+- The tray icon's panel is a little smaller: tighter tiles, text and spacing, so it takes less of the screen.
+- The tray panel has a "Resume yesterday" tile: switch on (or off) reopening the apps, folders and files you had open before the PC was shut down, without going to Settings. When there is something to reopen after a restart, the "Resume yesterday" button is there too, as before.
+
 ## 1.22.20
 
 - What's new is short now: every update is listed with a short summary of each change (two or three lines at most), and "Show details" under each update opens its full notes.
