@@ -397,6 +397,7 @@ public partial class App : Application
             new("dropzone", "Drop zone", "\uE8B7", config.DropZone),
             new("alerts", "Usage alerts", "\uE7BA", config.UsageAlerts),
             new("autostart", "Start with Windows", "\uE7E8", Autostart.IsEnabled()),
+            new("resume", "Resume yesterday", "\uE81C", config.ResumeSession),
         ];
     }
 
@@ -445,6 +446,9 @@ public partial class App : Application
                 break;
             case "autostart":
                 PCButler.MainWindow.SetAutostart(on);
+                break;
+            case "resume":
+                SetResumeSession(on);
                 break;
         }
         window?.ShowSwitches();
