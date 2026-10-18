@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.17
+
+- The drop zone is now a little butler. He stands on your desktop in his tailcoat and bow tie and reacts to the PC: he takes a nap (eyes shut, Zzz) when nobody has touched the mouse or keyboard for 3 minutes, sweats and goes red when the processor or graphics card reaches 80 °C (or, without a temperature reading, when the processor stays above 85 % busy), raises his arms to catch files you drag over him, and smiles with a little hop when he has them. Everything the drop zone did still works: drop files on him to sort, vault, send, shred or recycle them, drag him to move him, right-click to hide him.
+- Resume yesterday (Settings, off until you switch it on): every minute PC Butler notes which apps, folders and files are open. After Windows restarts, a notification offers to open them all again with one click, and the tray icon's panel has a "Resume yesterday" button too. Apps that are already running are left alone; files that an app had open (as it was started with them) open again in that app. Only names and paths are noted, on this PC.
+- Internet: a usage tracker. It counts how much the PC downloads and uploads each day over every network adapter, with no administrator rights, and shows today, yesterday, the last 7, 30 or 90 days or this month, the speed right now, and a list by day. With the helper running it also shows which apps are using the internet right now and how much each app used in the period.
+
 ## 1.22.16
 
 - The phone app, PC Butler for Android 1.2.3, is sent to Google Play for its closed test. It brings the clipboard sharing, the Tools sheet (Search, Cleaner, Apps, Benchmark, Clipboard, History), the new look and the fixes since 1.0.1 to the Play version.
