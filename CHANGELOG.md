@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.22
+
+- The sidebar is shorter: related pages are in groups that fold open right in the sidebar. Click a group to show its pages under it, and click it again to fold it away (one group is open at a time). Files has Search, Sorter, Duplicates and Storage. Clean up has Cleaner, Programs and Shredder. Speed has Booster, Benchmark and Internet. Share & protect has Courier, Clipboard and Vault. History stays on its own below the groups.
+
 ## 1.22.21
 
 - The tray icon's panel is a little smaller: tighter tiles, text and spacing, so it takes less of the screen.
