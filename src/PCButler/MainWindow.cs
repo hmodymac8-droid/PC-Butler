@@ -122,10 +122,8 @@ public sealed partial class MainWindow : Window
                      ("home", "", "", []),
                      ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
                      ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
-                     ("speed", "\uE945", "Speed", ["booster", "internet"]),
-                     ("share", "\uE72D", "Share & protect", ["portal", "vault"]),
-                     ("benchmark", "", "", []),
-                     ("clipboard", "", "", []),
+                     ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"]),
+                     ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"]),
                      ("history", "", "", []),
                  })
         {
