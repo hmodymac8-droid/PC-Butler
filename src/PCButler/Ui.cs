@@ -648,6 +648,9 @@ public sealed class CardPanel : Border
     private readonly TextBlock heading;
     private readonly Border countBadge;
     private readonly DockPanel layout = new();
+    private readonly Border headRow;
+    private readonly DockPanel head;
+    private UIElement? body;
 
     /// <summary>The right side of the heading row: search box, switches, status text.</summary>
     public StackPanel Controls { get; } = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -661,14 +664,49 @@ public sealed class CardPanel : Border
             Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(12, 0, 0, 0), Child = count, Visibility = Visibility.Collapsed,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var head = new DockPanel { Margin = new Thickness(20, 14, 20, 14), LastChildFill = false };
+        head = new DockPanel { Margin = new Thickness(20, 14, 20, 14), LastChildFill = false };
         head.Children.Add(Ui.Glyph(glyph, 15, "Primary"));
         heading = Ui.Text(Ui.T(title), 15, weight: FontWeights.Bold);
         head.Children.Add(heading.Margin(10));
         head.Children.Add(countBadge);
         head.Children.Add(Controls.Dock(Dock.Right));
-        layout.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 0, 0, 1), Child = head }.Dock(Dock.Top));
+        headRow = new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 0, 0, 1), Child = head };
+        layout.Children.Add(headRow.Dock(Dock.Top));
         Child = layout;
+    }
+
+    /// <summary>
+    /// Let the card fold: a click on its heading row shows or hides the body and the heading's
+    /// controls, with an arrow that shows which. Call after SetBody.
+    /// </summary>
+    public void MakeFoldable(bool open)
+    {
+        var arrow = Ui.Glyph("", 12);
+        arrow.Margin = new Thickness(0, 0, 10, 0);
+        head.Children.Insert(0, arrow);
+        headRow.Background = System.Windows.Media.Brushes.Transparent; // so the whole row takes clicks
+        headRow.Cursor = Cursors.Hand;
+        void Show(bool shown)
+        {
+            open = shown;
+            arrow.Text = shown ? "\uE70D" : (Tr.IsArabic ? "\uE76B" : "\uE76C");
+            var visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+            Controls.Visibility = visibility;
+            if (body is not null)
+                body.Visibility = visibility;
+            headRow.BorderThickness = new Thickness(0, 0, 0, shown ? 1 : 0);
+        }
+        headRow.MouseLeftButtonUp += (_, e) =>
+        {
+            // The heading's own buttons and lists do their own thing.
+            for (var at = e.OriginalSource as DependencyObject; at is not null && at != headRow; at = System.Windows.Media.VisualTreeHelper.GetParent(at))
+            {
+                if (at == Controls)
+                    return;
+            }
+            Show(!open);
+        };
+        Show(open);
     }
 
     /// <summary>The heading, for a card whose subject changes (already in the user's language).</summary>
@@ -692,7 +730,11 @@ public sealed class CardPanel : Border
         return footer;
     }
 
-    public void SetBody(UIElement body) => layout.Children.Add(body);
+    public void SetBody(UIElement body)
+    {
+        this.body = body;
+        layout.Children.Add(body);
+    }
 }
 
 /// <summary>"Move to Recycle Bin / Delete for good / Cancel".</summary>
