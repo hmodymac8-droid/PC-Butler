@@ -147,7 +147,7 @@ Each was asked for by the owner, has engine tests, and was published as its own 
 | 1.9 | Shredder page (deep delete), drop zone, Vault and Shred in the right-click window, Windows 11 classic-menu switch; the File Explorer, drop-zone and automatic-sorting switches moved to Settings with Save settings at the bottom | `Shredder.cs` (with `VaultInbox`), `Sorter.PlanDropped`, `ExplorerMenu.SetClassicMenu` | `Pages/ShredderPage.cs`, `DropZoneWindow.cs`, `ProcessWindow.cs`, `Pages/SettingsPage.cs`, `Pages/VaultPage.cs` (`AddFromOutside`) |
 | 1.10 | New look from the owner's own design (a web mock-up they supplied): new logo, palette, Manrope text, sidebar and top bar, and the Home page rebuilt with ring gauges | | `Theme.xaml`, `Widgets.cs` (`Gauge`, `MeterBar`, `MetricCard`, `AmountCard`), `Pages/HomePage.cs`, `Chrome.cs`, `icon.png`, `icon.ico` |
 
-The look now follows that mock-up, not `docs/reference`. Its colours are in `Theme.xaml`; its heading typeface is Sora, which is named first in `DisplayFont` but not bundled yet, so headings fall back to Manrope until `Fonts/Sora[wght].ttf` (OFL) is added. `icon.png` is the bare logo for use inside the program; `icon.ico` is the logo on a dark tile for the taskbar and the installer.
+The look now follows that mock-up, not `docs/reference`. Its colours are in `Theme.xaml`; its typeface is now Nunito for all text, with Almarai for Arabic (see Fonts below). `icon.png` is the bare logo for use inside the program; `icon.ico` is the logo on a dark tile for the taskbar and the installer.
 | 1.13 | Portal: files and folders between two PCs over the local network | `Portal.cs` (`PortalNode`, `Portal`), `AdminHelper` action `allow_portal` | `Pages/PortalPage.cs`, `App.PortalNeedsAttention`, drop zone entry |
 | 1.14 | The feature is renamed Courier for the user (the code still says Portal). Courier over the internet by 12-digit ID, with no server of ours | `PortalInternet.cs` (ID, reachable, `ConnectById`), `PortalDht.cs` (bencode, a minimal BitTorrent-DHT client), `PortalTunnel.cs` (`PortalLink`: one UDP socket, hole punching; `ReliableStream`: reliable ordered bytes over UDP) | `Pages/PortalPage.cs` |
 | 1.22 | File search, phase 1 of `docs/search-plan.md` (no administrator rights): Search page, Win + F search box, Search tab in Settings | `Search/` in Core: `SearchIndex`, `SearchText`, `QueryParser`, `QueryCompiler`, `Searcher`, `IndexStore`, `SearchSettings`, `VolumeSource` (`FolderScanSource`, `FolderWatcher`), `SearchEngine` | `Pages/SearchPage.cs`, `SearchResults.cs`, `SearchPopup.cs`, `WinKeyHook.cs`, `Pages/SettingsSearch.cs`, `Hotkeys` in `Overlay.cs` |
@@ -235,7 +235,7 @@ run the Python program.
 - **Tile tones** (per destination folder, in order): `#48d7a1 #69acf3 #e6b55d #e581bc #a993f0
   #5cc6d6 #d99a6c #9ccf6a`. A tile is the tone mixed 14% into the card colour, with the tone
   as its text; "Other" and tone-less tiles are grey.
-- **Fonts:** DM Sans for text, Manrope for headings, both bundled in `src/PCButler/Fonts`
+- **Fonts:** Nunito for all text and headings, Almarai for Arabic, both bundled in `src/PCButler/Fonts`; text is drawn in WPF's Ideal mode (smooth, not snapped to pixels), and every size is multiplied by `Ui.TextScale` (1.15, so body text is about 16 px)
   (SIL Open Font License, licence files included). Icons are glyphs from
   "Segoe Fluent Icons" / "Segoe MDL2 Assets".
 - **Layout:** left sidebar (brand, "WORKSPACE" group, storage bar, Settings and Help at the

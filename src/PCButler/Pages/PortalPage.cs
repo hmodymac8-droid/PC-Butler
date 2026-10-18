@@ -62,7 +62,7 @@ public sealed class PortalPage : Page
         var statusCard = new CardPanel("This PC", "\uE7F4") { Margin = new Thickness(0, 0, 6, 18) };
         connectBox = Ui.DigitsOnly(Ui.Field(width: 170, hint: "205937"));
         connectBox.FlowDirection = FlowDirection.LeftToRight;
-        connectBox.FontSize = 16;
+        connectBox.FontSize = 16 * Ui.TextScale;
         connectBox.KeyDown += (_, e) =>
         {
             if (e.Key == System.Windows.Input.Key.Enter)

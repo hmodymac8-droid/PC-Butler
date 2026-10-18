@@ -25,7 +25,7 @@ public sealed class HomePage : Page
     private readonly TextBlock sensorsText = Ui.Muted("", 12.5, wrap: true);
     private readonly Button sensorsButton;
     private readonly CheckBox alerts;
-    private readonly TextBlock score = new() { FontSize = 24, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Primary"), FontFamily = Ui.DisplayFont, Text = "—" };
+    private readonly TextBlock score = new() { FontSize = 24 * Ui.TextScale, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Primary"), FontFamily = Ui.DisplayFont, Text = "—" };
     private readonly MeterBar scoreBar = new();
     private readonly TextBlock scoreNote = Ui.Muted("", 12.5, wrap: true);
     private readonly StackPanel notes = new();

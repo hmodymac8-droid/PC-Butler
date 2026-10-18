@@ -38,7 +38,7 @@ public sealed class SearchPopup : Window
         Height = 540;
 
         box = Ui.Field(hint: Ui.T("Search files and folders…"));
-        box.FontSize = 16;
+        box.FontSize = 16 * Ui.TextScale;
         box.TextChanged += (_, _) =>
         {
             typing.Stop();

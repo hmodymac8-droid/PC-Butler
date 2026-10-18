@@ -108,7 +108,7 @@ public sealed partial class SettingsPage : Page
         var save = Ui.Button(Ui.T("Save settings"), Save, accent: true);
         save.MinWidth = 220;
         save.Padding = new Thickness(26, 11, 26, 11);
-        save.FontSize = 15;
+        save.FontSize = 15 * Ui.TextScale;
         save.FontWeight = FontWeights.SemiBold;
         var saveBar = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 12, 0, 0) };
         saveBar.Children.Add(save.Dock(Dock.Right));

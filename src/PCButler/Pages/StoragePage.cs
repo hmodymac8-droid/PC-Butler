@@ -146,7 +146,7 @@ public sealed class StoragePage : Page
             var letter = drive.Name.TrimEnd('\\');
             var tone = Ui.DriveTone(index++);
 
-            var name = new TextBlock { FontSize = 13, Foreground = Ui.Paint("Text"), VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { FontSize = 13 * Ui.TextScale, Foreground = Ui.Paint("Text"), VerticalAlignment = VerticalAlignment.Center };
             name.Inlines.Add(new System.Windows.Documents.Run(label.Length > 0 ? label : Ui.T("Local disk")) { FontWeight = FontWeights.Bold });
             name.Inlines.Add(new System.Windows.Documents.Run($"  ({letter})") { Foreground = Ui.Paint("Muted") });
             var head = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };

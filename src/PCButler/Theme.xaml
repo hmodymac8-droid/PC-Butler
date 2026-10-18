@@ -25,9 +25,9 @@
     <SolidColorBrush x:Key="Blue" Color="#5aabf1" />
     <SolidColorBrush x:Key="Lilac" Color="#b697f1" />
 
-    <!-- Manrope for text and Sora for headings and figures, both bundled; Segoe UI covers what they lack (Arabic). -->
-    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler;component/Fonts/#Manrope, Segoe UI</FontFamily>
-    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Sora, pack://application:,,,/PCButler;component/Fonts/#Manrope, Segoe UI</FontFamily>
+    <!-- Nunito for text, headings and figures and Almarai for Arabic, both bundled; Segoe UI covers what they lack. -->
+    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler;component/Fonts/#Nunito, pack://application:,,,/PCButler;component/Fonts/#Almarai, Segoe UI</FontFamily>
+    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Nunito, pack://application:,,,/PCButler;component/Fonts/#Almarai, Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
     <!-- In Arabic the whole window is laid out right to left (Ui.StyleWindow sets that). Each
@@ -57,7 +57,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource Line}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="12,4" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -122,7 +122,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource Line}" />
         <Setter Property="BorderThickness" Value="1,1,1,1" />
         <Setter Property="Padding" Value="6,2" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -137,7 +137,7 @@
                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3">
                         <Grid>
                             <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Foreground="{StaticResource Muted}" Margin="10,0,0,0"
-                                       VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" FontSize="13" />
+                                       VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed" FontSize="15" />
                             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
@@ -184,7 +184,7 @@
     <!-- A switch: used for on/off options. -->
     <Style x:Key="Switch" TargetType="{x:Type CheckBox}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -213,7 +213,7 @@
     <!-- A tick box: used in lists. -->
     <Style TargetType="{x:Type CheckBox}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -242,7 +242,7 @@
 
     <Style TargetType="{x:Type RadioButton}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -270,7 +270,7 @@
     <!-- Drop-down lists -->
     <Style TargetType="{x:Type ComboBoxItem}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ComboBoxItem}">
@@ -328,7 +328,7 @@
         <Setter Property="Background" Value="{StaticResource Secondary}" />
         <Setter Property="Foreground" Value="{StaticResource Text}" />
         <Setter Property="BorderBrush" Value="{StaticResource Line}" />
-        <Setter Property="FontSize" Value="13.5" />
+        <Setter Property="FontSize" Value="15.5" />
         <Setter Property="MinWidth" Value="200" />
         <Setter Property="HasDropShadow" Value="False" />
         <Setter Property="Template">
@@ -450,7 +450,7 @@
     <!-- Lists with columns -->
     <Style TargetType="{x:Type GridViewColumnHeader}">
         <Setter Property="Foreground" Value="{StaticResource Muted}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <!-- Clicking a heading sorts by that column (see SortableList). -->
         <Setter Property="Cursor" Value="Hand" />
@@ -473,7 +473,7 @@
     </Style>
     <Style TargetType="{x:Type ListViewItem}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="MinHeight" Value="44" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -570,7 +570,7 @@
         <Setter Property="Foreground" Value="{StaticResource Text}" />
         <Setter Property="BorderBrush" Value="{StaticResource Line}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="Template">
             <Setter.Value>
@@ -607,7 +607,7 @@
     </Style>
     <Style TargetType="{x:Type TabItem}">
         <Setter Property="Foreground" Value="{StaticResource Text}" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="16" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>

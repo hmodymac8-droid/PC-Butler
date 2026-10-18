@@ -30,7 +30,7 @@ public sealed class SearchPage : Page
     {
         AddAction("Search settings", () => main.Settings.ShowTab("search"));
         box = Ui.Field(hint: Ui.T("Search files and folders…  (space = and, | = or, ! = not, *.pdf, ext:jpg;png, folder:, path:)"));
-        box.FontSize = 16;
+        box.FontSize = 16 * Ui.TextScale;
         box.TextChanged += (_, _) =>
         {
             typing.Stop();
@@ -134,7 +134,7 @@ public sealed class SearchPage : Page
         {
             var chip = Ui.Button(entry.Length > 40 ? entry[..40] + "…" : entry, () => SearchFor(entry));
             chip.ToolTip = entry;
-            chip.FontSize = 12.5;
+            chip.FontSize = 12.5 * Ui.TextScale;
             chip.Padding = new Thickness(10, 2, 10, 2);
             chip.Margin = new Thickness(0, 0, 6, 4);
             chip.ContextMenu = new ContextMenu { Items = { Ui.Item("Remove from recent searches", () => SearchHistory.Remove(entry)) } };

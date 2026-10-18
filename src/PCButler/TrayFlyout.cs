@@ -57,7 +57,7 @@ public sealed class TrayFlyout : Window
         head.Children.Add(icon.Dock(Dock.Left));
         head.Children.Add(new TextBlock
         {
-            Text = AppInfo.Name, FontFamily = Ui.DisplayFont, FontSize = 15, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+            Text = AppInfo.Name, FontFamily = Ui.DisplayFont, FontSize = 15 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
             VerticalAlignment = VerticalAlignment.Center,
         });
 

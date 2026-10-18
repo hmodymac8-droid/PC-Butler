@@ -18,6 +18,8 @@ public static class Ui
     public static Brush Paint(string key) => (Brush)Application.Current.FindResource(key);
     public static Brush Hex(string color) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
     public static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+    // Every text size in the program is multiplied by this, so the type can grow or shrink in one place.
+    public const double TextScale = 1.15;
     public static FontFamily DisplayFont => (FontFamily)Application.Current.FindResource("DisplayFont");
 
     public const string Eyebrow = "YOUR DIGITAL SPACE, SORTED";
@@ -44,7 +46,7 @@ public static class Ui
 
     public static TextBlock Text(string text, double size = 14, string brush = "Text", FontWeight? weight = null, bool wrap = false)
     {
-        var block = new TextBlock { Text = text, FontSize = size, Foreground = Paint(brush), VerticalAlignment = VerticalAlignment.Center };
+        var block = new TextBlock { Text = text, FontSize = size * TextScale, Foreground = Paint(brush), VerticalAlignment = VerticalAlignment.Center };
         if (weight is { } w)
             block.FontWeight = w;
         if (wrap)
@@ -284,10 +286,11 @@ public static class Ui
         window.Background = Paint("Background");
         window.Foreground = Paint("Text");
         window.FontFamily = (FontFamily)Application.Current.FindResource("TextFont");
-        window.FontSize = 14;
+        window.FontSize = 14 * TextScale;
         // Arabic flips the whole layout: sidebar on the right, lists reading from the right.
         window.FlowDirection = Tr.IsArabic ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
-        TextOptions.SetTextFormattingMode(window, TextFormattingMode.Display);
+        // Ideal keeps the letter shapes smooth; Display snaps them to whole pixels, which looks jagged.
+        TextOptions.SetTextFormattingMode(window, TextFormattingMode.Ideal);
         window.SourceInitialized += (_, _) =>
         {
             var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
@@ -598,7 +601,7 @@ public sealed class Row : INotifyPropertyChanged
 /// <summary>A summary card: a caption, a big number with its unit, and a note.</summary>
 public sealed class StatCard : Border
 {
-    private readonly TextBlock value = new() { FontSize = 27, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
+    private readonly TextBlock value = new() { FontSize = 27 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
     private readonly TextBlock unit = Ui.Muted("", 15).Margin(8, 0, 0, 5);
     private readonly TextBlock note = Ui.Muted("", 12).Margin(0, 6, 0, 0);
 
