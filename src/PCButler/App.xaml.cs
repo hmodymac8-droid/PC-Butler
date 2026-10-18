@@ -486,7 +486,7 @@ public partial class App : Application
         Dispatcher.BeginInvoke(() =>
         {
             if (IsOpen(owner))
-                new WhatsNewWindow(seen) { Owner = owner }.Show();
+                new WhatsNewWindow { Owner = owner }.Show();
         }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 

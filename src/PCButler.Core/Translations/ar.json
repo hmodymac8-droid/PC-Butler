@@ -2004,5 +2004,6 @@
  "Unchoose": "إلغاء الاختيار",
  "Choose (Ctrl+click)": "اختيار (Ctrl+ضغطة)",
  "Every status": "كل الحالات",
- "Show the details": "عرض التفاصيل"
+ "Show details": "عرض التفاصيل",
+ "Hide details": "إخفاء التفاصيل"
 }
