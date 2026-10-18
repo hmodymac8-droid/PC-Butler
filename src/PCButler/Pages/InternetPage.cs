@@ -115,6 +115,7 @@ public sealed class InternetPage : Page
         trackerBody.Children.Add(Caption("By day").Margin(0, 14, 0, 6));
         trackerBody.Children.Add(dayList);
         tracker.SetBody(trackerBody);
+        tracker.MakeFoldable(open: false); // closed until its heading is clicked
 
         // More than a window shows at once: the page scrolls.
         var all = new StackPanel();
