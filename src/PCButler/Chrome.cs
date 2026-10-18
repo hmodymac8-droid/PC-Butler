@@ -111,7 +111,7 @@ public abstract class Page : DockPanel
 }
 
 /// <summary>
-/// Navigation down the left: the brand, the main pages, and at the bottom the disk space,
+/// Navigation down the left: the brand, the pages and the groups that fold open, and at the bottom the disk space,
 /// Settings, Help &amp; about and a link to support the creator.
 /// </summary>
 public sealed class Sidebar : Border
@@ -119,6 +119,8 @@ public sealed class Sidebar : Border
     private readonly StackPanel main = new() { Margin = new Thickness(14, 0, 14, 0) };
     private readonly StackPanel bottomItems = new();
     private readonly Dictionary<string, NavItem> items = [];
+    /// <summary>Each folding group: its heading, the panel holding its pages, and their keys.</summary>
+    private readonly Dictionary<string, (NavItem Heading, StackPanel Pages, string[] Keys)> groups = [];
     private readonly Action<string> onSelect;
     private readonly StackPanel storage;
     private readonly Border barFill = new() { Height = 5, HorizontalAlignment = HorizontalAlignment.Left };
@@ -167,7 +169,8 @@ public sealed class Sidebar : Border
         support.MouseLeftButtonUp += (_, _) => Shell.Open(AppInfo.DonateUrl);
         bottom.Children.Add(support);
         layout.Children.Add(bottom.Dock(Dock.Bottom));
-        layout.Children.Add(main);
+        // Open groups can make the list taller than a short window.
+        layout.Children.Add(new ScrollViewer { Content = main, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
         Child = layout;
     }
 
@@ -178,14 +181,54 @@ public sealed class Sidebar : Border
         items[key] = item;
     }
 
-    public void SetBadge(string key, string text) => items[key].SetBadge(text);
+    /// <summary>
+    /// A group that folds open under its heading when clicked (Files: Sorter, Duplicates, Storage),
+    /// and folds shut on a second click. Only one group is open at a time.
+    /// </summary>
+    public void AddGroup(string key, string glyph, string text, IReadOnlyList<(string Key, string Glyph, string Name)> pages)
+    {
+        var panel = new StackPanel { Visibility = Visibility.Collapsed };
+        var heading = new NavItem(glyph, text, () => Fold(key), folding: true);
+        main.Children.Add(heading);
+        main.Children.Add(panel);
+        foreach (var (page, pageGlyph, name) in pages)
+        {
+            var item = new NavItem(pageGlyph, name, () => onSelect(page), inGroup: true);
+            panel.Children.Add(item);
+            items[page] = item;
+        }
+        groups[key] = (heading, panel, pages.Select(page => page.Key).ToArray());
+    }
 
+    /// <summary>Open a group (closing the others), or close it when it is already open.</summary>
+    private void Fold(string key, bool open = false)
+    {
+        var opening = open || groups[key].Pages.Visibility != Visibility.Visible;
+        foreach (var (name, (heading, pages, _)) in groups)
+        {
+            var shown = opening && name == key;
+            pages.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+            heading.SetOpen(shown);
+        }
+    }
+
+    public void SetBadge(string key, string text)
+    {
+        items[key].SetBadge(text);
+        // A closed group shows its pages' count on its heading.
+        if (groups.Values.FirstOrDefault(entry => entry.Keys.Contains(key)) is { Heading: { } heading })
+            heading.SetBadge(text);
+    }
+
+    /// <summary>Mark the current page, opening its group.</summary>
     public void Select(string key)
     {
         if (selected is not null)
             items[selected].SetCurrent(false);
         selected = key;
         items[key].SetCurrent(true);
+        if (groups.FirstOrDefault(entry => entry.Value.Keys.Contains(key)).Key is { } group)
+            Fold(group, open: true);
     }
 
     /// <summary>Fill the storage bar from the drive the folder is on.</summary>
@@ -225,26 +268,34 @@ public sealed class NavItem : Border
     private readonly Border badgeBox;
     private readonly Ellipse currentDot = new() { Width = 5, Height = 5, Fill = Ui.Paint("Primary"), VerticalAlignment = VerticalAlignment.Center,
                                                  Margin = new Thickness(0, 0, 15, 0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock? chevron;
     private readonly Action onClick;
     private bool current;
+    private bool isOpen;
 
-    public NavItem(string glyphCode, string label, Action onClick)
+    /// <summary>A sidebar entry. A folding one is a group's heading, with an arrow; one in a group is indented under it.</summary>
+    public NavItem(string glyphCode, string label, Action onClick, bool folding = false, bool inGroup = false)
     {
         this.onClick = onClick;
         System.Windows.Automation.AutomationProperties.SetName(this, label);
-        Height = 40;
+        Height = inGroup ? 36 : 40;
         CornerRadius = new CornerRadius(6);
         Margin = new Thickness(0, 2, 0, 2);
         Cursor = Cursors.Hand;
         Background = Brushes.Transparent;
-        glyph = Ui.Glyph(glyphCode, 16).Margin(16);
-        text = Ui.Text(label, 14).Margin(14);
+        glyph = Ui.Glyph(glyphCode, inGroup ? 14 : 16).Margin(inGroup ? 34 : 16);
+        text = Ui.Text(label, inGroup ? 13.5 : 14).Margin(inGroup ? 12 : 14);
         badgeBox = new Border { Background = BadgeFill, Padding = new Thickness(6, 1, 6, 1), Child = badge, Margin = new Thickness(0, 0, 14, 0),
                                 VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         var layout = new DockPanel { LastChildFill = false };
         layout.Children.Add(glyph);
         layout.Children.Add(text);
         layout.Children.Add(currentDot.Dock(Dock.Right));
+        if (folding)
+        {
+            chevron = Ui.Glyph("\uE70D", 10).Margin(0, 0, 14, 0);
+            layout.Children.Add(chevron.Dock(Dock.Right));
+        }
         layout.Children.Add(badgeBox.Dock(Dock.Right));
         Child = layout;
         MouseEnter += (_, _) => Paint();
@@ -276,9 +327,24 @@ public sealed class NavItem : Border
         Paint();
     }
 
+    /// <summary>A group's heading: the arrow points up while its pages show, and its count hides (each page shows its own).</summary>
+    public void SetOpen(bool open)
+    {
+        if (chevron is null)
+            return;
+        chevron.Text = open ? "\uE70E" : "\uE70D";
+        badgeBox.Visibility = !open && badge.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        isOpen = open;
+    }
+
     public void SetBadge(string value)
     {
         badge.Text = value;
+        if (chevron is not null && isOpen)
+        {
+            badgeBox.Visibility = Visibility.Collapsed;
+            return;
+        }
         badgeBox.Visibility = value.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -287,6 +353,8 @@ public sealed class NavItem : Border
         Background = current ? CurrentFill : IsMouseOver ? Ui.Paint("Secondary") : Brushes.Transparent;
         var ink = Ui.Paint(current ? "Primary" : IsMouseOver ? "Text" : "Muted");
         glyph.Foreground = text.Foreground = badge.Foreground = ink;
+        if (chevron is not null)
+            chevron.Foreground = ink;
         currentDot.Visibility = current ? Visibility.Visible : Visibility.Collapsed;
     }
 }

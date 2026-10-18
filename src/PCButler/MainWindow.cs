@@ -10,7 +10,10 @@ using PCButler.Core;
 
 namespace PCButler;
 
-/// <summary>The control panel: sidebar, top bar, the eight pages and the status bar.</summary>
+/// <summary>
+/// The control panel: sidebar, top bar, the pages and the status bar. The sidebar folds related
+/// pages into groups (Files, Clean up, Speed, Share &amp; protect) that open in place when clicked.
+/// </summary>
 public sealed partial class MainWindow : Window
 {
     private const double CompactBelow = 720; // shorter than this, the summary cards and small print go
@@ -88,32 +91,49 @@ public sealed partial class MainWindow : Window
         main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
         main.Children.Add(pageHost);
 
-        // (key, icon, sidebar name, how to build the page, in the sidebar's bottom group)
-        foreach (var (key, glyph, name, make, bottom) in new (string, string, string, Func<Page>, bool)[]
+        // (key, icon, name, how to build the page)
+        foreach (var (key, glyph, name, make) in new (string, string, string, Func<Page>)[]
                  {
-                     ("home", "\uE80F", "Home", () => new HomePage(this), false),
-                     ("search", "\uE721", "Search", () => new SearchPage(this), false),
-                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this), false),
-                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this), false),
-                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this), false),
-                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this), false),
-                     ("booster", "\uE945", "Booster", () => new BoosterPage(this), false),
-                     ("benchmark", "", "Benchmark", () => new BenchmarkPage(this), false),
-                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this), false),
-                     ("internet", "\uE774", "Internet", () => new InternetPage(this), false),
-                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this), false),
-                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this), false),
-                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this), false),
-                     ("vault", "\uE72E", "Vault", () => new VaultPage(this), false),
-                     ("history", "\uE81C", "History", () => new HistoryPage(this), false),
-                     ("settings", "\uE713", "Settings", () => new SettingsPage(this), true),
-                     ("about", "\uE946", "Help & about", () => new AboutPage(this), true),
+                     ("home", "\uE80F", "Home", () => new HomePage(this)),
+                     ("search", "\uE721", "Search", () => new SearchPage(this)),
+                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this)),
+                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this)),
+                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this)),
+                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this)),
+                     ("booster", "\uE945", "Booster", () => new BoosterPage(this)),
+                     ("benchmark", "\uE9D9", "Benchmark", () => new BenchmarkPage(this)),
+                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this)),
+                     ("internet", "\uE774", "Internet", () => new InternetPage(this)),
+                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this)),
+                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this)),
+                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this)),
+                     ("vault", "\uE72E", "Vault", () => new VaultPage(this)),
+                     ("history", "\uE81C", "History", () => new HistoryPage(this)),
+                     ("settings", "\uE713", "Settings", () => new SettingsPage(this)),
+                     ("about", "\uE946", "Help & about", () => new AboutPage(this)),
                  })
         {
             pages[key] = (make, null, Ui.T(name));
             glyphs[key] = glyph;
-            sidebar.Add(key, glyph, Ui.T(name), bottom);
         }
+        // The sidebar: (key, icon, name, its pages) for a group that folds open, or a page on its own with no pages listed.
+        foreach (var (key, glyph, name, members) in new (string, string, string, string[])[]
+                 {
+                     ("home", "", "", []),
+                     ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
+                     ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
+                     ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"]),
+                     ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"]),
+                     ("history", "", "", []),
+                 })
+        {
+            if (members.Length == 0)
+                sidebar.Add(key, glyphs[key], pages[key].Name);
+            else
+                sidebar.AddGroup(key, glyph, Ui.T(name), members.Select(member => (member, glyphs[member], pages[member].Name)).ToList());
+        }
+        sidebar.Add("settings", glyphs["settings"], pages["settings"].Name, bottom: true);
+        sidebar.Add("about", glyphs["about"], pages["about"].Name, bottom: true);
         sidebar.ShowStorage(ConfigStore.DetectDownloadsFolder());
 
         var root = new Grid();
@@ -189,7 +209,7 @@ public sealed partial class MainWindow : Window
         var shown = Page(key);
         var name = pages[key].Name;
         shown.Visibility = Visibility.Visible;
-        sidebar.Select(key);
+        sidebar.Select(key); // and opens its group
         topBar.SetPage(glyphs[key], name);
         shown.Shown();
     }
@@ -432,6 +452,9 @@ public sealed partial class MainWindow : Window
 
     public static void SetAutostart(bool enabled)
     {
+        // A trial copy with its own data folder (PCBUTLER_DATA) leaves Windows' start-up list to the installed one.
+        if (Environment.GetEnvironmentVariable("PCBUTLER_DATA") is { Length: > 0 })
+            return;
         try
         {
             Autostart.Set(enabled);
