@@ -11,21 +11,15 @@ using PCButler.Core;
 namespace PCButler;
 
 /// <summary>
-/// The control panel: sidebar, top bar, the pages and the status bar. The sidebar lists groups of
-/// pages (Files, Clean up, Speed, Share &amp; protect); a group's pages are tabs across its top.
-/// Search and History are reached from the top bar, since they cover every group.
+/// The control panel: sidebar, top bar, the pages and the status bar. The sidebar folds related
+/// pages into groups (Files, Clean up, Speed, Share &amp; protect) that open in place when clicked.
+/// Search and History are reached from the top bar, since they cover every page.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     private const double CompactBelow = 720; // shorter than this, the summary cards and small print go
     private readonly Sidebar sidebar;
     private readonly TopBar topBar = new();
-    private readonly GroupTabs groupTabs;
-    /// <summary>The sidebar's groups, each with its pages in tab order.</summary>
-    private readonly Dictionary<string, string[]> groups = [];
-    /// <summary>The page each group opens at: the one used last.</summary>
-    private readonly Dictionary<string, string> lastTab = [];
-    private readonly Dictionary<string, string> badges = [];
     private readonly Grid pageHost = new();
     /// <summary>Every page, built the first time it is opened: building all of them at once made the window slow to appear.</summary>
     private readonly Dictionary<string, (Func<Page> Make, Page? Page, string Name)> pages = [];
@@ -71,7 +65,6 @@ public sealed partial class MainWindow : Window
             Ui.Tone(System.IO.Path.GetFileName(category.Folder)); // fixes each folder's tile colour, in settings order
 
         sidebar = new Sidebar(ShowPage);
-        groupTabs = new GroupTabs(ShowPage);
         topBar.Searched += text =>
         {
             ShowPage("search");
@@ -104,7 +97,6 @@ public sealed partial class MainWindow : Window
         backgroundLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         bar.Children.Add(backgroundLabel);
         main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
-        main.Children.Add(groupTabs.Dock(Dock.Top));
         main.Children.Add(pageHost);
 
         // (key, icon, name, how to build the page)
@@ -132,22 +124,25 @@ public sealed partial class MainWindow : Window
             pages[key] = (make, null, Ui.T(name));
             glyphs[key] = glyph;
         }
-        // (key, icon, sidebar name, its pages in tab order, in the sidebar's bottom group). A group of one page has the page's key.
-        foreach (var (key, glyph, name, members, bottom) in new (string, string, string, string[], bool)[]
+        // The sidebar: (key, icon, name, its pages) for a group that folds open, or a page on its own with no pages listed.
+        foreach (var (key, glyph, name, members) in new (string, string, string, string[])[]
                  {
-                     ("home", "\uE80F", "Home", ["home"], false),
-                     ("files", "\uE8B7", "Files", ["preview", "duplicates", "storage"], false),
-                     ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"], false),
-                     ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"], false),
-                     ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"], false),
-                     ("settings", "\uE713", "Settings", ["settings"], true),
-                     ("about", "\uE946", "Help & about", ["about"], true),
+                     ("home", "", "", []),
+                     ("files", "\uE8B7", "Files", ["preview", "duplicates", "storage"]),
+                     ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
+                     ("speed", "\uE945", "Speed", ["booster", "internet"]),
+                     ("benchmark", "", "", []),
+                     ("share", "\uE72D", "Share & protect", ["portal", "vault"]),
+                     ("clipboard", "", "", []),
                  })
         {
-            groups[key] = members;
-            lastTab[key] = members[0];
-            sidebar.Add(key, glyph, Ui.T(name), bottom);
+            if (members.Length == 0)
+                sidebar.Add(key, glyphs[key], pages[key].Name);
+            else
+                sidebar.AddGroup(key, glyph, Ui.T(name), members.Select(member => (member, glyphs[member], pages[member].Name)).ToList());
         }
+        sidebar.Add("settings", glyphs["settings"], pages["settings"].Name, bottom: true);
+        sidebar.Add("about", glyphs["about"], pages["about"].Name, bottom: true);
         sidebar.ShowStorage(ConfigStore.DetectDownloadsFolder());
 
         var root = new Grid();
@@ -216,37 +211,19 @@ public sealed partial class MainWindow : Window
         return page;
     }
 
-    /// <summary>Show a page by its key, or a group by its key (at the page used there last).</summary>
     public void ShowPage(string key)
     {
-        if (!pages.ContainsKey(key))
-            key = lastTab[key];
-        string? group = groups.FirstOrDefault(entry => entry.Value.Contains(key)).Key;
         foreach (var page in Built)
             page.Visibility = Visibility.Collapsed;
         var shown = Page(key);
         var name = pages[key].Name;
         shown.Visibility = Visibility.Visible;
-        sidebar.Select(group); // none for Search and History, which open from the top bar
-        if (group is not null)
-        {
-            lastTab[group] = key;
-            groupTabs.Show(groups[group].Select(member => (member, glyphs[member], pages[member].Name)).ToList(), key, badges);
-        }
-        else
-            groupTabs.Visibility = Visibility.Collapsed;
+        sidebar.Select(key); // opens its group; Search and History, in the top bar, mark nothing
         topBar.SetPage(glyphs[key], name);
         shown.Shown();
     }
 
-    /// <summary>A count on a page's tab, and on its group in the sidebar.</summary>
-    public void SetBadge(string key, string text)
-    {
-        badges[key] = text;
-        groupTabs.SetBadge(key, text);
-        if (groups.FirstOrDefault(entry => entry.Value.Contains(key)).Key is { } group)
-            sidebar.SetBadge(group, text);
-    }
+    public void SetBadge(string key, string text) => sidebar.SetBadge(key, text);
 
     /// <summary>Change settings on top of what is on disk, since the tray menu writes there too.</summary>
     public void UpdateConfig(Action<Config> change)

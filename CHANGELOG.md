@@ -5,7 +5,7 @@ Each version is a `## heading` followed by `- ` lines.
 
 ## 1.22.22
 
-- The sidebar is shorter: the pages are in five groups, and a group's pages are tabs across its top. Files has Sorter, Duplicates and Storage. Clean up has Cleaner, Programs and Shredder. Speed has Booster, Benchmark and Internet. Share & protect has Courier, Clipboard and Vault. Each group opens at the tab you used last.
+- The sidebar is shorter: related pages are in groups that fold open right in the sidebar. Click a group to show its pages under it, and click it again to fold it away (one group is open at a time). Files has Sorter, Duplicates and Storage. Clean up has Cleaner, Programs and Shredder. Speed has Booster and Internet. Share & protect has Courier and Vault. Home, Benchmark and Clipboard stay on their own.
 - Search is a box in the top bar, on every page: start typing and the Search page opens with what you typed, and you carry on typing there. Its keyboard shortcuts and the quick search window work as before.
 - History is a button in the top bar, since it covers what every page did.
 
