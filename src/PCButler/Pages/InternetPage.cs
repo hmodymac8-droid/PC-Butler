@@ -26,7 +26,7 @@ public sealed class InternetPage : Page
     // The tracker.
     private readonly ComboBox period = new() { Width = 150, VerticalAlignment = VerticalAlignment.Center };
     private readonly StatCard[] usageCards;
-    private readonly ListView nowList;
+    private readonly LiveNetList liveList = new();
     private readonly ListView appList;
     private readonly ListView dayList;
     private readonly TextBlock perAppNote = Ui.Muted("", 12, wrap: true);
@@ -99,12 +99,9 @@ public sealed class InternetPage : Page
 
         perAppButton = Ui.Button(Ui.T("Start the helper"), StartPerApp);
         trackerBody.Children.Add(Ui.SettingRow(Ui.Text(Ui.T("Which apps use it"), 13, weight: FontWeights.Bold), perAppNote, perAppButton));
-        nowList = Ui.List(("Using the internet now", 260, "PlainCell"), ("Download", 140), ("Upload", 140));
-        nowList.MinHeight = 110;
-        nowList.MaxHeight = 260;
-        trackerBody.Children.Add(Caption("Right now").Margin(0, 12, 0, 6));
-        trackerBody.Children.Add(nowList);
-        appList = Ui.List(("App", 260, "PlainCell"), ("Downloaded", 140), ("Uploaded", 140), ("Total", 140));
+        trackerBody.Children.Add(Caption("Using the internet now").Margin(0, 12, 0, 6));
+        trackerBody.Children.Add(liveList);
+        appList = Ui.List(("App", 260, "PlainCell"), ("Share", 90), ("Downloaded", 140), ("Uploaded", 140), ("Total", 140));
         appList.MinHeight = 140;
         appList.MaxHeight = 340;
         trackerBody.Children.Add(Caption("By app, in this period").Margin(0, 14, 0, 6));
@@ -157,7 +154,7 @@ public sealed class InternetPage : Page
             ShowUsage();
     }
 
-    /// <summary>Which apps send and receive right now, from the helper's counts a second apart.</summary>
+    /// <summary>Which apps send and receive right now: the helper's counts a second apart, handed to the steady list.</summary>
     private void ShowNow()
     {
         var net = NetMeter.Latest();
@@ -168,20 +165,22 @@ public sealed class InternetPage : Page
             var seconds = (at - lastNetAt) / 1000.0;
             foreach (var (pid, (sent, received)) in net)
             {
-                var (sentBefore, receivedBefore) = lastNet.GetValueOrDefault(pid);
+                // A process seen for the first time has no "before": its whole count so far is not one second's traffic.
+                if (!lastNet.TryGetValue(pid, out var before))
+                    continue;
+                var (sentBefore, receivedBefore) = before;
                 var (up, down) = (Math.Max(0, sent - sentBefore), Math.Max(0, received - receivedBefore));
                 if (up + down == 0)
                     continue;
                 var name = NameOf(pid);
                 var (downSoFar, upSoFar) = rows.GetValueOrDefault(name);
-                rows[name] = (downSoFar + (long)(down / seconds), upSoFar + (long)(up / seconds));
+                rows[name] = (downSoFar + (long)(down / seconds), upSoFar + (long)(up / seconds)); // bytes in one second
             }
+            liveList.Add(rows);
         }
+        else if (net is null)
+            liveList.Clear(Ui.T(AdminHelper.Running ? "Waiting for the helper's first counts…" : "Start the helper to see which apps are using the internet."));
         (lastNet, lastNetAt) = (net, at);
-        nowList.ItemsSource = rows.OrderByDescending(row => row.Value.Down + row.Value.Up).Take(20).Select(row => new Row
-        {
-            Name = row.Key, Cells = [Ui.FormatSize(row.Value.Down) + "/s", Ui.FormatSize(row.Value.Up) + "/s"],
-        }).ToList();
         var helper = AdminHelper.Running;
         perAppNote.Text = Ui.T(helper
             ? "The helper is counting each app's traffic. It stops when PC Butler closes."
@@ -220,11 +219,18 @@ public sealed class InternetPage : Page
             Cells = [Ui.FormatSize(day.Use.Received), Ui.FormatSize(day.Use.Sent), Ui.FormatSize(day.Use.Sent + day.Use.Received)],
         }).ToList();
         // Per app, from the record of what each app uses: only what the helper counted is known.
-        appList.ItemsSource = AppUsageLog.Report(first, last).Where(row => row.Use.NetSeconds > 0 && row.Use.Sent + row.Use.Received > 0)
-            .OrderByDescending(row => row.Use.Sent + row.Use.Received).Select(row => new Row
+        var byApp = AppUsageLog.Report(first, last).Where(row => row.Use.NetSeconds > 0 && row.Use.Sent + row.Use.Received > 0)
+            .OrderByDescending(row => row.Use.Sent + row.Use.Received).ToList();
+        var allApps = Math.Max(1, byApp.Sum(row => row.Use.Sent + row.Use.Received));
+        appList.ItemsSource = byApp.Select(row =>
+        {
+            var share = (double)(row.Use.Sent + row.Use.Received) / allApps;
+            return new Row
             {
-                Name = row.App, Cells = [Ui.FormatSize(row.Use.Received), Ui.FormatSize(row.Use.Sent), Ui.FormatSize(row.Use.Sent + row.Use.Received)],
-            }).ToList();
+                Name = row.App,
+                Cells = [share < 0.01 ? "<1%" : $"{share * 100:0}%", Ui.FormatSize(row.Use.Received), Ui.FormatSize(row.Use.Sent), Ui.FormatSize(row.Use.Sent + row.Use.Received)],
+            };
+        }).ToList();
     }
 
     private async void StartPerApp()
