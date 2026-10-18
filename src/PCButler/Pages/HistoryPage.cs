@@ -14,6 +14,9 @@ public sealed class HistoryPage : Page
     private readonly TextBox search;
     private readonly TextBlock matchCount = Ui.Muted("", 12).Margin(12);
     private readonly ComboBox pageSize = new() { Width = 80 };
+    private readonly ComboBox statusFilter = new() { Width = 170, VerticalAlignment = VerticalAlignment.Center };
+    /// <summary>Every status a History row can have, in the filter's order ("" = all).</summary>
+    private static readonly string[] Statuses = ["", "Moved", "Moved drives", "Undone", "Deleted", "Restored", "Erased"];
     private readonly Button previous;
     private readonly Button next;
     private readonly TextBlock pageLabel = new() { Width = 130, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -34,6 +37,11 @@ public sealed class HistoryPage : Page
         var panel = new CardPanel("Recent activity", "\uE81C");
         search = Ui.Field(width: 220, hint: Ui.T("Search history…"));
         search.TextChanged += (_, _) => ShowPage(0);
+        foreach (var status in Statuses)
+            statusFilter.Items.Add(new ComboBoxItem { Content = Ui.T(status.Length == 0 ? "Every status" : status), Tag = status });
+        statusFilter.SelectedIndex = 0;
+        statusFilter.SelectionChanged += (_, _) => ShowPage(0);
+        panel.Controls.Children.Add(statusFilter.Margin(0, 0, 8, 0));
         panel.Controls.Children.Add(search);
         panel.Controls.Children.Add(Ui.Button(Ui.T("Refresh"), Refresh).Margin(6));
         panel.Controls.Children.Insert(0, matchCount);
@@ -53,6 +61,11 @@ public sealed class HistoryPage : Page
         sortable.SortChanged += () => ShowPage(0);
         list = sortable;
         Ui.AttachFileMenu(list, row => History.CurrentPath(((MoveRef)row.Tag!).Move), Main.RefreshPreview);
+        if (list.ContextMenu is { } menu)
+        {
+            menu.Items.Insert(0, Ui.Item("Undo", UndoSelected));
+            menu.Items.Insert(1, new Separator());
+        }
         panel.SetBody(list);
         Children.Add(panel);
     }
@@ -101,7 +114,7 @@ public sealed class HistoryPage : Page
                 var sourceFolder = Path.GetDirectoryName(source) ?? "";
                 var state = active ? "Moved" : move[2] switch
                 {
-                    "undone" => "Undone", "deleted" => "Deleted", "erased" => "Erased", "restored" => "Restored",
+                    "undone" => "Undone", "deleted" => "Deleted", "erased" => "Erased", "restored" => "Restored", DriveMover.Linked => "Moved drives",
                     var other => other.Length > 0 ? char.ToUpperInvariant(other[0]) + other[1..] : other,
                 };
                 string destination;
@@ -111,6 +124,8 @@ public sealed class HistoryPage : Page
                     destination = Ui.T("Deleted for good");
                 else
                     destination = move[1].Length > 0 ? Path.GetDirectoryName(move[1]) ?? "" : sourceFolder;
+                if (statusFilter.SelectedItem is ComboBoxItem { Tag: string { Length: > 0 } wanted } && wanted != state)
+                    continue;
                 string[] cells = [run.Time, sourceFolder, destination, Ui.T(state)];
                 if (needle.Length > 0 && !$"{Path.GetFileName(source)} {string.Join(" ", cells)}".ToLowerInvariant().Contains(needle))
                     continue;
@@ -134,7 +149,7 @@ public sealed class HistoryPage : Page
         {
             var move = match.Ref.Move;
             var folder = Path.GetFileName(Path.GetDirectoryName(move[1].Length > 0 ? move[1] : move[0]) ?? "");
-            var active = History.IsActive(move);
+            var active = History.IsActive(move) || move is [_, _, DriveMover.Linked];
             return new Row { Name = Path.GetFileName(move[0]), Tag = match.Ref, Cells = match.Cells, Dim = !active }
                 .WithTile(Path.GetExtension(move[0]), folder, faded: !active);
         }).ToList();
@@ -158,10 +173,20 @@ public sealed class HistoryPage : Page
             Ui.Info("Undo", Ui.T("Select one or more rows with the status Moved or Deleted."));
             return;
         }
-        if (!Ui.Ask("Undo", Ui.T("Undo {0} change(s)?", selection.Count)))
-            return;
-        var (count, errors) = Sorter.UndoMoves(selection);
+        // Moves to another drive are copied back in a window of their own, with its progress.
+        var drives = Ui.Selected(list).Select(row => (MoveRef)row.Tag!).Where(item => item.Move is [_, _, DriveMover.Linked])
+                       .Select(item => (item.RunTime, item.Index)).ToList();
+        selection = selection.Except(drives).ToList();
+        if (selection.Count > 0)
+        {
+            if (!Ui.Ask("Undo", Ui.T("Undo {0} change(s)?", selection.Count)))
+                return;
+            var (count, errors) = Sorter.UndoMoves(selection);
+            Ui.ReportResult(Ui.T("Restored {0} file(s).", count), errors);
+        }
+        if (drives.Count > 0)
+            DriveMoveWindow.MoveBack(Window.GetWindow(this), drives);
         Main.RefreshPreview();
-        Ui.ReportResult(Ui.T("Restored {0} file(s).", count), errors);
+        Refresh();
     }
 }

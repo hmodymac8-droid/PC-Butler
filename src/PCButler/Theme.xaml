@@ -531,6 +531,17 @@
             <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         </StackPanel>
     </DataTemplate>
+    <!-- A file row with a tick box before its tile, for lists where several files are chosen at once. -->
+    <DataTemplate x:Key="CheckFileCell">
+        <StackPanel Orientation="Horizontal" Margin="6,0,0,0">
+            <CheckBox IsChecked="{Binding Checked, Mode=TwoWay}" Margin="0,0,10,0" VerticalAlignment="Center" />
+            <Border Width="30" Height="30" CornerRadius="6" Background="{Binding TileBack}" Margin="0,0,10,0">
+                <TextBlock Text="{Binding TileText}" Foreground="{Binding TileFore}" FontFamily="Segoe UI" FontWeight="Bold"
+                           FontSize="{Binding TileFontSize}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+    </DataTemplate>
     <!-- A row that starts with a tick box. -->
     <DataTemplate x:Key="CheckCell">
         <StackPanel Orientation="Horizontal" Margin="{Binding Indent}">

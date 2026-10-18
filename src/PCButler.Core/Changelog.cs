@@ -35,6 +35,30 @@ public static class Changelog
     /// list should be shown. lastSeen is the version saved in the settings ("" before 1.8,
     /// and on a first start, when there is nothing to compare with and nothing to announce).
     /// </summary>
+    /// <summary>The most a change's short form runs to: about two or three lines of the window.</summary>
+    public const int HeadlineLength = 240;
+
+    /// <summary>
+    /// A change in short: its first sentences, as many as fit in about two or three lines
+    /// (a first sentence longer than that is cut at a word and ends with "…").
+    /// </summary>
+    public static string Headline(string change)
+    {
+        var sentences = System.Text.RegularExpressions.Regex.Matches(change, @".+?[.!?](?=\s|$)|.+$");
+        var text = "";
+        foreach (System.Text.RegularExpressions.Match sentence in sentences)
+        {
+            var next = (text + sentence.Value).TrimStart();
+            if (text.Length > 0 && next.Length > HeadlineLength)
+                break;
+            text = next;
+        }
+        if (text.Length <= HeadlineLength + 40)
+            return text;
+        var cut = text.LastIndexOf(' ', HeadlineLength);
+        return text[..(cut > 0 ? cut : HeadlineLength)].TrimEnd(',', ';', ':') + "…";
+    }
+
     public static bool ShouldShow(string lastSeen, bool firstStart) =>
         !firstStart && lastSeen != AppInfo.Version;
 }

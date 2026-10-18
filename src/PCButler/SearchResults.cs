@@ -386,6 +386,7 @@ public sealed class SearchResults : ListView
         var rename = Ui.Item("Rename…", RenameChosen);
         rename.IsEnabled = SelectedItems.Count == 1;
         menu.Items.Add(rename);
+        menu.Items.Add(Ui.Item("Move drives…", MoveDrivesChosen));
         menu.Items.Add(Ui.Item("Delete (to Recycle Bin)", DeleteChosen));
         return menu;
     }
@@ -484,6 +485,14 @@ public sealed class SearchResults : ListView
         {
             Ui.Warn("Rename", Ui.T("Could not rename it:\n{0}", error.Message));
         }
+    }
+
+    /// <summary>Chosen files and folders go to another drive, with a link left where they were (see DriveMoveWindow).</summary>
+    public void MoveDrivesChosen()
+    {
+        var chosen = Chosen().Select(row => row.FullPath).ToList();
+        if (chosen.Count > 0 && DriveMoveWindow.Move(Window.GetWindow(this), chosen))
+            App.Current.Workspace?.History.Refresh();
     }
 
     /// <summary>Chosen files go to the Recycle Bin, logged in History so they can be brought back. Folders are left alone.</summary>

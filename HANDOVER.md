@@ -155,7 +155,7 @@ The look now follows that mock-up, not `docs/reference`. Its colours are in `The
 
 Notes on 1.22.17:
 
-- **The butler** is drawn from WPF shapes on a 100 x 120 canvas (no images). `Butler.Mood` picks the face and animation: Ready, Napping (no input for 3 minutes, `GetLastInputInfo`), Hot (processor or graphics card at 80 °C, or without a temperature the processor at 85 % for 10 s), Catching (a drag is over the window) and Pleased (after a drop, 2.2 s). The window's background is alpha 1, not transparent, so drops on the empty parts still land.
+- **The butler** (`Butler.cs`) was taken out again in 1.22.20 at the owner's request: the drop zone is back to its earlier look (`DropZoneWindow.cs` as before 1.22.17).
 - **Resume yesterday** (`config.resume_session`, off by default) writes `session.json` every minute and once more on `SystemEvents.SessionEnding`. At start, a note whose boot time differs from this boot becomes `session-previous.json`, which the notification and the tray panel offer once. Apps are the owners of taskbar windows (not cloaked, not tool windows); their arguments come from `Win32_Process.CommandLine`; Store apps (under `WindowsApps`) are started by AppUserModelID through `shell:AppsFolder`. Folders come from `Shell.Application.Windows()`. Windows' own shell and PC Butler are skipped. Not tried on a real restart yet.
 - **Internet tracker** (`config.track_internet`, on): adapter byte counters every 2 s into `net-usage.json` per day (loopback and tunnel adapters left out, so a VPN is not counted twice). Per app comes from `AppUsageLog` (the helper's `net` counts), and "right now" from two `NetMeter.Latest()` readings a second apart.
 
