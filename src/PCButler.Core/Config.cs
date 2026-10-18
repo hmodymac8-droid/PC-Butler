@@ -177,6 +177,8 @@ public sealed class Config
     [JsonPropertyName("resume_session")] public bool ResumeSession { get; set; }
     /// <summary>The Internet page's tracker: count what goes over the network each day.</summary>
     [JsonPropertyName("track_internet")] public bool TrackInternet { get; set; } = true;
+    /// <summary>The Internet page's "Which apps use it": the helper counts each app's traffic. Off until started there.</summary>
+    [JsonPropertyName("count_app_traffic")] public bool CountAppTraffic { get; set; }
     /// <summary>Show "Process with PC Butler" when a file or folder is right-clicked in File Explorer.</summary>
     [JsonPropertyName("explorer_menu")] public bool ExplorerMenu { get; set; } = true;
     /// <summary>The version whose What's new list was last shown; a different one means the program was updated.</summary>
