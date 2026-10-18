@@ -148,7 +148,7 @@ public sealed class MetricCard : Border
 /// <summary>A Home-page card for an amount: a big figure over a bar, with a label at each end.</summary>
 public sealed class AmountCard : Border
 {
-    private readonly TextBlock number = new() { FontSize = 34, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
+    private readonly TextBlock number = new() { FontSize = 34 * Ui.TextScale, FontWeight = FontWeights.SemiBold, Foreground = Ui.Paint("Text"), FontFamily = Ui.DisplayFont };
     private readonly TextBlock unit = Ui.Muted("", 15).Margin(9, 0, 0, 6);
     private readonly MeterBar bar = new();
     private readonly TextBlock low = Ui.Muted("", 12.5), high = Ui.Muted("", 12.5);

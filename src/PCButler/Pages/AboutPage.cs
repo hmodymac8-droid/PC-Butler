@@ -24,7 +24,7 @@ public sealed class AboutPage : Page
         // The brand: the icon, the name with its accent full stop, and the version line.
         var mark = new Image { Source = Ui.AppIcon(), Width = 56, Height = 56, Margin = new Thickness(0, 0, 18, 0) };
         RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
-        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 24, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text") };
+        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 24 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text") };
         name.Inlines.Add(AppInfo.Name);
         name.Inlines.Add(new System.Windows.Documents.Run(".") { Foreground = Ui.Paint("Primary") });
         var version = Ui.Muted(Ui.T("Version {0}  ·  © 2026 hmodymac8-droid  ·  All rights reserved", AppInfo.Version), 12).Margin(0, 2, 0, 0);

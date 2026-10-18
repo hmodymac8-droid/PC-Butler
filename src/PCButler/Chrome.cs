@@ -140,7 +140,7 @@ public sealed class Sidebar : Border
         // The brand: the logo, and the name ending in an accent full stop. It stays in every language.
         var mark = new Image { Source = Ui.AppIcon(), Width = 66, Height = 66 };
         RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
-        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 20, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+        var name = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 20 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
                                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         name.Inlines.Add(AppInfo.Name);
         name.Inlines.Add(new System.Windows.Documents.Run(".") { Foreground = Ui.Paint("Primary") });
@@ -221,7 +221,7 @@ public sealed class NavItem : Border
     private static readonly Brush BadgeFill = new SolidColorBrush(Ui.Mix("#42d8a5", "#050709", 0.12));
     private readonly TextBlock glyph;
     private readonly TextBlock text;
-    private readonly TextBlock badge = new() { FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock badge = new() { FontSize = 11 * Ui.TextScale, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border badgeBox;
     private readonly Ellipse currentDot = new() { Width = 5, Height = 5, Fill = Ui.Paint("Primary"), VerticalAlignment = VerticalAlignment.Center,
                                                  Margin = new Thickness(0, 0, 15, 0), Visibility = Visibility.Collapsed };
@@ -377,7 +377,7 @@ public sealed class SplashWindow : Window
 
         // "PC Butler." with "Butler." in the accent; the name stays as it is in every language.
         var parts = AppInfo.Name.Split(' ', 2);
-        var title = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 35, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+        var title = new TextBlock { FontFamily = Ui.DisplayFont, FontSize = 35 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
                                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
         title.Inlines.Add(parts[0] + " ");
         title.Inlines.Add(new System.Windows.Documents.Run((parts.Length > 1 ? parts[1] : "") + ".") { Foreground = Ui.Paint("Primary") });
