@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.18
+
+- A new, softer typeface: PC Butler now uses Nunito, with Almarai for Arabic. Text is drawn smoothly instead of being snapped to the screen's pixels, and everything is a little bigger (body text is about 16 px instead of 14), so it is easier to read.
+
 ## 1.22.17
 
 - The drop zone is now a little butler. He stands on your desktop in his tailcoat and bow tie and reacts to the PC: he takes a nap (eyes shut, Zzz) when nobody has touched the mouse or keyboard for 3 minutes, sweats and goes red when the processor or graphics card reaches 80 °C (or, without a temperature reading, when the processor stays above 85 % busy), raises his arms to catch files you drag over him, and smiles with a little hop when he has them. Everything the drop zone did still works: drop files on him to sort, vault, send, shred or recycle them, drag him to move him, right-click to hide him.
