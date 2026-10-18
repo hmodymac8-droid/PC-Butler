@@ -1951,5 +1951,9 @@
  "Nothing is using the internet right now.": "لا شيء يستخدم الإنترنت الآن.",
  "Waiting for the helper's first counts…": "بانتظار أول أرقام من المساعد…",
  "Start the helper to see which apps are using the internet.": "شغّل المساعد لترى أي التطبيقات تستخدم الإنترنت.",
- "Share": "الحصة"
+ "Share": "الحصة",
+ "Show history": "عرض السجل",
+ "Hide history": "إخفاء السجل",
+ "This week": "هذا الأسبوع",
+ "Ended apps": "تطبيقات انتهت"
 }
