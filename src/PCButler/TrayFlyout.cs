@@ -22,8 +22,8 @@ public sealed class TrayFlyout : Window
 {
     private readonly TextBlock state = Ui.Text("", 11.5);
     private readonly Border statePill;
-    private readonly TextBlock cpuValue = Ui.Text("—", 18, weight: FontWeights.SemiBold);
-    private readonly TextBlock memoryValue = Ui.Text("—", 18, weight: FontWeights.SemiBold);
+    private readonly TextBlock cpuValue = Ui.Text("—", 15, weight: FontWeights.SemiBold);
+    private readonly TextBlock memoryValue = Ui.Text("—", 15, weight: FontWeights.SemiBold);
     private readonly Rectangle cpuBar = new() { Height = 3, HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5 };
     private readonly Rectangle memoryBar = new() { Height = 3, HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5 };
     private readonly UniformGrid tiles = new() { Columns = 3 };
@@ -39,7 +39,7 @@ public sealed class TrayFlyout : Window
     {
         Ui.StyleWindow(this);
         Title = AppInfo.Name;
-        Width = 340;
+        Width = 300;
         SizeToContent = SizeToContent.Height;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -49,20 +49,20 @@ public sealed class TrayFlyout : Window
         Topmost = true;
 
         // --- the name, and what the sorter is doing ---
-        var icon = new Image { Source = Ui.AppIcon(), Width = 22, Height = 22, Margin = new Thickness(0, 0, 10, 0) };
+        var icon = new Image { Source = Ui.AppIcon(), Width = 20, Height = 20, Margin = new Thickness(0, 0, 8, 0) };
         RenderOptions.SetBitmapScalingMode(icon, BitmapScalingMode.HighQuality);
         statePill = new Border { CornerRadius = new CornerRadius(10), Padding = new Thickness(9, 3, 9, 4), Child = state, VerticalAlignment = VerticalAlignment.Center };
-        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
         head.Children.Add(statePill.Dock(Dock.Right));
         head.Children.Add(icon.Dock(Dock.Left));
         head.Children.Add(new TextBlock
         {
-            Text = AppInfo.Name, FontFamily = Ui.DisplayFont, FontSize = 15 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
+            Text = AppInfo.Name, FontFamily = Ui.DisplayFont, FontSize = 14 * Ui.TextScale, FontWeight = FontWeights.Bold, Foreground = Ui.Paint("Text"),
             VerticalAlignment = VerticalAlignment.Center,
         });
 
         // --- the processor and the memory ---
-        var readings = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        var readings = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         readings.ColumnDefinitions.Add(new ColumnDefinition());
         readings.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         readings.ColumnDefinitions.Add(new ColumnDefinition());
@@ -73,7 +73,7 @@ public sealed class TrayFlyout : Window
         update = new Border
         {
             Background = Ui.Paint("PrimaryTint"), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 10, 12, 10),
-            Margin = new Thickness(0, 10, 0, 0), Cursor = Cursors.Hand,
+            Margin = new Thickness(0, 8, 0, 0), Cursor = Cursors.Hand,
             Child = Ui.Row(10, Ui.Glyph("\uE896", 15, "Primary"), updateText),
         };
         update.MouseLeftButtonUp += (_, _) => Act(() => App.Current.InstallAvailableUpdate());
@@ -96,7 +96,7 @@ public sealed class TrayFlyout : Window
         // --- Open and Exit ---
         var open = Ui.Button(Ui.T($"Open {AppInfo.Name}"), () => Act(() => App.Current.ShowMainWindow()), accent: true);
         var exit = Ui.Button(Ui.T("Exit"), () => Act(App.Current.ExitProgram));
-        var bottom = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        var bottom = new Grid { Margin = new Thickness(0, 10, 0, 0) };
         bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
         bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         bottom.ColumnDefinitions.Add(new ColumnDefinition());
@@ -106,7 +106,7 @@ public sealed class TrayFlyout : Window
         Content = new Border
         {
             Background = Ui.Paint("Card"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14),
-            Padding = new Thickness(14), Margin = new Thickness(8),
+            Padding = new Thickness(11), Margin = new Thickness(8),
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.4 },
             Child = new StackPanel { Children = { head, readings, tiles, update, resume, bottom } },
         };
@@ -132,8 +132,8 @@ public sealed class TrayFlyout : Window
         track.Children.Add(bar);
         return new Border
         {
-            Background = Ui.Paint("Secondary"), CornerRadius = new CornerRadius(10), Padding = new Thickness(12, 9, 12, 10),
-            Child = new StackPanel { Children = { Ui.Muted(name, 11.5), value, track } },
+            Background = Ui.Paint("Secondary"), CornerRadius = new CornerRadius(10), Padding = new Thickness(10, 7, 10, 8),
+            Child = new StackPanel { Children = { Ui.Muted(name, 11), value, track } },
         };
     }
 
@@ -194,26 +194,26 @@ public sealed class TrayFlyout : Window
 
     private static void SetBar(Rectangle bar, int percent)
     {
-        bar.Width = Math.Max(0, Math.Min(100, percent)) / 100.0 * 140;
+        bar.Width = Math.Max(0, Math.Min(100, percent)) / 100.0 * 118;
         bar.Fill = Ui.Paint(percent >= 90 ? "Red" : percent >= 70 ? "Amber" : "Primary");
     }
 
     /// <summary>One tile: its icon and name, lit when on. Most close the panel; a switch keeps it open to show the change.</summary>
     private Border Tile(string glyph, string name, bool on, bool enabled, Action action, bool stayOpen = false)
     {
-        var label = Ui.Text(name, 11.5, on ? "Primary" : "Text");
+        var label = Ui.Text(name, 10.5, on ? "Primary" : "Text");
         // The whole name, on two lines when it needs them.
         label.HorizontalAlignment = HorizontalAlignment.Center;
         label.TextAlignment = TextAlignment.Center;
         label.TextWrapping = TextWrapping.Wrap;
-        var mark = Ui.Glyph(glyph, 18, on ? "Primary" : "Muted");
+        var mark = Ui.Glyph(glyph, 15, on ? "Primary" : "Muted");
         mark.HorizontalAlignment = HorizontalAlignment.Center;
         var tile = new Border
         {
-            Background = Ui.Paint(on ? "PrimaryTint" : "Secondary"), CornerRadius = new CornerRadius(10), Padding = new Thickness(6, 11, 6, 9),
-            Margin = new Thickness(3), Cursor = enabled ? Cursors.Hand : Cursors.Arrow, Opacity = enabled ? 1 : 0.45,
+            Background = Ui.Paint(on ? "PrimaryTint" : "Secondary"), CornerRadius = new CornerRadius(9), Padding = new Thickness(5, 8, 5, 7),
+            Margin = new Thickness(2.5), Cursor = enabled ? Cursors.Hand : Cursors.Arrow, Opacity = enabled ? 1 : 0.45,
             BorderBrush = Ui.Paint(on ? "Primary" : "Secondary"), BorderThickness = new Thickness(1),
-            Child = new StackPanel { Children = { mark, label.Margin(0, 6, 0, 0) } }, ToolTip = name,
+            Child = new StackPanel { Children = { mark, label.Margin(0, 4, 0, 0) } }, ToolTip = name,
         };
         if (!enabled)
             return tile;
