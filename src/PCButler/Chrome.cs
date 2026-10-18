@@ -220,14 +220,12 @@ public sealed class Sidebar : Border
             heading.SetBadge(text);
     }
 
-    /// <summary>Mark the current page, opening its group. A page not in the sidebar (Search, History) marks none.</summary>
+    /// <summary>Mark the current page, opening its group.</summary>
     public void Select(string key)
     {
         if (selected is not null)
             items[selected].SetCurrent(false);
-        selected = items.ContainsKey(key) ? key : null;
-        if (selected is null)
-            return;
+        selected = key;
         items[key].SetCurrent(true);
         if (groups.FirstOrDefault(entry => entry.Value.Keys.Contains(key)).Key is { } group)
             Fold(group, open: true);
@@ -361,26 +359,13 @@ public sealed class NavItem : Border
     }
 }
 
-/// <summary>
-/// A strip across the top of the page area: where you are, the search box, History, and how
-/// things stand. Typing in the search box opens the Search page with what was typed, and the
-/// typing carries on there.
-/// </summary>
+/// <summary>A strip across the top of the page area: where you are, and how things stand.</summary>
 public sealed class TopBar : Border
 {
     private readonly TextBlock page = Ui.Text("", 15, weight: FontWeights.SemiBold);
     private readonly TextBlock pageGlyph = Ui.Glyph("", 16);
     private readonly TextBlock dot = Ui.Text("●", 11, "Primary");
     private readonly TextBlock status = Ui.Muted("", 13).Margin(8);
-    private readonly TextBox search = Ui.Field(width: 300, hint: Ui.T("Search files and folders…"));
-    private readonly Border history;
-    private bool handingOver;
-
-    /// <summary>Something was typed in the search box (or Enter pressed in it, with nothing typed).</summary>
-    public event Action<string>? Searched;
-
-    /// <summary>The History button was clicked.</summary>
-    public event Action? HistoryClicked;
 
     public TopBar()
     {
@@ -390,40 +375,6 @@ public sealed class TopBar : Border
         var row = new DockPanel { LastChildFill = false, Margin = new Thickness(30, 0, 30, 0) };
         row.Children.Add(Ui.Row(0, pageGlyph, page.Margin(10)));
         row.Children.Add(Ui.Row(0, dot, status, Ui.Glyph("\uEA18", 15, "Primary").Margin(14)).Dock(Dock.Right));
-
-        var historyGlyph = Ui.Glyph("\uE81C", 15);
-        var historyText = Ui.Muted(Ui.T("History"), 13).Margin(7);
-        history = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(10, 6, 12, 6), Cursor = Cursors.Hand, Background = Brushes.Transparent,
-                               VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 18, 0), Child = Ui.Row(0, historyGlyph, historyText),
-                               ToolTip = Ui.T("Everything PC Butler moved, cleaned or shredded, with undo") };
-        System.Windows.Automation.AutomationProperties.SetName(history, Ui.T("History"));
-        history.MouseEnter += (_, _) => (history.Background, historyGlyph.Foreground, historyText.Foreground) = (Ui.Paint("Secondary"), Ui.Paint("Text"), Ui.Paint("Text"));
-        history.MouseLeave += (_, _) => (history.Background, historyGlyph.Foreground, historyText.Foreground) = (Brushes.Transparent, Ui.Paint("Muted"), Ui.Paint("Muted"));
-        history.MouseLeftButtonUp += (_, _) => HistoryClicked?.Invoke();
-        row.Children.Add(history.Dock(Dock.Right));
-
-        search.VerticalAlignment = VerticalAlignment.Center;
-        System.Windows.Automation.AutomationProperties.SetName(search, Ui.T("Search"));
-        search.TextChanged += (_, _) =>
-        {
-            if (handingOver || search.Text.Length == 0)
-                return;
-            var text = search.Text;
-            handingOver = true;
-            search.Text = ""; // the Search page's own box takes over
-            handingOver = false;
-            Searched?.Invoke(text);
-        };
-        search.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key != Key.Enter)
-                return;
-            e.Handled = true;
-            Searched?.Invoke("");
-        };
-        var searchRow = Ui.Row(0, Ui.Glyph("\uE721", 15), search.Margin(8));
-        searchRow.Margin = new Thickness(0, 0, 14, 0);
-        row.Children.Add(searchRow.Dock(Dock.Right));
         Child = row;
     }
 
