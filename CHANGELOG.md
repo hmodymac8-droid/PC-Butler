@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.28
+
+- Courier: the full right-click menu now also works for files sent or received before 1.22.27. When a transfer has no saved place (or the file was moved), PC Butler looks for a file with the same name and size in the Courier folder, your Desktop, Downloads, Documents, Pictures, Videos and Music, and everywhere Search has indexed, and offers Open, Show in folder and the rest when it finds it.
+
 ## 1.22.27
 
 - Courier: right-clicking a file in the Transfers list now offers everything you can do with it: Open, Open with…, Show in folder, Copy (the file, ready to paste), Copy full path, Copy name, Send to another connected PC, Delete (to Recycle Bin) and Remove from list, plus Pause or Cancel while it moves and Clear history. This works for files you sent as well as files you received, also in the list of earlier transfers.

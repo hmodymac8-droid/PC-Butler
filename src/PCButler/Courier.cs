@@ -39,6 +39,56 @@ public static class Courier
     public static bool CanOpen(PortalTransfer transfer) =>
         transfer is { Incoming: true, State: "done", Path.Length: > 0 } && (File.Exists(transfer.Path) || Directory.Exists(transfer.Path));
 
+    /// <summary>
+    /// Where a finished transfer's file is now, when its saved path is gone or was never kept
+    /// (files sent before 1.22.27 have none): a file of the same name and size in the receive
+    /// folder, the usual folders (Desktop, Downloads, Documents, Pictures, Videos, Music), or
+    /// anywhere PC Butler's search has indexed. null when it is not found.
+    /// </summary>
+    public static string? Locate(string saved, string name, long size)
+    {
+        if (saved.Length > 0 && (File.Exists(saved) || Directory.Exists(saved)))
+            return saved;
+        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return null;
+        bool Same(string path) => File.Exists(path) && (size <= 0 || new FileInfo(path).Length == size);
+        var folders = new List<string> { Node?.Folder ?? Portal.ReceiveFolder(ConfigStore.Load().Portal) };
+        foreach (var special in new[] { Environment.SpecialFolder.Desktop, Environment.SpecialFolder.MyDocuments, Environment.SpecialFolder.MyPictures,
+                                        Environment.SpecialFolder.MyVideos, Environment.SpecialFolder.MyMusic, Environment.SpecialFolder.UserProfile })
+            folders.Add(Environment.GetFolderPath(special));
+        folders.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
+        foreach (var folder in folders.Where(folder => folder.Length > 0))
+        {
+            try
+            {
+                if (Same(Path.Combine(folder, name)))
+                    return Path.Combine(folder, name);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        try
+        {
+            var result = App.Current.Search.Search($"\"{name.Replace("\"", "")}\"", PCButler.Core.Search.SearchSort.Name, false, CancellationToken.None);
+            foreach (var row in result.Rows.Take(500))
+            {
+                if (result.Index.IsFolder(row) || !string.Equals(result.Index.Name(row), name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (size > 0 && result.Index.Size(row) != size)
+                    continue;
+                var path = result.Index.FullPath(row);
+                if (File.Exists(path))
+                    return path;
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            Log.Warning($"Courier: looking for {name} in the search index failed: {error.Message}");
+        }
+        return null;
+    }
+
     /// <summary>Open what was received (a file with its program, several files as their folder), with a word if it is gone.</summary>
     public static void OpenReceived(string path)
     {
