@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.24
+
+- The phone app, PC Butler for Android 1.2.4, is sent to Google Play for its closed test, built from the latest code.
+
 ## 1.22.23
 
 - Sidebar: opening a group no longer folds the others away, so you can keep Files, Clean up and Speed (or any of them) open at the same time. Click a group again to fold it.
