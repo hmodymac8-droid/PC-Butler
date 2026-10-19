@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.25
+
+- Courier: a file you receive can be opened right away. On the PC, the Transfers list has "Open" and "Show in folder" (also on double-click and right-click), and the corner notice and the Courier widget show the same two buttons when a file arrives. On the phone, a received file has "Open" and "Share…" under it; several files received together can be shared at once.
+
 ## 1.22.24
 
 - The phone app, PC Butler for Android 1.2.4, is sent to Google Play for its closed test, built from the latest code.

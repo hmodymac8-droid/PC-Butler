@@ -19,6 +19,8 @@ public sealed class CourierNotices : Window
 {
     private const int MaxShown = 3;
     private static readonly TimeSpan Linger = TimeSpan.FromSeconds(6);
+    // A received file stays longer, so there is time to open it from here.
+    private static readonly TimeSpan LingerReceived = TimeSpan.FromSeconds(20);
 
     private sealed class Card
     {
@@ -29,6 +31,7 @@ public sealed class CourierNotices : Window
         public required TextBlock Times { get; init; }
         public required Button Pause { get; init; }
         public required Button Cancel { get; init; }
+        public required StackPanel Received { get; init; }
         public DateTime? EndedAt { get; set; }
     }
 
@@ -68,7 +71,7 @@ public sealed class CourierNotices : Window
         var transfers = node?.Transfers.ToList() ?? [];
         var wanted = allowed
             ? transfers.Where(transfer => !closed.Contains(transfer.Id)
-                                          && (transfer.Running || cards.TryGetValue(transfer, out var card) && (card.EndedAt is null || now - card.EndedAt < Linger)))
+                                          && (transfer.Running || cards.TryGetValue(transfer, out var card) && (card.EndedAt is null || now - card.EndedAt < (Courier.CanOpen(transfer) ? LingerReceived : Linger))))
                        .Reverse().Take(MaxShown).ToList()
             : [];
         foreach (var gone in cards.Keys.Where(transfer => !wanted.Contains(transfer)).ToList())
@@ -138,7 +141,12 @@ public sealed class CourierNotices : Window
         buttons.Children.Add(pause);
         buttons.Children.Add(cancel.Margin(6, 0, 0, 0));
 
-        var body = new StackPanel { Children = { head, bar, detail, times, buttons } };
+        // Once received: open it, or show it in its folder.
+        var received = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0), Visibility = Visibility.Collapsed };
+        received.Children.Add(Ui.Button(Ui.T("Open"), () => Courier.OpenReceived(transfer.Path), accent: true));
+        received.Children.Add(Ui.Button(Ui.T("Show in folder"), () => Courier.RevealReceived(transfer.Path)).Margin(6, 0, 0, 0));
+
+        var body = new StackPanel { Children = { head, bar, detail, times, buttons, received } };
         var root = new Border
         {
             Background = Ui.Paint("Card"), BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12),
@@ -152,7 +160,7 @@ public sealed class CourierNotices : Window
                 return;
             App.Current.ShowPage("portal");
         };
-        return new Card { Root = root, Title = title, Bar = bar, Detail = detail, Times = times, Pause = pause, Cancel = cancel };
+        return new Card { Root = root, Title = title, Bar = bar, Detail = detail, Times = times, Pause = pause, Cancel = cancel, Received = received };
     }
 
     private static void Show(PortalTransfer transfer, Card card, DateTime now)
@@ -176,5 +184,6 @@ public sealed class CourierNotices : Window
         card.Pause.Content = Ui.T(transfer.Paused ? "Resume" : "Pause");
         card.Cancel.Visibility = transfer.Running ? Visibility.Visible : Visibility.Collapsed;
         ((FrameworkElement)card.Pause.Parent).Visibility = transfer.Running ? Visibility.Visible : Visibility.Collapsed;
+        card.Received.Visibility = Courier.CanOpen(transfer) ? Visibility.Visible : Visibility.Collapsed;
     }
 }
