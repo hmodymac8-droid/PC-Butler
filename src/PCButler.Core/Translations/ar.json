@@ -2014,5 +2014,7 @@
  "No app on this phone can open this file.": "لا يوجد تطبيق على هذا الهاتف يفتح هذا الملف.",
  "The file could not be shared.": "تعذّرت مشاركة الملف.",
  "Open with…": "فتح باستخدام…",
- "Move {0} to the Recycle Bin?": "نقل {0} إلى سلة المحذوفات؟"
+ "Move {0} to the Recycle Bin?": "نقل {0} إلى سلة المحذوفات؟",
+ "Earlier": "السابقة",
+ "The file is in:\n{0}": "الملف موجود في:\n{0}"
 }

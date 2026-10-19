@@ -35,7 +35,7 @@ public sealed class CourierPage : AppPage
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
-    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Border Cancel, Button Pause, Label Times, Button Open, Button Share)> rows = [];
+    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Border Cancel, Button Pause, Label Times, HorizontalStackLayout Actions)> rows = [];
     private readonly Label savedCount = Theme.Faint("", 12.5);
     private readonly VerticalStackLayout savedRows = new() { Spacing = 0 };
     private readonly VerticalStackLayout incomingBox = new() { Spacing = 10 };
@@ -615,14 +615,17 @@ public sealed class CourierPage : AppPage
         transfersPill.IsVisible = moving > 0;
         if (moving > 0)
             Theme.SetPill(transfersPill, Tr.T("{0} in progress", moving), Theme.Primary, Theme.PrimarySoft);
-        var key = string.Join("|", shown.Select(transfer => transfer.Id));
+        // Earlier transfers (also from before the app last started) follow, so their files can still be opened.
+        var finished = shown.Where(transfer => transfer.State == "done").Select(transfer => (transfer.Name, transfer.Size)).ToList();
+        var earlier = Portal.History().Where(item => !finished.Remove((item.Name, item.Size))).Take(20).ToList();
+        var key = string.Join("|", shown.Select(transfer => transfer.Id)) + "#" + string.Join("|", earlier.Select(item => item.Time + item.Name));
         if (key != transfersShown)
         {
             transfersShown = key;
             transfers.Children.Clear();
             foreach (var gone in rows.Keys.Where(transfer => !shown.Contains(transfer)).ToList())
                 rows.Remove(gone);
-            if (shown.Count == 0)
+            if (shown.Count == 0 && earlier.Count == 0)
                 transfers.Children.Add(Theme.Empty("i_inbox_m.png", Tr.T("Nothing has been sent or received yet.")));
             foreach (var transfer in shown)
             {
@@ -630,26 +633,47 @@ public sealed class CourierPage : AppPage
                 var detail = Theme.Faint("", 12);
                 var cancel = Theme.IconButton("i_x_w.png", () => { transfer.Cancel(); Refresh(); }, Theme.SurfaceRaised, 34);
                 var pause = Theme.Link("", () => { Courier.TogglePause(transfer); Refresh(); });
-                // Once received: open it with its app, or hand it to another app.
-                var open = Theme.Link(Tr.T("Open"), () => _ = OpenReceived(transfer));
-                var share = Theme.Link(Tr.T("Share…"), () => _ = ShareReceived(transfer));
-                                var times = Theme.Faint("", 12);
+                var times = Theme.Faint("", 12);
                 var name = new Label { Text = (transfer.Incoming ? "↓ " : "↑ ") + transfer.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
                 var head = Theme.Line3(Theme.Tile(Theme.TileFor(transfer.Name), 36), Theme.TwoLines(name, detail), cancel);
                 var foot = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
                 foot.Add(times.Margin(0, 0, 8, 0), 0);
-                foot.Add(new HorizontalStackLayout { Spacing = 2, Children = { open, share, pause } }, 1);
+                foot.Add(pause, 1);
                 times.VerticalOptions = LayoutOptions.Center;
-                transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot } }, 14));
-                rows[transfer] = (bar, detail, cancel, pause, times, open, share);
+                // What can be done with its file: open it, share it, or open the folder it is in.
+                var actions = FileActions(() => FileOf(transfer), transfer.Name);
+                var box = Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot, actions } }, 14);
+                box.Tapped(() =>
+                {
+                    if (transfer.State == "done") // while it moves, a tap is for its own buttons
+                        _ = MoreFor(FileOf(transfer), transfer.Name);
+                });
+                transfers.Children.Add(box);
+                rows[transfer] = (bar, detail, cancel, pause, times, actions);
+            }
+            if (earlier.Count > 0)
+                transfers.Children.Add(Theme.Caps(Tr.T("Earlier")).Margin(4, 8, 0, 0));
+            foreach (var item in earlier)
+            {
+                var name = new Label { Text = (item.Incoming ? "↓ " : "↑ ") + item.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
+                var detail = Theme.Faint(Tr.T(item.Incoming ? "From {0}" : "To {0}", item.Device) + $"  ·  {Size(item.Size)}  ·  {item.Time}", 12);
+                var path = Locate(item.Path, item.Name, item.Size, item.Incoming);
+                var children = new VerticalStackLayout { Spacing = 10, Children = { Theme.Line3(Theme.Tile(Theme.TileFor(item.Name), 36), Theme.TwoLines(name, detail), null) } };
+                if (path is not null)
+                {
+                    var actions = FileActions(() => path, item.Name);
+                    actions.IsVisible = true;
+                    children.Children.Add(actions);
+                }
+                var box = Theme.BoxOf(children, 14);
+                box.Tapped(() => _ = MoreFor(path, item.Name));
+                transfers.Children.Add(box);
             }
         }
         foreach (var transfer in shown)
         {
-            var (bar, detail, cancel, pause, times, open, share) = rows[transfer];
-            var received = transfer is { Incoming: true, State: "done", Path.Length: > 0 };
-            open.IsVisible = received && File.Exists(transfer.Path); // several files arrive as a folder: those are shared
-            share.IsVisible = received && (open.IsVisible || Directory.Exists(transfer.Path));
+            var (bar, detail, cancel, pause, times, actions) = rows[transfer];
+            actions.IsVisible = FileOf(transfer) is not null;
             cancel.IsVisible = transfer.State is "active" or "waiting"; // a finished one has nothing left to stop
             // Only what is moving can be held, and only this phone's own pause can be let go here.
             pause.IsVisible = transfer.State == "active";
@@ -671,16 +695,87 @@ public sealed class CourierPage : AppPage
         }
     }
 
-    /// <summary>The files a finished incoming transfer left on this phone (none for one that sent, or is not done).</summary>
-    private static List<string> Received(PortalTransfer transfer)
+    /// <summary>The Open, Share and Folder buttons under a transfer; hidden until there is a file.</summary>
+    private HorizontalStackLayout FileActions(Func<string?> path, string name) => new()
     {
-        if (transfer is not { Incoming: true, State: "done", Path.Length: > 0 })
+        Spacing = 2, IsVisible = false,
+        Children =
+        {
+            Theme.Link(Tr.T("Open"), () => _ = OpenFile(path(), name)),
+            Theme.Link(Tr.T("Share…"), () => _ = ShareFile(path(), name)),
+            Theme.Link(Tr.T("Show in folder"), () => _ = ShowInFolder(path())),
+        },
+    };
+
+    /// <summary>The file or folder a transfer is about on this phone: what arrived (once it is all here), or what was sent. null when it is not there.</summary>
+    private static string? FileOf(PortalTransfer transfer) => transfer switch
+    {
+        { Incoming: true, State: not "done" } => null,
+        _ => Locate(transfer.Path, transfer.Name, transfer.Size, transfer.Incoming),
+    };
+
+    /// <summary>
+    /// Where a transfer's file is: its saved path, or, when that is gone or was never kept, a file
+    /// of the same name (and size) in the Courier folder or in Download.
+    /// </summary>
+    private static string? Locate(string saved, string name, long size, bool incoming)
+    {
+        if (saved.Length > 0 && (File.Exists(saved) || Directory.Exists(saved)))
+            return saved;
+        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            return null;
+        var download = global::Android.OS.Environment.GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads)?.AbsolutePath;
+        foreach (var folder in new[] { Courier.Node?.Folder ?? Portal.ReceiveFolder(Courier.Settings), download ?? "" }.Where(folder => folder.Length > 0))
+        {
+            try
+            {
+                var candidate = Path.Combine(folder, name);
+                if (File.Exists(candidate) && (size <= 0 || new FileInfo(candidate).Length == size))
+                    return candidate;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Tapping a transfer: everything that can be done with its file, in a sheet.</summary>
+    private async Task MoreFor(string? path, string name)
+    {
+        if (path is null)
+            return;
+        var open = Tr.T("Open");
+        var share = Tr.T("Share…");
+        var folder = Tr.T("Show in folder");
+        var copy = Tr.T("Copy full path");
+        var choices = new List<SheetChoice>();
+        if (File.Exists(path))
+            choices.Add(new("i_external_link_m.png", open));
+        choices.Add(new("i_share_2_m.png", share));
+        choices.Add(new("i_folder_open_m.png", folder));
+        choices.Add(new("i_copy_m.png", copy));
+        var picked = await Choose(name, choices, Theme.TileFor(name));
+        if (picked == open)
+            await OpenFile(path, name);
+        else if (picked == share)
+            await ShareFile(path, name);
+        else if (picked == folder)
+            await ShowInFolder(path);
+        else if (picked == copy)
+            await Clipboard.Default.SetTextAsync(path);
+    }
+
+    /// <summary>The files a path holds: itself, or the files in it (at most 100) for a folder.</summary>
+    private static List<string> FilesIn(string? path)
+    {
+        if (path is null)
             return [];
-        if (File.Exists(transfer.Path))
-            return [transfer.Path];
+        if (File.Exists(path))
+            return [path];
         try
         {
-            return Directory.Exists(transfer.Path) ? Directory.EnumerateFiles(transfer.Path, "*", SearchOption.AllDirectories).Take(100).ToList() : [];
+            return Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Take(100).ToList() : [];
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -688,28 +783,31 @@ public sealed class CourierPage : AppPage
         }
     }
 
-    private async Task OpenReceived(PortalTransfer transfer)
+    private async Task OpenFile(string? path, string name)
     {
-        if (!File.Exists(transfer.Path))
+        if (path is null || !File.Exists(path))
         {
-            await DisplayAlert(Tr.T("Courier"), Tr.T("This file is not there any more."), Tr.T("OK"));
+            if (path is not null && Directory.Exists(path))
+                await ShowInFolder(path); // several files arrive as a folder: that folder is opened
+            else
+                await DisplayAlert(Tr.T("Courier"), Tr.T("This file is not there any more."), Tr.T("OK"));
             return;
         }
         try
         {
             App.LeavingOnPurpose();
-            await Launcher.Default.OpenAsync(new OpenFileRequest(transfer.Name, new ReadOnlyFile(transfer.Path)));
+            await Launcher.Default.OpenAsync(new OpenFileRequest(name, new ReadOnlyFile(path)));
         }
         catch (Exception error)
         {
-            Log.Warning($"A received file could not be opened: {error.Message}");
+            Log.Warning($"A Courier file could not be opened: {error.Message}");
             await DisplayAlert(Tr.T("Courier"), Tr.T("No app on this phone can open this file."), Tr.T("OK"));
         }
     }
 
-    private async Task ShareReceived(PortalTransfer transfer)
+    private async Task ShareFile(string? path, string name)
     {
-        var files = Received(transfer);
+        var files = FilesIn(path);
         if (files.Count == 0)
         {
             await DisplayAlert(Tr.T("Courier"), Tr.T("This file is not there any more."), Tr.T("OK"));
@@ -719,15 +817,51 @@ public sealed class CourierPage : AppPage
         {
             App.LeavingOnPurpose();
             if (files.Count == 1)
-                await Share.Default.RequestAsync(new ShareFileRequest(transfer.Name, new ShareFile(files[0])));
+                await Share.Default.RequestAsync(new ShareFileRequest(name, new ShareFile(files[0])));
             else
-                await Share.Default.RequestAsync(new ShareMultipleFilesRequest(transfer.Name, files.Select(file => new ShareFile(file)).ToList()));
+                await Share.Default.RequestAsync(new ShareMultipleFilesRequest(name, files.Select(file => new ShareFile(file)).ToList()));
         }
         catch (Exception error)
         {
-            Log.Warning($"A received file could not be shared: {error.Message}");
+            Log.Warning($"A Courier file could not be shared: {error.Message}");
             await DisplayAlert(Tr.T("Courier"), Tr.T("The file could not be shared."), Tr.T("OK"));
         }
+    }
+
+    /// <summary>
+    /// Open the folder a file is in (a folder itself), in the phone's Files app. Only folders in the shared
+    /// storage (Download and the like) can be shown; for others, and when no app takes it, the
+    /// folder's path is shown instead.
+    /// </summary>
+    private async Task ShowInFolder(string? path)
+    {
+        if (path is null)
+            return;
+        var folder = Directory.Exists(path) ? path.TrimEnd('/') : Path.GetDirectoryName(path);
+        if (folder is null)
+            return;
+        var root = global::Android.OS.Environment.ExternalStorageDirectory?.AbsolutePath ?? "/storage/emulated/0";
+        if (folder.StartsWith(root, StringComparison.Ordinal))
+        {
+            var relative = folder[root.Length..].Trim('/');
+            var uri = global::Android.Provider.DocumentsContract.BuildDocumentUri("com.android.externalstorage.documents", "primary:" + relative);
+            foreach (var type in new[] { global::Android.Provider.DocumentsContract.Document.MimeTypeDir, "resource/folder" })
+            {
+                try
+                {
+                    var intent = new global::Android.Content.Intent(global::Android.Content.Intent.ActionView);
+                    intent.SetDataAndType(uri, type);
+                    intent.AddFlags(global::Android.Content.ActivityFlags.NewTask | global::Android.Content.ActivityFlags.GrantReadUriPermission);
+                    App.LeavingOnPurpose();
+                    global::Android.App.Application.Context.StartActivity(intent);
+                    return;
+                }
+                catch (global::Android.Content.ActivityNotFoundException)
+                {
+                }
+            }
+        }
+        await DisplayAlert(Tr.T("Show in folder"), Tr.T("The file is in:\n{0}", folder), Tr.T("OK"));
     }
 
     public static string Size(long bytes)
