@@ -165,12 +165,32 @@ public sealed class PortalPage : Page
 
         // --- what is moving, and what has moved ---
         transferCard = new CardPanel("Transfers", "\uE896");
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Open"), () => WithReceived(Courier.OpenReceived)));
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Show in folder"), () => WithReceived(Courier.RevealReceived)).Margin(6, 0, 12, 0));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Pause or resume selected"), PauseSelected));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Cancel selected"), CancelSelected).Margin(6, 0, 0, 0));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Margin(6));
         transferList = Ui.List(("Name", 320, "PlainCell"), ("Direction", 230), ("Progress", 200), ("Speed", 110), ("Time", 210), ("Status", 300));
         transferList.MinHeight = 160;
         transferList.ItemsSource = transferRows;
+        // A received file opens with a double-click; right-click also offers its folder.
+        transferList.MouseDoubleClick += (_, e) =>
+        {
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Received(Ui.RowAt(e.OriginalSource)) is { } path)
+                Courier.OpenReceived(path);
+        };
+        transferList.ContextMenuOpening += (_, e) =>
+        {
+            if (Received(Ui.RowAt(e.OriginalSource)) is not { } path)
+            {
+                e.Handled = true;
+                return;
+            }
+            var menu = new ContextMenu();
+            menu.Items.Add(Ui.Item("Open", () => Courier.OpenReceived(path)));
+            menu.Items.Add(Ui.Item("Show in folder", () => Courier.RevealReceived(path)));
+            transferList.ContextMenu = menu;
+        };
         transferCard.SetBody(transferList);
         page.Children.Add(transferCard);
 
@@ -762,6 +782,23 @@ public sealed class PortalPage : Page
                 transfer.Pause();
         }
         ShowTransfers();
+    }
+
+    /// <summary>Where a row's received files are, or null for a row that sent files or is not finished.</summary>
+    private static string? Received(Row? row) => row?.Tag switch
+    {
+        PortalTransfer transfer when transfer is { Incoming: true, State: "done", Path.Length: > 0 } => transfer.Path,
+        PortalLogEntry { Incoming: true, Path.Length: > 0 } item => item.Path,
+        _ => null,
+    };
+
+    /// <summary>Open (or show) the selected received transfer, or say what to select.</summary>
+    private void WithReceived(Action<string> action)
+    {
+        if (Ui.Selected(transferList).Select(Received).FirstOrDefault(path => path is not null) is { } path)
+            action(path);
+        else
+            Ui.Info("Courier", Ui.T("Select a received file in the list first."));
     }
 
     private void CancelSelected()

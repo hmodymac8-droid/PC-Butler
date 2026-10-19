@@ -35,6 +35,28 @@ public static class Courier
         _ => transfer.Paused ? "Paused" : transfer.PausedThere ? "Paused on the other PC" : "Moving…",
     });
 
+    /// <summary>A received transfer whose files are still where they landed: what Open and Show in folder work on.</summary>
+    public static bool CanOpen(PortalTransfer transfer) =>
+        transfer is { Incoming: true, State: "done", Path.Length: > 0 } && (File.Exists(transfer.Path) || Directory.Exists(transfer.Path));
+
+    /// <summary>Open what was received (a file with its program, several files as their folder), with a word if it is gone.</summary>
+    public static void OpenReceived(string path)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+            Ui.Warn("Open", Ui.T("This file is not there any more."));
+        else if (Shell.Open(path) is { } error)
+            Ui.Warn("Open", Ui.T("Could not open it:\n{0}", error));
+    }
+
+    /// <summary>Show what was received selected in File Explorer.</summary>
+    public static void RevealReceived(string path)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+            Ui.Warn("Show in folder", Ui.T("This file is not there any more."));
+        else if (Shell.Reveal(path) is { } error)
+            Ui.Warn("Show in folder", Ui.T("Could not open it:\n{0}", error));
+    }
+
     /// <summary>The running node, if any.</summary>
     public static PortalNode? Node => Portal.Current is { Stopped: false } node ? node : null;
 
