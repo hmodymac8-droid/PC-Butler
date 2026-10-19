@@ -39,6 +39,8 @@ public sealed class PortalPage : Page
     private readonly ListView transferList;
     private readonly ObservableCollection<Row> transferRows = [];
     private readonly Dictionary<PortalTransfer, (Row Row, long Done, DateTime At, double Speed)> shown = [];
+    // Finished transfers taken off the list with "Remove from list" while Courier still runs.
+    private readonly HashSet<string> hidden = [];
     /// <summary>Files handed over from the drop zone or File Explorer, waiting for a PC to be chosen.</summary>
     private readonly List<string> queued = [];
     private readonly Dictionary<string, PortalState> passwordsAsked = [];
@@ -182,8 +184,8 @@ public sealed class PortalPage : Page
 
         // --- what is moving, and what has moved ---
         transferCard = new CardPanel("Transfers", "\uE896");
-        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Open"), () => WithReceived(Courier.OpenReceived)));
-        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Show in folder"), () => WithReceived(Courier.RevealReceived)).Margin(6, 0, 12, 0));
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Open"), () => WithFile(Courier.OpenReceived)));
+        transferCard.Controls.Children.Add(Ui.Button(Ui.T("Show in folder"), () => WithFile(Courier.RevealReceived)).Margin(6, 0, 12, 0));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Pause or resume selected"), PauseSelected));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Cancel selected"), CancelSelected).Margin(6, 0, 0, 0));
         transferCard.Controls.Children.Add(Ui.Button(Ui.T("Clear history"), ClearHistory).Margin(6));
@@ -193,7 +195,7 @@ public sealed class PortalPage : Page
         // A received file opens with a double-click; right-click also offers its folder.
         transferList.MouseDoubleClick += (_, e) =>
         {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Received(Ui.RowAt(e.OriginalSource)) is { } path)
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && FileOf(Ui.RowAt(e.OriginalSource)) is { } path)
                 Courier.OpenReceived(path);
         };
         transferList.PreviewMouseRightButtonDown += (_, e) =>
@@ -644,7 +646,7 @@ public sealed class PortalPage : Page
     /// <summary>The node's transfers with live progress on top, then the log of earlier ones.</summary>
     private void ShowTransfers()
     {
-        var live = Courier.Node?.Transfers ?? [];
+        var live = (Courier.Node?.Transfers ?? []).Where(transfer => !hidden.Contains(transfer.Id)).ToArray();
         var now = DateTime.UtcNow;
         var index = 0;
         foreach (var transfer in live.Reverse())
@@ -807,27 +809,131 @@ public sealed class PortalPage : Page
         ShowTransfers();
     }
 
-    /// <summary>The right-click menu of a transfer: open what was received, hold or stop what is moving, clear the history.</summary>
+    /// <summary>
+    /// The right-click menu of a transfer: everything that can be done with its file (open it,
+    /// open it with another program, show it in its folder, copy it or its path, send it on,
+    /// move it to the Recycle Bin), holding or stopping it while it moves, and the list itself.
+    /// </summary>
     private ContextMenu TransferMenu(Row row)
     {
         var menu = new ContextMenu();
-        if (Received(row) is { } path)
+        void Add(string label, Action action) => menu.Items.Add(Ui.Item(label, action));
+        void Gap()
         {
-            menu.Items.Add(Ui.Item("Open", () => Courier.OpenReceived(path)));
-            menu.Items.Add(Ui.Item("Show in folder", () => Courier.RevealReceived(path)));
+            if (menu.Items.Count > 0 && menu.Items[^1] is not Separator)
+                menu.Items.Add(new Separator());
+        }
+        if (FileOf(row) is { } path && (File.Exists(path) || Directory.Exists(path)))
+        {
+            var isFile = File.Exists(path);
+            var open = Ui.Item("Open", () => Courier.OpenReceived(path));
+            open.FontWeight = FontWeights.SemiBold;
+            menu.Items.Add(open);
+            if (isFile)
+                Add("Open with…", () => OpenWith(path));
+            Add("Show in folder", () => Courier.RevealReceived(path));
+            Gap();
+            Add("Copy", () => CopyFile(path));
+            Add("Copy full path", () => CopyText(path));
+            Add("Copy name", () => CopyText(Path.GetFileName(path.TrimEnd('\\', '/'))));
+            var targets = Courier.Targets(Courier.Node).Where(target => target.Ready).ToList();
+            if (targets.Count > 0)
+            {
+                Gap();
+                var send = new MenuItem { Header = Ui.T("Send to") };
+                foreach (var target in targets)
+                {
+                    var item = new MenuItem { Header = target.Name };
+                    item.Click += (_, _) => SendTo(target.Tag, [path]);
+                    send.Items.Add(item);
+                }
+                menu.Items.Add(send);
+            }
+            Gap();
+            Add("Delete (to Recycle Bin)", () => DeleteFile(row, path));
         }
         if (row.Tag is PortalTransfer { Running: true } transfer)
         {
-            if (menu.Items.Count > 0)
-                menu.Items.Add(new Separator());
+            Gap();
             if (transfer.State == "active")
-                menu.Items.Add(Ui.Item(transfer.Paused ? "Resume" : "Pause", PauseSelected));
-            menu.Items.Add(Ui.Item("Cancel", CancelSelected));
+                Add(transfer.Paused ? "Resume" : "Pause", PauseSelected);
+            Add("Cancel", CancelSelected);
         }
-        if (menu.Items.Count > 0)
-            menu.Items.Add(new Separator());
-        menu.Items.Add(Ui.Item("Clear history", ClearHistory));
+        Gap();
+        if (row.Tag is PortalLogEntry || row.Tag is PortalTransfer { Running: false })
+            Add("Remove from list", () => RemoveFromList(row));
+        Add("Clear history", ClearHistory);
         return menu;
+    }
+
+    private static void OpenWith(string path)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("rundll32.exe", $"shell32.dll,OpenAs_RunDLL {path}") { UseShellExecute = false });
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException)
+        {
+            Ui.Warn("Open with…", Ui.T("Could not open it:\n{0}", error.Message));
+        }
+    }
+
+    /// <summary>The file itself on the clipboard, ready to paste in File Explorer.</summary>
+    private static void CopyFile(string path)
+    {
+        try
+        {
+            Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { path });
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            Ui.Warn("Copy", Ui.T("The clipboard is busy. Try again."));
+        }
+    }
+
+    private static void CopyText(string text)
+    {
+        try
+        {
+            Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, text), copy: true);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            Ui.Warn("Copy", Ui.T("The clipboard is busy. Try again."));
+        }
+    }
+
+    private void DeleteFile(Row row, string path)
+    {
+        if (!Ui.Ask("Delete (to Recycle Bin)", Ui.T("Move {0} to the Recycle Bin?", Path.GetFileName(path.TrimEnd('\\', '/'))), warning: true))
+            return;
+        try
+        {
+            RecycleBin.Send(path);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Ui.Warn("Delete (to Recycle Bin)", error.Message);
+            return;
+        }
+        RemoveFromList(row);
+    }
+
+    /// <summary>Take one finished transfer off the list; its files stay where they are.</summary>
+    private void RemoveFromList(Row row)
+    {
+        switch (row.Tag)
+        {
+            case PortalLogEntry item:
+                Portal.RemoveFromLog(item);
+                break;
+            case PortalTransfer { Running: false } transfer:
+                hidden.Add(transfer.Id);
+                if (Portal.History().FirstOrDefault(item => item.Name == transfer.Name && item.Size == transfer.Size && item.Incoming == transfer.Incoming) is { } logged)
+                    Portal.RemoveFromLog(logged);
+                break;
+        }
+        ShowTransfers();
     }
 
     /// <summary>The right-click menu of a PC on the list, with what the buttons above the list offer for it now.</summary>
@@ -858,21 +964,22 @@ public sealed class PortalPage : Page
         return menu;
     }
 
-    /// <summary>Where a row's received files are, or null for a row that sent files or is not finished.</summary>
-    private static string? Received(Row? row) => row?.Tag switch
+    /// <summary>The file or folder a row is about: what was received (once it is all here), or what was sent. null when there is none.</summary>
+    private static string? FileOf(Row? row) => row?.Tag switch
     {
-        PortalTransfer transfer when transfer is { Incoming: true, State: "done", Path.Length: > 0 } => transfer.Path,
-        PortalLogEntry { Incoming: true, Path.Length: > 0 } item => item.Path,
+        PortalTransfer { Incoming: true, State: "done", Path.Length: > 0 } transfer => transfer.Path,
+        PortalTransfer { Incoming: false, Path.Length: > 0 } transfer => transfer.Path,
+        PortalLogEntry { Path.Length: > 0 } item => item.Path,
         _ => null,
     };
 
-    /// <summary>Open (or show) the selected received transfer, or say what to select.</summary>
-    private void WithReceived(Action<string> action)
+    /// <summary>Open (or show) the file of the selected transfer, or say what to select.</summary>
+    private void WithFile(Action<string> action)
     {
-        if (Ui.Selected(transferList).Select(Received).FirstOrDefault(path => path is not null) is { } path)
+        if (Ui.Selected(transferList).Select(FileOf).FirstOrDefault(path => path is not null) is { } path)
             action(path);
         else
-            Ui.Info("Courier", Ui.T("Select a received file in the list first."));
+            Ui.Info("Courier", Ui.T("Select a file in the list first."));
     }
 
     private void CancelSelected()

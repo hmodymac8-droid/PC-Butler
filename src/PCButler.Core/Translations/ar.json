@@ -2009,8 +2009,10 @@
  "Clean up": "التنظيف",
  "Share & protect": "المشاركة والحماية",
  "Show in folder": "عرض في المجلد",
- "Select a received file in the list first.": "اختر أولاً ملفاً مستلماً من القائمة.",
+ "Select a file in the list first.": "اختر أولاً ملفاً من القائمة.",
  "Share…": "مشاركة…",
  "No app on this phone can open this file.": "لا يوجد تطبيق على هذا الهاتف يفتح هذا الملف.",
- "The file could not be shared.": "تعذّرت مشاركة الملف."
+ "The file could not be shared.": "تعذّرت مشاركة الملف.",
+ "Open with…": "فتح باستخدام…",
+ "Move {0} to the Recycle Bin?": "نقل {0} إلى سلة المحذوفات؟"
 }
