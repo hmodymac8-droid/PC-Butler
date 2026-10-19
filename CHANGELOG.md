@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.26
+
+- Courier: right-click works on both lists. Right-click a transfer for Open and Show in folder (for a received file), Pause or Cancel (while it moves) and Clear history. Right-click a PC for Send files, Send folder, Send clipboard, Connect, Disconnect, Rename, Ask before taking files and Remove. The row you right-click is the one the menu acts on.
+
 ## 1.22.25
 
 - Courier: a file you receive can be opened right away. On the PC, the Transfers list has "Open" and "Show in folder" (also on double-click and right-click), and the corner notice and the Courier widget show the same two buttons when a file arrives. On the phone, a received file has "Open" and "Share…" under it; several files received together can be shared at once.
