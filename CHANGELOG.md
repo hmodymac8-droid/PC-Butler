@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.29
+
+- Phone app (Android 1.2.6), Courier: every file you send or receive has "Open", "Share…" and "Show in folder" under it, and tapping it brings up the same choices plus "Copy full path". "Show in folder" opens the folder in the phone's Files app. Earlier transfers, also from before the app was last opened, are listed under "Earlier" with the same buttons, so their files can still be opened and shared.
+
 ## 1.22.28
 
 - Courier: the full right-click menu now also works for files sent or received before 1.22.27. When a transfer has no saved place (or the file was moved), PC Butler looks for a file with the same name and size in the Courier folder, your Desktop, Downloads, Documents, Pictures, Videos and Music, and everywhere Search has indexed, and offers Open, Show in folder and the rest when it finds it.
