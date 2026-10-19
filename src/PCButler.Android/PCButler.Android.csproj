@@ -30,6 +30,7 @@
     <Compile Include="..\PCButler.Core\Tr.cs" Link="Core\Tr.cs" />
     <Compile Include="..\PCButler.Core\Config.cs" Link="Core\Config.cs" />
     <Compile Include="..\PCButler.Core\Sorter.cs" Link="Core\Sorter.cs" />
+    <Compile Include="..\PCButler.Core\DriveMover.cs" Link="Core\DriveMover.cs" />
     <Compile Include="..\PCButler.Core\Portal.cs" Link="Core\Portal.cs" />
     <Compile Include="..\PCButler.Core\PortalDht.cs" Link="Core\PortalDht.cs" />
     <Compile Include="..\PCButler.Core\PortalInternet.cs" Link="Core\PortalInternet.cs" />
