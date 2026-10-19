@@ -41,6 +41,8 @@ public sealed class PortalPage : Page
     private readonly Dictionary<PortalTransfer, (Row Row, long Done, DateTime At, double Speed)> shown = [];
     // Finished transfers taken off the list with "Remove from list" while Courier still runs.
     private readonly HashSet<string> hidden = [];
+    // Files of earlier transfers found by name and size, so the search runs once per row.
+    private readonly Dictionary<object, string?> located = [];
     /// <summary>Files handed over from the drop zone or File Explorer, waiting for a PC to be chosen.</summary>
     private readonly List<string> queued = [];
     private readonly Dictionary<string, PortalState> passwordsAsked = [];
@@ -964,14 +966,28 @@ public sealed class PortalPage : Page
         return menu;
     }
 
-    /// <summary>The file or folder a row is about: what was received (once it is all here), or what was sent. null when there is none.</summary>
-    private static string? FileOf(Row? row) => row?.Tag switch
+    /// <summary>
+    /// The file or folder a row is about: what was received (once it is all here), or what was
+    /// sent. When the saved path is gone or was never kept, it is looked for by name and size
+    /// (Courier.Locate), once per row. null when there is none.
+    /// </summary>
+    private string? FileOf(Row? row)
     {
-        PortalTransfer { Incoming: true, State: "done", Path.Length: > 0 } transfer => transfer.Path,
-        PortalTransfer { Incoming: false, Path.Length: > 0 } transfer => transfer.Path,
-        PortalLogEntry { Path.Length: > 0 } item => item.Path,
-        _ => null,
-    };
+        var (saved, name, size) = row?.Tag switch
+        {
+            PortalTransfer { Incoming: true, State: "done" } transfer => (transfer.Path, transfer.Name, transfer.Size),
+            PortalTransfer { Incoming: false } transfer => (transfer.Path, transfer.Name, transfer.Size),
+            PortalLogEntry item => (item.Path, item.Name, item.Size),
+            _ => ("", "", 0L),
+        };
+        if (row?.Tag is not { } tag || (saved.Length == 0 && name.Length == 0))
+            return null;
+        if (saved.Length > 0 && (File.Exists(saved) || Directory.Exists(saved)))
+            return saved;
+        if (!located.TryGetValue(tag, out var found))
+            located[tag] = found = Courier.Locate(saved, name, size);
+        return found;
+    }
 
     /// <summary>Open (or show) the file of the selected transfer, or say what to select.</summary>
     private void WithFile(Action<string> action)
