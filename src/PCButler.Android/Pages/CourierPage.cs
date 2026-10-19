@@ -35,7 +35,7 @@ public sealed class CourierPage : AppPage
     private readonly Button startStop;
     private readonly Label storageText = Theme.Faint("");
     private readonly Button storageButton;
-    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Border Cancel, Button Pause, Label Times)> rows = [];
+    private readonly Dictionary<PortalTransfer, (ProgressBar Bar, Label Detail, Border Cancel, Button Pause, Label Times, Button Open, Button Share)> rows = [];
     private readonly Label savedCount = Theme.Faint("", 12.5);
     private readonly VerticalStackLayout savedRows = new() { Spacing = 0 };
     private readonly VerticalStackLayout incomingBox = new() { Spacing = 10 };
@@ -630,20 +630,26 @@ public sealed class CourierPage : AppPage
                 var detail = Theme.Faint("", 12);
                 var cancel = Theme.IconButton("i_x_w.png", () => { transfer.Cancel(); Refresh(); }, Theme.SurfaceRaised, 34);
                 var pause = Theme.Link("", () => { Courier.TogglePause(transfer); Refresh(); });
+                // Once received: open it with its app, or hand it to another app.
+                var open = Theme.Link(Tr.T("Open"), () => _ = OpenReceived(transfer));
+                var share = Theme.Link(Tr.T("Share…"), () => _ = ShareReceived(transfer));
                                 var times = Theme.Faint("", 12);
                 var name = new Label { Text = (transfer.Incoming ? "↓ " : "↑ ") + transfer.Name, FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text, LineBreakMode = LineBreakMode.MiddleTruncation };
                 var head = Theme.Line3(Theme.Tile(Theme.TileFor(transfer.Name), 36), Theme.TwoLines(name, detail), cancel);
                 var foot = new Grid { ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) } };
                 foot.Add(times.Margin(0, 0, 8, 0), 0);
-                foot.Add(pause, 1);
+                foot.Add(new HorizontalStackLayout { Spacing = 2, Children = { open, share, pause } }, 1);
                 times.VerticalOptions = LayoutOptions.Center;
                 transfers.Children.Add(Theme.BoxOf(new VerticalStackLayout { Spacing = 10, Children = { head, bar, foot } }, 14));
-                rows[transfer] = (bar, detail, cancel, pause, times);
+                rows[transfer] = (bar, detail, cancel, pause, times, open, share);
             }
         }
         foreach (var transfer in shown)
         {
-            var (bar, detail, cancel, pause, times) = rows[transfer];
+            var (bar, detail, cancel, pause, times, open, share) = rows[transfer];
+            var received = transfer is { Incoming: true, State: "done", Path.Length: > 0 };
+            open.IsVisible = received && File.Exists(transfer.Path); // several files arrive as a folder: those are shared
+            share.IsVisible = received && (open.IsVisible || Directory.Exists(transfer.Path));
             cancel.IsVisible = transfer.State is "active" or "waiting"; // a finished one has nothing left to stop
             // Only what is moving can be held, and only this phone's own pause can be let go here.
             pause.IsVisible = transfer.State == "active";
@@ -662,6 +668,65 @@ public sealed class CourierPage : AppPage
                 _ => $"{direction}  ·  " + Tr.T(transfer.State switch { "cancelled" => "Cancelled", "refused" => "Refused", _ => "Failed" })
                      + (transfer.Note.Length > 0 ? $": {transfer.Note}" : ""),
             };
+        }
+    }
+
+    /// <summary>The files a finished incoming transfer left on this phone (none for one that sent, or is not done).</summary>
+    private static List<string> Received(PortalTransfer transfer)
+    {
+        if (transfer is not { Incoming: true, State: "done", Path.Length: > 0 })
+            return [];
+        if (File.Exists(transfer.Path))
+            return [transfer.Path];
+        try
+        {
+            return Directory.Exists(transfer.Path) ? Directory.EnumerateFiles(transfer.Path, "*", SearchOption.AllDirectories).Take(100).ToList() : [];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    private async Task OpenReceived(PortalTransfer transfer)
+    {
+        if (!File.Exists(transfer.Path))
+        {
+            await DisplayAlert(Tr.T("Courier"), Tr.T("This file is not there any more."), Tr.T("OK"));
+            return;
+        }
+        try
+        {
+            App.LeavingOnPurpose();
+            await Launcher.Default.OpenAsync(new OpenFileRequest(transfer.Name, new ReadOnlyFile(transfer.Path)));
+        }
+        catch (Exception error)
+        {
+            Log.Warning($"A received file could not be opened: {error.Message}");
+            await DisplayAlert(Tr.T("Courier"), Tr.T("No app on this phone can open this file."), Tr.T("OK"));
+        }
+    }
+
+    private async Task ShareReceived(PortalTransfer transfer)
+    {
+        var files = Received(transfer);
+        if (files.Count == 0)
+        {
+            await DisplayAlert(Tr.T("Courier"), Tr.T("This file is not there any more."), Tr.T("OK"));
+            return;
+        }
+        try
+        {
+            App.LeavingOnPurpose();
+            if (files.Count == 1)
+                await Share.Default.RequestAsync(new ShareFileRequest(transfer.Name, new ShareFile(files[0])));
+            else
+                await Share.Default.RequestAsync(new ShareMultipleFilesRequest(transfer.Name, files.Select(file => new ShareFile(file)).ToList()));
+        }
+        catch (Exception error)
+        {
+            Log.Warning($"A received file could not be shared: {error.Message}");
+            await DisplayAlert(Tr.T("Courier"), Tr.T("The file could not be shared."), Tr.T("OK"));
         }
     }
 

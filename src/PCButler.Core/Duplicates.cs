@@ -257,10 +257,10 @@ public static partial class Duplicates
 /// <summary>Opening files and showing them in File Explorer.</summary>
 public static class Shell
 {
-    /// <summary>Show a file selected in File Explorer. null = done, else what went wrong.</summary>
+    /// <summary>Show a file (or folder) selected in File Explorer. null = done, else what went wrong.</summary>
     public static string? Reveal(string path)
     {
-        if (!File.Exists(path))
+        if (!File.Exists(path) && !Directory.Exists(path))
             return null;
         try
         {
