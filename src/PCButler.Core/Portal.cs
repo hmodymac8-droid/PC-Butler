@@ -120,7 +120,7 @@ public sealed class PortalTransfer
     }
     /// <summary>Why it failed, in the user's language.</summary>
     public string Note { get; internal set; } = "";
-    /// <summary>Where the received files ended up.</summary>
+    /// <summary>Where the received files ended up; for a transfer that sent, the one file or folder sent ("" when several were).</summary>
     public string Path { get; internal set; } = "";
     public long Done => Interlocked.Read(ref done);
     public bool Cancelled => Volatile.Read(ref cancelled) != 0;
@@ -599,6 +599,7 @@ public sealed partial class PortalNode
     {
         var files = new List<(string Source, string Path, long Size)>();
         var tops = new List<string>();
+        var sources = new List<string>();
         foreach (var path in paths.Select(System.IO.Path.GetFullPath))
         {
             try
@@ -608,6 +609,7 @@ public sealed partial class PortalNode
                 {
                     files.Add((path, name, new FileInfo(path).Length));
                     tops.Add(name);
+                    sources.Add(path);
                 }
                 else if (Directory.Exists(path))
                 {
@@ -615,6 +617,7 @@ public sealed partial class PortalNode
                     foreach (var file in Directory.EnumerateFiles(path, "*", options))
                         files.Add((file, name + "/" + System.IO.Path.GetRelativePath(path, file).Replace('\\', '/'), new FileInfo(file).Length));
                     tops.Add(name);
+                    sources.Add(path);
                 }
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -626,7 +629,7 @@ public sealed partial class PortalNode
         var transfer = new PortalTransfer
         {
             Id = NewId(), Name = tops.Count == 1 ? tops[0] : $"{tops[0]} +{tops.Count - 1}", Size = files.Sum(file => file.Size), Files = files.Count,
-            Incoming = false, State = "waiting", Peer = peer.Name, PeerId = peer.Id,
+            Incoming = false, State = "waiting", Peer = peer.Name, PeerId = peer.Id, Path = sources.Count == 1 ? sources[0] : "",
         };
         lock (gate)
             transfers.Add(transfer);
@@ -770,7 +773,7 @@ public sealed partial class PortalNode
                 while (offset < size);
             }
             transfer.State = "done";
-            Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), transfer.Name, transfer.Size, false, transfer.Peer, ""));
+            Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), transfer.Name, transfer.Size, false, transfer.Peer, transfer.Path));
         }
         catch (OperationCanceledException)
         {
@@ -1402,6 +1405,17 @@ public static partial class Portal
             var log = History();
             log.Insert(0, entry);
             WriteLog(log.Take(LogKept).ToList());
+        }
+    }
+
+    /// <summary>Take one finished transfer off the list (the files stay where they are).</summary>
+    public static void RemoveFromLog(PortalLogEntry entry)
+    {
+        lock (LogGate)
+        {
+            var log = History();
+            if (log.Remove(entry))
+                WriteLog(log);
         }
     }
 

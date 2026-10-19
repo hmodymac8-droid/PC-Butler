@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.27
+
+- Courier: right-clicking a file in the Transfers list now offers everything you can do with it: Open, Open with…, Show in folder, Copy (the file, ready to paste), Copy full path, Copy name, Send to another connected PC, Delete (to Recycle Bin) and Remove from list, plus Pause or Cancel while it moves and Clear history. This works for files you sent as well as files you received, also in the list of earlier transfers.
+
 ## 1.22.26
 
 - Courier: right-click works on both lists. Right-click a transfer for Open and Show in folder (for a received file), Pause or Cancel (while it moves) and Clear history. Right-click a PC for Send files, Send folder, Send clipboard, Connect, Disconnect, Rename, Ask before taking files and Remove. The row you right-click is the one the menu acts on.
