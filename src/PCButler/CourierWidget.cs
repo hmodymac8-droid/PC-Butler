@@ -29,6 +29,7 @@ public sealed class CourierWidget : Window
     private readonly DispatcherTimer refresh = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly Dictionary<PortalTransfer, (ProgressBar Bar, TextBlock Detail, long Done, DateTime At, double Speed)> rows = [];
     private readonly Dictionary<PortalTransfer, Border> pauses = [];
+    private readonly Dictionary<PortalTransfer, (Border Open, Border Reveal)> opens = [];
     private string asksShown = "", transfersShown = "";
     private bool collapsed;
 
@@ -293,6 +294,7 @@ public sealed class CourierWidget : Window
             {
                 rows.Remove(gone);
                 pauses.Remove(gone);
+                opens.Remove(gone);
             }
             foreach (var transfer in shown)
             {
@@ -313,6 +315,15 @@ public sealed class CourierWidget : Window
                 var top = new DockPanel();
                 top.Children.Add(cancel.Dock(Dock.Right));
                 top.Children.Add(pause.Dock(Dock.Right));
+                if (transfer.Incoming)
+                {
+                    // Once received: open it, or show it in its folder.
+                    var reveal = Small("\uE838", Ui.T("Show in folder"), () => Courier.RevealReceived(transfer.Path));
+                    var open = Small("\uE8E5", Ui.T("Open"), () => Courier.OpenReceived(transfer.Path));
+                    top.Children.Add(reveal.Dock(Dock.Right));
+                    top.Children.Add(open.Dock(Dock.Right));
+                    opens[transfer] = (open, reveal);
+                }
                 top.Children.Add(Ui.Glyph(transfer.Incoming ? "\uE896" : "\uE898", 12, transfer.Incoming ? "Primary" : "Text").Margin(0, 0, 8, 0).Dock(Dock.Left));
                 top.Children.Add(name);
                 transfersPanel.Children.Add(new StackPanel { Margin = new Thickness(0, 12, 0, 0), Children = { top, bar, detail } });
@@ -340,6 +351,8 @@ public sealed class CourierWidget : Window
                             + (times.Length > 0 ? "\n" + times : ""),
                 _ => $"{direction}  ·  " + Courier.State(transfer),
             };
+            if (opens.TryGetValue(transfer, out var pair))
+                pair.Open.Visibility = pair.Reveal.Visibility = Courier.CanOpen(transfer) ? Visibility.Visible : Visibility.Collapsed;
             if (pauses.TryGetValue(transfer, out var button))
             {
                 // Only what is moving can be held, and only this PC's own pause can be let go here.

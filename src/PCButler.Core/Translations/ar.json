@@ -2007,5 +2007,10 @@
  "Show details": "عرض التفاصيل",
  "Hide details": "إخفاء التفاصيل",
  "Clean up": "التنظيف",
- "Share & protect": "المشاركة والحماية"
+ "Share & protect": "المشاركة والحماية",
+ "Show in folder": "عرض في المجلد",
+ "Select a received file in the list first.": "اختر أولاً ملفاً مستلماً من القائمة.",
+ "Share…": "مشاركة…",
+ "No app on this phone can open this file.": "لا يوجد تطبيق على هذا الهاتف يفتح هذا الملف.",
+ "The file could not be shared.": "تعذّرت مشاركة الملف."
 }
