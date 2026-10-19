@@ -160,6 +160,23 @@ public sealed class PortalPage : Page
             else
                 Connect((string)row.Tag!);
         };
+        // Right-click: the PC under the mouse is chosen, and its menu has what the buttons above do for it.
+        pcList.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (Ui.RowAt(e.OriginalSource) is { } row)
+                pcList.SelectedItem = row;
+        };
+        pcList.ContextMenu = new ContextMenu();
+        pcList.ContextMenuOpening += (_, e) =>
+        {
+            if (Ui.RowAt(e.OriginalSource) is not { Tag: string } row)
+            {
+                e.Handled = true;
+                return;
+            }
+            pcList.SelectedItem = row;
+            pcList.ContextMenu = PcMenu();
+        };
         pcCard.SetBody(pcList);
         page.Children.Add(pcCard);
 
@@ -179,17 +196,23 @@ public sealed class PortalPage : Page
             if (e.ChangedButton == System.Windows.Input.MouseButton.Left && Received(Ui.RowAt(e.OriginalSource)) is { } path)
                 Courier.OpenReceived(path);
         };
+        transferList.PreviewMouseRightButtonDown += (_, e) =>
+        {
+            if (Ui.RowAt(e.OriginalSource) is { } row && !transferList.SelectedItems.Contains(row))
+            {
+                transferList.SelectedItems.Clear();
+                transferList.SelectedItem = row;
+            }
+        };
+        transferList.ContextMenu = new ContextMenu();
         transferList.ContextMenuOpening += (_, e) =>
         {
-            if (Received(Ui.RowAt(e.OriginalSource)) is not { } path)
+            if (Ui.RowAt(e.OriginalSource) is not { } row)
             {
                 e.Handled = true;
                 return;
             }
-            var menu = new ContextMenu();
-            menu.Items.Add(Ui.Item("Open", () => Courier.OpenReceived(path)));
-            menu.Items.Add(Ui.Item("Show in folder", () => Courier.RevealReceived(path)));
-            transferList.ContextMenu = menu;
+            transferList.ContextMenu = TransferMenu(row);
         };
         transferCard.SetBody(transferList);
         page.Children.Add(transferCard);
@@ -782,6 +805,57 @@ public sealed class PortalPage : Page
                 transfer.Pause();
         }
         ShowTransfers();
+    }
+
+    /// <summary>The right-click menu of a transfer: open what was received, hold or stop what is moving, clear the history.</summary>
+    private ContextMenu TransferMenu(Row row)
+    {
+        var menu = new ContextMenu();
+        if (Received(row) is { } path)
+        {
+            menu.Items.Add(Ui.Item("Open", () => Courier.OpenReceived(path)));
+            menu.Items.Add(Ui.Item("Show in folder", () => Courier.RevealReceived(path)));
+        }
+        if (row.Tag is PortalTransfer { Running: true } transfer)
+        {
+            if (menu.Items.Count > 0)
+                menu.Items.Add(new Separator());
+            if (transfer.State == "active")
+                menu.Items.Add(Ui.Item(transfer.Paused ? "Resume" : "Pause", PauseSelected));
+            menu.Items.Add(Ui.Item("Cancel", CancelSelected));
+        }
+        if (menu.Items.Count > 0)
+            menu.Items.Add(new Separator());
+        menu.Items.Add(Ui.Item("Clear history", ClearHistory));
+        return menu;
+    }
+
+    /// <summary>The right-click menu of a PC on the list, with what the buttons above the list offer for it now.</summary>
+    private ContextMenu PcMenu()
+    {
+        var menu = new ContextMenu();
+        void Add(string label, Action action) => menu.Items.Add(Ui.Item(label, action));
+        ShowButtons();
+        var ready = ReadyPeer(pcList.SelectedItem as Row) is not null;
+        if (ready)
+        {
+            Add("Send files…", SendFiles);
+            Add("Send folder…", SendFolder);
+            Add("Send clipboard", SendClipboard);
+            menu.Items.Add(new Separator());
+        }
+        if (connectButton.Visibility == Visibility.Visible)
+            Add("Connect", ConnectSelected);
+        if (askAgainButton.Visibility == Visibility.Visible)
+            Add("Ask again", AskAgain);
+        if (disconnectButton.Visibility == Visibility.Visible)
+            Add("Disconnect", DisconnectSelected);
+        if (menu.Items.Count > 0 && menu.Items[^1] is not Separator)
+            menu.Items.Add(new Separator());
+        Add("Rename…", RenameSelected);
+        Add("Ask before taking files: on/off", ToggleAuto);
+        Add("Remove", RemoveSelected);
+        return menu;
     }
 
     /// <summary>Where a row's received files are, or null for a row that sent files or is not finished.</summary>
