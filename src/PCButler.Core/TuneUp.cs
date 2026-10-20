@@ -95,7 +95,7 @@ public static partial class TuneUp
                 new RegistryStep(true, @"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 1),
             ]),
         new("indexing", 0, true, "Search indexing off", "Windows stops reading your files in the background to index them. Searching for files, and in "
-                                                        + "Start, becomes slower, and the Photos app can fail to open pictures after a restart.", [new ServiceStep("WSearch")]),
+                                                        + "Start, becomes slower, and Store apps (Photos, Terminal, Copilot) can fail to start.", [new ServiceStep("WSearch")]),
         new("rare_services", 4, true, "Rarely used services off", "Error reporting, offline maps, fax and the shop-demo service. Crashes are no longer "
                                                                   + "reported to Microsoft.",
             [new ServiceStep("WerSvc"), new ServiceStep("MapsBroker"), new ServiceStep("Fax"), new ServiceStep("RetailDemo")]),
