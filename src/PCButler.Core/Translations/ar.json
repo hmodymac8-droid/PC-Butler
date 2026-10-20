@@ -1465,7 +1465,6 @@
  "Windows only tells an administrator which app sends what, so internet use is counted while the helper runs. Without it, those columns show —.": "لا يخبر Windows بما يرسله كل تطبيق إلا المسؤول، لذا يُحسب استهلاك الإنترنت أثناء عمل المساعد. من دونه تظهر تلك الأعمدة —.",
  "Windows open, close and minimise at once, without the animation.": "تُفتح النوافذ وتُغلق وتُصغَّر فورًا، بلا حركة.",
  "Windows stops loading programs into memory ahead of time: less disk and memory work in the background, but programs may open a little slower the first time.": "يتوقف ويندوز عن تحميل البرامج إلى الذاكرة مسبقًا: عمل أقل للقرص والذاكرة في الخلفية، لكن قد تُفتح البرامج أبطأ قليلًا في المرة الأولى.",
- "Windows stops reading your files in the background to index them. Searching for files, and in Start, becomes slower, and the Photos app can fail to open pictures after a restart.": "يتوقف ويندوز عن قراءة ملفاتك في الخلفية لفهرستها. يصبح البحث عن الملفات، وفي قائمة ابدأ، أبطأ، وقد يفشل تطبيق الصور في فتح الصور بعد إعادة التشغيل.",
  "in no preset": "ليس ضمن أي مستوى",
  "Windows stops showing tips and suggestions and stops installing promoted apps by itself.": "يتوقف ويندوز عن عرض النصائح والاقتراحات وعن تثبيت التطبيقات المروَّجة من تلقاء نفسه.",
  "Windows temporary files": "ملفات ويندوز المؤقتة",
@@ -2016,5 +2015,10 @@
  "Open with…": "فتح باستخدام…",
  "Move {0} to the Recycle Bin?": "نقل {0} إلى سلة المحذوفات؟",
  "Earlier": "السابقة",
- "The file is in:\n{0}": "الملف موجود في:\n{0}"
+ "The file is in:\n{0}": "الملف موجود في:\n{0}",
+ "Windows stops reading your files in the background to index them. Searching for files, and in Start, becomes slower, and Store apps (Photos, Terminal, Copilot) can fail to start.": "يتوقف ويندوز عن قراءة ملفاتك في الخلفية لفهرستها. يصبح البحث عن الملفات، وفي قائمة ابدأ، أبطأ، وقد تفشل تطبيقات المتجر (الصور وTerminal وCopilot) في العمل.",
+ "An older version of the Extreme tune-up switched off Windows Search indexing. With it off, Windows can fail to start Store apps such as Terminal, Photos and Copilot (\"Windows cannot find ...\").\n\nSwitch Search indexing back on now? The rest of the tune-up stays as it is.": "نسخة أقدم من مستوى التحسين الأقصى أوقفت فهرسة بحث ويندوز. وعندما تكون متوقفة قد يفشل ويندوز في تشغيل تطبيقات المتجر مثل Terminal والصور وCopilot (رسالة «Windows cannot find ...»).\n\nهل تريد إعادة تشغيل فهرسة البحث الآن؟ تبقى بقية التحسينات كما هي.",
+ "Switching Search indexing back on needs administrator rights.": "إعادة تشغيل فهرسة البحث تحتاج إلى صلاحيات المسؤول.",
+ "Search indexing could not be switched back on. Press Undo all changes in Booster, Advanced, and allow the helper.": "تعذّرت إعادة تشغيل فهرسة البحث. اضغط «التراجع عن كل التغييرات» في المسرّع، متقدم، واسمح للمساعد.",
+ "Search indexing is back on. Store apps start again; if one still doesn't, restart the PC once.": "عادت فهرسة البحث للعمل. تعمل تطبيقات المتجر من جديد؛ وإن لم يعمل أحدها فأعد تشغيل الكمبيوتر مرة."
 }
