@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.30
+
+- Store apps failing to start ("Windows cannot find '…wt.exe'", and Terminal, Photos, Copilot or PowerToys' right-click items not opening): Extreme from before 1.22.15 had switched off Windows Search indexing, and with it off Windows can fail to start Store apps. If a preset still has it off, PC Butler now asks once, at start, to switch Search indexing back on, and leaves the rest of the tune-up as it is. The "Search indexing off" switch in Booster, Advanced now warns about this too. Boost itself never closed or reopened any app.
+
 ## 1.22.29
 
 - Phone app (Android 1.2.6), Courier: every file you send or receive has "Open", "Share…" and "Show in folder" under it, and tapping it brings up the same choices plus "Copy full path". "Show in folder" opens the folder in the phone's Files app. Earlier transfers, also from before the app was last opened, are listed under "Earlier" with the same buttons, so their files can still be opened and shared.
