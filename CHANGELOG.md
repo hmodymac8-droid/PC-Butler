@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.31
+
+- Resume yesterday is automatic: when it is on, the apps, folders and files you had open before the PC was shut down open again by themselves, shortly after you sign in. No click needed. The tray panel's Resume yesterday tile still switches it on and off.
+
 ## 1.22.30
 
 - Store apps failing to start ("Windows cannot find '…wt.exe'", and Terminal, Photos, Copilot or PowerToys' right-click items not opening): Extreme from before 1.22.15 had switched off Windows Search indexing, and with it off Windows can fail to start Store apps. If a preset still has it off, PC Butler now asks once, at start, to switch Search indexing back on, and leaves the rest of the tune-up as it is. The "Search indexing off" switch in Booster, Advanced now warns about this too. Boost itself never closed or reopened any app.
