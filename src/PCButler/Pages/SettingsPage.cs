@@ -96,8 +96,8 @@ public sealed partial class SettingsPage : Page
                                     12, wrap: true).Margin(0, 2, 0, 0));
         resume = Ui.Switch(Ui.T("Resume yesterday"), config.ResumeSession, on => App.Current.SetResumeSession(on));
         quick.Children.Add(resume.Margin(0, 12, 0, 0));
-        quick.Children.Add(Ui.Muted(Ui.T("Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, one click (on the "
-                                         + "notification, or in the tray icon's panel) opens them all again. Only names and paths are noted, on this PC."),
+        quick.Children.Add(Ui.Muted(Ui.T("Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, it opens them all "
+                                         + "again by itself, shortly after you sign in. Only names and paths are noted, on this PC."),
                                     12, wrap: true).Margin(0, 2, 0, 0));
         AddSandbox(quick);
         AddWindowsUpdates(quick);

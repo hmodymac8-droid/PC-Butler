@@ -549,12 +549,6 @@ public partial class App : Application
         // A click on a notification about files that arrived opens them where they are.
         tray.BalloonTipClicked += (_, _) =>
         {
-            if (resumeOffered)
-            {
-                resumeOffered = false;
-                ResumeYesterday();
-                return;
-            }
             if (receivedPath is not { } path)
                 return;
             if (File.Exists(path))
@@ -562,7 +556,7 @@ public partial class App : Application
             else if (Directory.Exists(path))
                 Shell.Open(path);
         };
-        tray.BalloonTipClosed += (_, _) => (receivedPath, resumeOffered) = (null, false);
+        tray.BalloonTipClosed += (_, _) => receivedPath = null;
         tray.MouseClick += (_, e) =>
         {
             if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
@@ -673,19 +667,27 @@ public partial class App : Application
     // --- Resume yesterday: the apps and folders that were open before Windows restarted ---
 
     private Timer? sessionTimer;
-    private bool resumeOffered;
 
-    /// <summary>At the start: put aside what was open before the restart, offer it back, and start noting what is open now.</summary>
+    /// <summary>
+    /// At the start: put aside what was open before the restart, open it all again by itself (a
+    /// little later, once Windows has settled after signing in), and start noting what is open now.
+    /// </summary>
     private void StartResume()
     {
         if (!ConfigStore.Load().ResumeSession)
             return;
         SessionRestore.StartOfRun();
         RememberSession(true);
-        if (SessionRestore.Previous() is not { } previous)
+        if (SessionRestore.Previous() is null)
             return;
-        Notify("Resume yesterday: click here to open again {0}.", [ResumeSummary(previous)]);
-        resumeOffered = true;
+        var later = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        later.Tick += (_, _) =>
+        {
+            later.Stop();
+            if (!exiting && ConfigStore.Load().ResumeSession)
+                ResumeYesterday();
+        };
+        later.Start();
     }
 
     /// <summary>Note what is open every minute, or stop.</summary>
@@ -728,7 +730,7 @@ public partial class App : Application
         return string.Join(Tr.IsArabic ? "، " : ", ", parts);
     }
 
-    /// <summary>Open again what was open before the restart (the tray panel's button, or a click on the notification). Offered once.</summary>
+    /// <summary>Open again what was open before the restart (by itself at the start, or the tray panel's button). Done once.</summary>
     public void ResumeYesterday()
     {
         if (SessionRestore.Previous() is not { } previous)
