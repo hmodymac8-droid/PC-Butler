@@ -326,6 +326,7 @@ public sealed class Hotkeys : IDisposable
     public static readonly (string Key, string Label, string Detail)[] Actions =
     [
         ("open", "Open PC Butler", "Brings the window up from the tray."),
+        ("palette", "Open the command palette", "Type to jump to any page, run an action, find a file or work out a sum, from whatever program is in front."),
         ("search", "Open the search box", "Finds any file or folder on your drives from whatever program is in front."),
         ("searchpage", "Open the Search page", ""),
         ("sort", "Sort now", "Moves the files that are due, as the tray menu's Sort now does."),
@@ -336,7 +337,7 @@ public sealed class Hotkeys : IDisposable
     ];
 
     /// <summary>Shortcuts an action has until the user changes them; cleared, they are saved as "" so the default does not come back.</summary>
-    public static readonly Dictionary<string, string> Defaults = new() { ["search"] = "Win+F" };
+    public static readonly Dictionary<string, string> Defaults = new() { ["search"] = "Win+F", ["palette"] = "Alt+Space" };
 
     /// <summary>The saved shortcuts with the defaults filled in.</summary>
     public static Dictionary<string, string> Effective(Dictionary<string, string> saved)

@@ -303,7 +303,7 @@ public partial class App : Application
     }
 
     /// <summary>A shortcut from the Hotkeys tab was pressed, in whatever program.</summary>
-    private void RunHotkey(string action)
+    public void RunHotkey(string action)
     {
         if (exiting)
             return;
@@ -311,6 +311,9 @@ public partial class App : Application
         {
             case "open":
                 ShowMainWindow();
+                break;
+            case "palette":
+                ShowSearchPopup(forCommands: true);
                 break;
             case "search":
                 ShowSearchPopup();
@@ -339,20 +342,31 @@ public partial class App : Application
         }
     }
 
-    /// <summary>The search box over whatever program is in front; pressed again while it is open, it comes back to the front.</summary>
-    public void ShowSearchPopup()
+    /// <summary>
+    /// The command palette (forCommands) or the file search box, over whatever program is in front.
+    /// Built the first time and then only hidden, so it comes up at once; built again only when
+    /// the language has changed.
+    /// </summary>
+    public void ShowSearchPopup(bool forCommands = false)
     {
         if (exiting)
             return;
-        if (searchPopup is { IsVisible: true })
+        if (searchPopup is not null && searchPopup.MadeForLanguage != Tr.Language)
         {
-            SearchPopup.BringToFront(searchPopup);
-            return;
+            searchPopup.Close();
+            searchPopup = null;
         }
-        searchPopup = new SearchPopup();
-        searchPopup.Closed += (_, _) => searchPopup = null;
-        searchPopup.Show();
-        SearchPopup.BringToFront(searchPopup);
+        if (searchPopup is null)
+        {
+            var made = new SearchPopup();
+            made.Closed += (_, _) =>
+            {
+                if (searchPopup == made)
+                    searchPopup = null; // Alt+F4 closes it for good: the next press builds another
+            };
+            searchPopup = made;
+        }
+        searchPopup.Open(forCommands);
     }
 
     /// <summary>Boost the program that is in front; done again, everything goes back.</summary>

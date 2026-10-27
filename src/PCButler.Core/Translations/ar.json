@@ -2019,5 +2019,21 @@
  "Switching Search indexing back on needs administrator rights.": "إعادة تشغيل فهرسة البحث تحتاج إلى صلاحيات المسؤول.",
  "Search indexing could not be switched back on. Press Undo all changes in Booster, Advanced, and allow the helper.": "تعذّرت إعادة تشغيل فهرسة البحث. اضغط «التراجع عن كل التغييرات» في المسرّع، متقدم، واسمح للمساعد.",
  "Search indexing is back on. Store apps start again; if one still doesn't, restart the PC once.": "عادت فهرسة البحث للعمل. تعمل تطبيقات المتجر من جديد؛ وإن لم يعمل أحدها فأعد تشغيل الكمبيوتر مرة.",
- "Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, it opens them all again by itself, shortly after you sign in. Only names and paths are noted, on this PC.": "كل دقيقة يسجّل PC Butler التطبيقات والمجلدات والملفات المفتوحة. بعد إعادة تشغيل Windows يفتحها كلها من جديد تلقائيًا، بعد تسجيل الدخول بقليل. تُسجَّل الأسماء والمسارات فقط، على هذا الكمبيوتر."
+ "Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, it opens them all again by itself, shortly after you sign in. Only names and paths are noted, on this PC.": "كل دقيقة يسجّل PC Butler التطبيقات والمجلدات والملفات المفتوحة. بعد إعادة تشغيل Windows يفتحها كلها من جديد تلقائيًا، بعد تسجيل الدخول بقليل. تُسجَّل الأسماء والمسارات فقط، على هذا الكمبيوتر.",
+ "Open the command palette": "فتح لوحة الأوامر",
+ "Type to jump to any page, run an action, find a file or work out a sum, from whatever program is in front.": "اكتب لتنتقل إلى أي صفحة، أو تنفّذ أمرًا، أو تجد ملفًا، أو تحسب عملية، من أي برنامج في المقدمة.",
+ "Search commands and files… (? lists the shortcuts)": "ابحث في الأوامر والملفات… (؟ أو ? يعرض الاختصارات)",
+ "Enter: run or open  ·  Ctrl+Enter: open folder  ·  ↑ ↓: choose  ·  Esc: close": "Enter: تنفيذ أو فتح  ·  Ctrl+Enter: فتح المجلد  ·  ↑ ↓: اختيار  ·  Esc: إغلاق",
+ "Type a sum: 12*7, (3+4)/2, 15% * 80": "اكتب عملية حسابية: 12*7 أو (3+4)/2 أو 15% * 80",
+ "Sizes and speeds too: 5 GB in MB, 4 GB at 100 Mbps": "والأحجام والسرعات أيضًا: 5 GB in MB أو 4 GB at 100 Mbps",
+ "Not a sum the calculator understands yet": "الآلة الحاسبة لا تفهم هذه العملية بعد",
+ "Search files and folders": "البحث في الملفات والمجلدات",
+ "Calculator": "الآلة الحاسبة",
+ "Commands and files: just type": "الأوامر والملفات: اكتب فقط",
+ "Enter copies the answer": "Enter ينسخ الناتج",
+ "General settings": "الإعدادات العامة",
+ "Page": "صفحة",
+ "Scan for junk": "البحث عن الملفات غير الضرورية",
+ "Quit PC Butler": "إغلاق PC Butler",
+ "PC Butler": "PC Butler"
 }
