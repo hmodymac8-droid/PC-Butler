@@ -13,8 +13,8 @@
     <RootNamespace>PCButler.Android</RootNamespace>
     <ApplicationTitle>PC Butler</ApplicationTitle>
     <ApplicationId>com.hmodymac8droid.pcbutler</ApplicationId>
-    <ApplicationDisplayVersion>1.2.6</ApplicationDisplayVersion>
-    <ApplicationVersion>10</ApplicationVersion>
+    <ApplicationDisplayVersion>1.2.7</ApplicationDisplayVersion>
+    <ApplicationVersion>11</ApplicationVersion>
     <SupportedOSPlatformVersion>26.0</SupportedOSPlatformVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <!-- One APK that runs on phones (arm64) and on the emulator (x64). -->
@@ -34,6 +34,7 @@
     <Compile Include="..\PCButler.Core\Portal.cs" Link="Core\Portal.cs" />
     <Compile Include="..\PCButler.Core\PortalDht.cs" Link="Core\PortalDht.cs" />
     <Compile Include="..\PCButler.Core\PortalInternet.cs" Link="Core\PortalInternet.cs" />
+    <Compile Include="..\PCButler.Core\PortalLan.cs" Link="Core\PortalLan.cs" />
     <Compile Include="..\PCButler.Core\PortalNat.cs" Link="Core\PortalNat.cs" />
     <Compile Include="..\PCButler.Core\PortalSaved.cs" Link="Core\PortalSaved.cs" />
     <Compile Include="..\PCButler.Core\PortalServer.cs" Link="Core\PortalServer.cs" />

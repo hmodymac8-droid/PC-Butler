@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.33
+
+- Courier connects quickly and reliably, on the PC and on the phone (Android 1.2.7). A PC or phone on the same Wi-Fi or network is now found directly in about a second, instead of only through the internet, which many routers would not let through (it then hung on Connecting). A PC that had been asked to connect a few times by the same phone ignored it for half an hour; it now answers every time. A connection that dropped (Wi-Fi switched, phone asleep) is noticed in about 25 seconds instead of up to a minute, so the list no longer shows it connected while it is not. Sending to a PC that stopped answering now fails within seconds with "the other PC stopped answering" instead of hanging, and an ID nobody answers under says so after 40 seconds instead of searching for over a minute.
+
 ## 1.22.32
 
 - Command palette: press Alt + Space in any program to open one box for everything. Type a few letters (in English or Arabic) to jump to any page or Settings tab, or to run an action: Sort now, Boost, the performance overlay, the drop zone, Scan for junk, Resume yesterday, Check for updates, Quit. The files that match show underneath, from the same instant index as Win + F. Type "file " to search only files, "=" to work out a sum (also sizes and speeds: "5 GB in MB", "4 GB at 100 Mbps" says how long it takes), and "?" to see these. The commands you use most come first, and each shows its shortcut. It is built the first time you open it and then only hidden, so it costs nothing until then and comes up at once after. Win + F opens the same window for files, as before, now faster after the first time. The shortcut can be changed on Settings, Hotkeys.
