@@ -71,6 +71,7 @@ public sealed partial class PortalNode
     private PortalLink? link4, link6;
     private PortalDht? dht4, dht6;
     private PortalMapping? mapping;
+    private PortalLan? lan;
     private readonly ConcurrentDictionary<IPEndPoint, (long At, int Times)> knocked = new();
     private readonly Dictionary<string, Attempt> attempts = [];
 
@@ -202,6 +203,10 @@ public sealed partial class PortalNode
                     _ = Task.Run(() => KeepAnnounced(dht));
             }
             _ = Task.Run(KeepMapped);
+            // Devices on the same Wi-Fi find each other directly, without the directory or the router.
+            var near = link4;
+            lan = new PortalLan(number => number == Number || number == LongNumber, () => LinkPort,
+                                asker => _ = near.PunchTo(asker, TimeSpan.FromSeconds(10), stopping.Token));
         }
         _ = Task.Run(() => KeepConnected(local));
     }
@@ -221,6 +226,7 @@ public sealed partial class PortalNode
             {
             }
         }
+        lan?.Dispose();
         if (mapping is { } given)
             await PortalNat.Unmap(given);
         // Disposing tells every PC with a path open that this one is gone, so none of them goes on showing it connected.
@@ -282,6 +288,8 @@ public sealed partial class PortalNode
     {
         long announced = 0;
         var link = dht == dht6 ? link6! : link4!;
+        // Knocks are looked for on their own: a full announcement can take many seconds, and a PC knocking meanwhile must not wait for it.
+        _ = Task.Run(() => AnswerKnocks(dht, link));
         while (!stopping.IsCancellationRequested)
         {
             try
@@ -302,24 +310,56 @@ public sealed partial class PortalNode
                                    $"Courier: announced under ID {Number} over {(dht == dht6 ? "IPv6" : "IPv4")}, seen as {dht.PublicAddress}");
                         Raise();
                     }
-                    // A PC that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
-                    // routers. Asked every few seconds, of the few computers that hold that key, so the other PC waits seconds, not minutes.
-                    var knockers = (await dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token))
-                        .Concat(await dht.Poll(Portal.DirectoryKey(LongNumber, knock: true), stopping.Token)).Distinct();
-                    foreach (var knocker in knockers.Take(16))
+                }
+                await Task.Delay(announced == 0 ? 3000 : 30_000, stopping.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception error) when (error is SocketException or IOException or ObjectDisposedException)
+            {
+                await Task.Delay(5000);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A PC that wants in leaves its address under the "knock" key: send towards it, so a path opens through both
+    /// routers. Asked every few seconds, of the few computers that hold that key, so the other PC waits seconds, not minutes.
+    /// </summary>
+    private async Task AnswerKnocks(PortalDht dht, PortalLink link)
+    {
+        while (!stopping.IsCancellationRequested)
+        {
+            try
+            {
+                if (await dht.Join(stopping.Token))
+                {
+                    var polls = await Task.WhenAll(dht.Poll(Portal.DirectoryKey(Number, knock: true), stopping.Token),
+                                                   dht.Poll(Portal.DirectoryKey(LongNumber, knock: true), stopping.Token));
+                    var now = Environment.TickCount64;
+                    foreach (var knocker in polls.SelectMany(found => found).Distinct().Take(16))
                     {
+                        // The directory keeps a knock for a while after it was left, so the same address comes back at every poll.
+                        // It is answered at most every 20 seconds; one that never opens a path, every 2 minutes after the fourth try.
+                        // (Up to 1.22.31 it was then ignored for half an hour: a phone that had reconnected a few times could not get in.)
                         var (at, times) = knocked.GetValueOrDefault(knocker);
-                        if (link.IsOpen(knocker) || dht.IsMe(knocker) || times >= 4 && now - at < 30 * 60_000 || now - at < 45_000)
+                        if (link.IsOpen(knocker) || dht.IsMe(knocker) || now - at < (times >= 4 ? 120_000 : 20_000))
                             continue;
-                        knocked[knocker] = (now, now - at > 30 * 60_000 ? 1 : times + 1);
+                        knocked[knocker] = (now, times + 1);
                         // A PC that keeps knocking is noted once an hour, not at every try.
                         Log.Seldom($"knock {knocker}", TimeSpan.FromHours(1), $"Courier: a PC at {knocker} is asking to connect; opening a path towards it");
                         _ = link.PunchTo(knocker, TimeSpan.FromSeconds(25), stopping.Token).ContinueWith(done =>
-                            Log.Seldom($"knock {knocker} {done.Result}", TimeSpan.FromHours(1), $"Courier: path to {knocker} {(done.Result ? "opened" : "did not open")}"),
-                            TaskContinuationOptions.OnlyOnRanToCompletion);
+                        {
+                            // Once in, it starts afresh: its next knock (after a reconnect) is answered at once.
+                            if (done.Result)
+                                knocked.TryRemove(knocker, out _);
+                            Log.Seldom($"knock {knocker} {done.Result}", TimeSpan.FromHours(1), $"Courier: path to {knocker} {(done.Result ? "opened" : "did not open")}");
+                        }, TaskContinuationOptions.OnlyOnRanToCompletion);
                     }
                 }
-                await Task.Delay(3000, stopping.Token);
+                await Task.Delay(2000, stopping.Token);
             }
             catch (OperationCanceledException)
             {
@@ -432,10 +472,29 @@ public sealed partial class PortalNode
         PortalDevice? paired;
         lock (gate)
             paired = settings.Devices.FirstOrDefault(device => Portal.NumberOf(device.Id) == number);
+        // On the same Wi-Fi it answers in a moment, and its public address (tried next) would often not be reachable from inside.
+        if (await FindNearby(number, paired?.Id, cancel) is { } near)
+            return (near, PortalConnectProblem.None);
         if (paired is { Port: > 0 } && IPAddress.TryParse(paired.Address, out var address) && (!local || IPAddress.IsLoopback(address))
             && await ConnectDirect(new IPEndPoint(address, paired.Port), number, paired.Id) is { } known)
             return (known, PortalConnectProblem.None);
-        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, cancel, paired?.Id);
+        return local ? (null, PortalConnectProblem.NotFound) : await ConnectById(number, cancel, paired?.Id, nearbyTried: true);
+    }
+
+    /// <summary>The PC or phone with that ID on this very network, connected to; null when it is not here.</summary>
+    private async Task<PortalPeer?> FindNearby(string number, string? expectedId, CancellationToken cancel)
+    {
+        if (lan is null || link4 is null)
+            return null;
+        foreach (var place in await lan.Find(number, LinkPort, TimeSpan.FromMilliseconds(1500), cancel))
+        {
+            if (await ConnectDirect(place, number, expectedId) is { } peer)
+            {
+                Log.Info($"Courier: found {Portal.ShowNumber(number)} on this network at {place}");
+                return peer;
+            }
+        }
+        return null;
     }
 
     /// <summary>Ask a PC this one connected to whether it has let this one in (403 until its user allows it).</summary>
@@ -573,18 +632,23 @@ public sealed partial class PortalNode
     /// Find a PC by its ID and open a path to it, over IPv4 and IPv6 at once. Takes from a few
     /// seconds to about a minute. The PC is added to the list (not paired) when it works.
     /// </summary>
-    public async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> ConnectById(string number, CancellationToken cancel = default, string? expectedId = null)
+    public async Task<(PortalPeer? Peer, PortalConnectProblem Problem)> ConnectById(string number, CancellationToken cancel = default, string? expectedId = null,
+                                                                                     bool nearbyTried = false)
     {
         number = Portal.NormalizeNumber(number);
         if (!Portal.IsNumber(number) || number == Number)
             return (null, PortalConnectProblem.BadNumber);
+        if (!nearbyTried && await FindNearby(number, expectedId, cancel) is { } near)
+            return (near, PortalConnectProblem.None);
         var joined = await Task.WhenAll(Links().Where(item => item.Dht is not null).Select(async item => (item.Link, Dht: item.Dht!, Ok: await item.Dht!.Join(cancel))));
         var directories = joined.Where(item => item.Ok).Select(item => (item.Link, item.Dht)).ToList();
         if (directories.Count == 0)
             return (null, PortalConnectProblem.NoDirectory);
         var found = false;
-        var until = Environment.TickCount64 + 75_000;
-        while (Environment.TickCount64 < until && !cancel.IsCancellationRequested && !stopping.IsCancellationRequested)
+        // Not announced at all after 40 seconds: say so (and try again later) instead of searching on for over a minute.
+        var started = Environment.TickCount64;
+        var until = started + 75_000;
+        while (Environment.TickCount64 < (found ? until : started + 40_000) &&!cancel.IsCancellationRequested && !stopping.IsCancellationRequested)
         {
             // Over IPv4 and IPv6 at once: leave this PC's address where the other PC looks for knocks, and look up where it is.
             var rounds = directories.Select(async item =>
@@ -632,8 +696,8 @@ public sealed partial class PortalNode
         {
             using var client = Client(place, expectedId: null, out var seen);
             using var limit = CancellationTokenSource.CreateLinkedTokenSource(stopping.Token);
-            limit.CancelAfter(TimeSpan.FromSeconds(20));
-            var who = await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
+            limit.CancelAfter(TimeSpan.FromSeconds(12));
+            var who =await client.GetFromJsonAsync<JsonElement>($"{Api}/who", limit.Token);
             var id = seen();
             // A PC this one is paired with must show the very certificate it was paired with, not just any with the same ID.
             if (id is null || id == Id || who.GetProperty("id").GetString() != id || (expectedNumber is not null && Portal.NumberOf(id) != expectedNumber)

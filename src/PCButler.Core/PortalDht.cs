@@ -369,6 +369,10 @@ public sealed class PortalDht
                 if (answers[index] is not { } answer)
                 {
                     candidates.Remove(batch[index]);
+                    // Forgotten too: computers that left the directory would otherwise be asked first at every lookup, a second lost each time.
+                    if (!cancel.IsCancellationRequested)
+                        lock (known)
+                            known.RemoveAll(node => node.Endpoint.Equals(batch[index].Endpoint));
                     continue;
                 }
                 Remember(batch[index]);

@@ -3,9 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.34
+
+- Phone app (Android 1.2.8), Clipboard: a floating button. Switch on "Floating button" and PC Butler's logo floats over every app while Courier is on (Android asks once to let it show over other apps). Tap it and what you copied goes to the PC's clipboard; drag it anywhere and it settles at the side. Also new, "Send what I copy by itself": switch on "PC Butler: send what I copy" in Android's Accessibility settings and whatever you copy in any app goes to the connected PC at once, even with PC Butler closed, and Courier starts with the phone. Android 10 and later let only the app on the screen read the clipboard, so for a split second PC Butler takes the focus to read it: the keyboard of the app you are in may close.
+
 ## 1.22.33
 
-- Phone app (Android 1.2.7), Clipboard: a floating button. Switch on "Floating button" and PC Butler's logo floats over every app while Courier is on (Android asks once to let it show over other apps). Tap it and what you copied goes to the PC's clipboard; drag it anywhere and it settles at the side. Also new, "Send what I copy by itself": switch on "PC Butler: send what I copy" in Android's Accessibility settings and whatever you copy in any app goes to the connected PC at once, even with PC Butler closed, and Courier starts with the phone. Android 10 and later let only the app on the screen read the clipboard, so for a split second PC Butler takes the focus to read it: the keyboard of the app you are in may close.
+- Courier connects quickly and reliably, on the PC and on the phone (Android 1.2.7). A PC or phone on the same Wi-Fi or network is now found directly in about a second, instead of only through the internet, which many routers would not let through (it then hung on Connecting). A PC that had been asked to connect a few times by the same phone ignored it for half an hour; it now answers every time. A connection that dropped (Wi-Fi switched, phone asleep) is noticed in about 25 seconds instead of up to a minute, so the list no longer shows it connected while it is not. Sending to a PC that stopped answering now fails within seconds with "the other PC stopped answering" instead of hanging, and an ID nobody answers under says so after 40 seconds instead of searching for over a minute.
 
 ## 1.22.32
 
