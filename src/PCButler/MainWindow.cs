@@ -49,6 +49,61 @@ public sealed partial class MainWindow : Window
     public AboutPage About => Get<AboutPage>("about");
     public SearchPage SearchPage => Get<SearchPage>("search");
 
+    /// <summary>(key, icon, name) of every page. The command palette lists them too.</summary>
+    public static readonly (string Key, string Glyph, string Name)[] PageList =
+    [
+        ("home", "\uE80F", "Home"),
+        ("search", "\uE721", "Search"),
+        ("preview", "\uE8FD", "Sorter"),
+        ("duplicates", "\uE8C8", "Duplicates"),
+        ("cleaner", "\uE74D", "Cleaner"),
+        ("storage", "\uEDA2", "Storage"),
+        ("booster", "\uE945", "Booster"),
+        ("benchmark", "\uE9D9", "Benchmark"),
+        ("programs", "\uE71D", "Programs"),
+        ("internet", "\uE774", "Internet"),
+        ("shredder", "\uE75C", "Shredder"),
+        ("clipboard", "\uE77F", "Clipboard"),
+        ("portal", "\uE8AB", "Courier"),
+        ("vault", "\uE72E", "Vault"),
+        ("history", "\uE81C", "History"),
+        ("settings", "\uE713", "Settings"),
+        ("about", "\uE946", "Help & about"),
+    ];
+
+    /// <summary>The sidebar: (key, icon, name, its pages) for a group that folds open, or a page on its own with no pages listed.</summary>
+    public static readonly (string Key, string Glyph, string Name, string[] Members)[] Groups =
+    [
+        ("home", "", "", []),
+        ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
+        ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
+        ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"]),
+        ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"]),
+        ("history", "", "", []),
+    ];
+
+    private Page Make(string key) => key switch
+    {
+        "home" => new HomePage(this),
+        "search" => new SearchPage(this),
+        "preview" => new SorterPage(this),
+        "duplicates" => new DuplicatesPage(this),
+        "cleaner" => new CleanerPage(this),
+        "storage" => new StoragePage(this),
+        "booster" => new BoosterPage(this),
+        "benchmark" => new BenchmarkPage(this),
+        "programs" => new ProgramsPage(this),
+        "internet" => new InternetPage(this),
+        "shredder" => new ShredderPage(this),
+        "clipboard" => new ClipboardPage(this),
+        "portal" => new PortalPage(this),
+        "vault" => new VaultPage(this),
+        "history" => new HistoryPage(this),
+        "settings" => new SettingsPage(this),
+        "about" => new AboutPage(this),
+        _ => throw new ArgumentException($"No page {key}", nameof(key)),
+    };
+
     public MainWindow()
     {
         Ui.StyleWindow(this);
@@ -91,41 +146,13 @@ public sealed partial class MainWindow : Window
         main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
         main.Children.Add(pageHost);
 
-        // (key, icon, name, how to build the page)
-        foreach (var (key, glyph, name, make) in new (string, string, string, Func<Page>)[]
-                 {
-                     ("home", "\uE80F", "Home", () => new HomePage(this)),
-                     ("search", "\uE721", "Search", () => new SearchPage(this)),
-                     ("preview", "\uE8FD", "Sorter", () => new SorterPage(this)),
-                     ("duplicates", "\uE8C8", "Duplicates", () => new DuplicatesPage(this)),
-                     ("cleaner", "\uE74D", "Cleaner", () => new CleanerPage(this)),
-                     ("storage", "\uEDA2", "Storage", () => new StoragePage(this)),
-                     ("booster", "\uE945", "Booster", () => new BoosterPage(this)),
-                     ("benchmark", "\uE9D9", "Benchmark", () => new BenchmarkPage(this)),
-                     ("programs", "\uE71D", "Programs", () => new ProgramsPage(this)),
-                     ("internet", "\uE774", "Internet", () => new InternetPage(this)),
-                     ("shredder", "\uE75C", "Shredder", () => new ShredderPage(this)),
-                     ("clipboard", "\uE77F", "Clipboard", () => new ClipboardPage(this)),
-                     ("portal", "\uE8AB", "Courier", () => new PortalPage(this)),
-                     ("vault", "\uE72E", "Vault", () => new VaultPage(this)),
-                     ("history", "\uE81C", "History", () => new HistoryPage(this)),
-                     ("settings", "\uE713", "Settings", () => new SettingsPage(this)),
-                     ("about", "\uE946", "Help & about", () => new AboutPage(this)),
-                 })
+        foreach (var (key, glyph, name) in PageList)
         {
-            pages[key] = (make, null, Ui.T(name));
+            pages[key] = (() => Make(key), null, Ui.T(name));
             glyphs[key] = glyph;
         }
-        // The sidebar: (key, icon, name, its pages) for a group that folds open, or a page on its own with no pages listed.
-        foreach (var (key, glyph, name, members) in new (string, string, string, string[])[]
-                 {
-                     ("home", "", "", []),
-                     ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
-                     ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
-                     ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet"]),
-                     ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"]),
-                     ("history", "", "", []),
-                 })
+        // The sidebar: a group that folds open, or a page on its own.
+        foreach (var (key, glyph, name, members) in Groups)
         {
             if (members.Length == 0)
                 sidebar.Add(key, glyphs[key], pages[key].Name);
