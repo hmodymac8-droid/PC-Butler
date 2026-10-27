@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.32
+
+- Phone app (Android 1.2.7), Clipboard: a floating button. Switch on "Floating button" and PC Butler's logo floats over every app while Courier is on (Android asks once to let it show over other apps). Tap it and what you copied goes to the PC's clipboard; drag it anywhere and it settles at the side. Also new, "Send what I copy by itself": switch on "PC Butler: send what I copy" in Android's Accessibility settings and whatever you copy in any app goes to the connected PC at once, even with PC Butler closed, and Courier starts with the phone. Android 10 and later let only the app on the screen read the clipboard, so for a split second PC Butler takes the focus to read it: the keyboard of the app you are in may close.
+
 ## 1.22.31
 
 - Resume yesterday is automatic: when it is on, the apps, folders and files you had open before the PC was shut down open again by themselves, shortly after you sign in. No click needed. The tray panel's Resume yesterday tile still switches it on and off.

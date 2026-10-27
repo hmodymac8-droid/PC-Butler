@@ -2019,5 +2019,10 @@
  "Switching Search indexing back on needs administrator rights.": "إعادة تشغيل فهرسة البحث تحتاج إلى صلاحيات المسؤول.",
  "Search indexing could not be switched back on. Press Undo all changes in Booster, Advanced, and allow the helper.": "تعذّرت إعادة تشغيل فهرسة البحث. اضغط «التراجع عن كل التغييرات» في المسرّع، متقدم، واسمح للمساعد.",
  "Search indexing is back on. Store apps start again; if one still doesn't, restart the PC once.": "عادت فهرسة البحث للعمل. تعمل تطبيقات المتجر من جديد؛ وإن لم يعمل أحدها فأعد تشغيل الكمبيوتر مرة.",
- "Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, it opens them all again by itself, shortly after you sign in. Only names and paths are noted, on this PC.": "كل دقيقة يسجّل PC Butler التطبيقات والمجلدات والملفات المفتوحة. بعد إعادة تشغيل Windows يفتحها كلها من جديد تلقائيًا، بعد تسجيل الدخول بقليل. تُسجَّل الأسماء والمسارات فقط، على هذا الكمبيوتر."
+ "Every minute, PC Butler notes which apps, folders and files are open. After Windows restarts, it opens them all again by itself, shortly after you sign in. Only names and paths are noted, on this PC.": "كل دقيقة يسجّل PC Butler التطبيقات والمجلدات والملفات المفتوحة. بعد إعادة تشغيل Windows يفتحها كلها من جديد تلقائيًا، بعد تسجيل الدخول بقليل. تُسجَّل الأسماء والمسارات فقط، على هذا الكمبيوتر.",
+ "Floating button": "الزر العائم",
+ "PC Butler's logo floats over every app while Courier is on. Tap it to send what's copied to the PC; drag it anywhere.": "شعار PC Butler يطفو فوق كل التطبيقات ما دام الساعي شغّالًا. اضغطه ليُرسل المنسوخ إلى الكمبيوتر، واسحبه لأي مكان.",
+ "Send what I copy by itself": "إرسال ما أنسخه تلقائيًا",
+ "Whatever you copy in any app goes to the connected PC at once, even with PC Butler closed. Android allows it only through Accessibility: switch on \"PC Butler: send what I copy\" there.": "أي شيء تنسخه في أي تطبيق يذهب للكمبيوتر المتصل فورًا، حتى لو كان PC Butler مغلقًا. أندرويد يسمح بذلك فقط عبر إمكانية الوصول: فعّل هناك «PC Butler: send what I copy».",
+ "Sent to the PC's clipboard": "أُرسل إلى حافظة الكمبيوتر"
 }
