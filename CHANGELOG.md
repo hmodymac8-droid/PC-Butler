@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.37
+
+- Search indexing really comes back on now: 1.22.35 could miss a tune-up note written by an older version, so it did nothing. PC Butler now checks the Windows Search service itself, and when it is off because of an old Extreme tune-up it switches it back on at start (Windows may show its permission prompt for the helper once). Store apps such as Terminal, Photos and Copilot start again.
+
 ## 1.22.36
 
 - Phone app (Android 1.2.8), Clipboard: a floating button. Switch on "Floating button" and PC Butler's logo floats over every app while Courier is on (Android asks once to let it show over other apps). Tap it and what you copied goes to the PC's clipboard; drag it anywhere and it settles at the side. Also new, "Send what I copy by itself": switch on "PC Butler: send what I copy" in Android's Accessibility settings and whatever you copy in any app goes to the connected PC at once, even with PC Butler closed, and Courier starts with the phone. Android 10 and later let only the app on the screen read the clipboard, so for a split second PC Butler takes the focus to read it: the keyboard of the app you are in may close.
