@@ -657,7 +657,8 @@ public sealed partial class PortalNode
         try
         {
             var offer = new { id = transfer.Id, name = transfer.Name, files = files.Select(file => new { path = file.Path, size = file.Size }) };
-            using (var asked = await client.PostAsJsonAsync($"{Api}/send/offer", offer, stop))
+            using var offerLimit = Soon(stop);
+            using (var asked = await client.PostAsJsonAsync($"{Api}/send/offer", offer, offerLimit.Token))
             {
                 if (asked.StatusCode == HttpStatusCode.Forbidden)
                 {
@@ -676,10 +677,10 @@ public sealed partial class PortalNode
             {
                 if (transfer.Cancelled)
                 {
-                    await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                    await Forget(client, transfer);
                     return;
                 }
-                var state = (await client.GetFromJsonAsync<JsonElement>($"{Api}/send/{transfer.Id}", stop)).GetProperty("state").GetString();
+                var state = await StateThere(client, transfer, stop);
                 if (state == "accepted")
                     break;
                 if (state != "pending" || waited > RequestLife.TotalSeconds)
@@ -712,14 +713,14 @@ public sealed partial class PortalNode
                     }
                     if (transfer.Cancelled)
                     {
-                        await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                        await Forget(client, transfer);
                         return;
                     }
                     var count = await ReadFully(file, buffer, offset, (int)Math.Min(ChunkSize, size - offset), stop);
                     if (count == 0 && offset < size)
                     {
                         Fail(Tr.T("a file changed while it was being sent"));
-                        await client.DeleteAsync($"{Api}/send/{transfer.Id}", CancellationToken.None);
+                        await Forget(client, transfer);
                         return;
                     }
                     try
@@ -735,7 +736,7 @@ public sealed partial class PortalNode
                             transfer.PausedThere = true;
                             Raise();
                             while (!transfer.Cancelled && !transfer.Paused
-                                   && (await client.GetFromJsonAsync<JsonElement>($"{Api}/send/{transfer.Id}", stop)).GetProperty("state").GetString() == "paused")
+                                   && await StateThere(client, transfer, stop) == "paused")
                                 await Task.Delay(1000, stop);
                             transfer.PausedThere = false;
                             Raise();
@@ -760,7 +761,7 @@ public sealed partial class PortalNode
                         // Pause or Cancel cut the piece short; what arrived of it stays on the other PC.
                         transfer.Flight = null;
                     }
-                    catch (Exception error) when (error is HttpRequestException or IOException)
+                    catch (Exception error) when (error is HttpRequestException or IOException || error is OperationCanceledException && !stop.IsCancellationRequested)
                     {
                         if (++failures > 8)
                         {
@@ -774,6 +775,11 @@ public sealed partial class PortalNode
             }
             transfer.State = "done";
             Portal.AddToLog(new PortalLogEntry(DateTime.Now.ToString("yyyy-MM-dd HH:mm"), transfer.Name, transfer.Size, false, transfer.Peer, transfer.Path));
+        }
+        catch (OperationCanceledException) when (!stop.IsCancellationRequested)
+        {
+            // A request had no answer in time: the path died on the way.
+            Fail(Tr.T("the other PC stopped answering"));
         }
         catch (OperationCanceledException)
         {
@@ -828,12 +834,44 @@ public sealed partial class PortalNode
     {
         try
         {
-            using var answer = await client.PostAsync($"{Api}/send/{transfer.Id}/hold?on={(on ? 1 : 0)}", null, stopping.Token);
+            using var limit = Soon(stopping.Token);
+            using var answer = await client.PostAsync($"{Api}/send/{transfer.Id}/hold?on={(on ? 1 : 0)}", null, limit.Token);
         }
-        catch (Exception error) when (error is HttpRequestException or IOException)
+        catch (Exception error) when (error is HttpRequestException or IOException || error is OperationCanceledException && !stopping.IsCancellationRequested)
         {
         }
         Raise();
+    }
+
+    /// <summary>
+    /// A time limit for one short request to the other PC: on a path that died without a word
+    /// it fails in seconds, with a clear message, instead of waiting for minutes.
+    /// </summary>
+    private static CancellationTokenSource Soon(CancellationToken stop, int seconds = 20)
+    {
+        var limit = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        limit.CancelAfter(TimeSpan.FromSeconds(seconds));
+        return limit;
+    }
+
+    /// <summary>Where the other PC says this transfer stands: pending, accepted, paused...</summary>
+    private async Task<string?> StateThere(HttpClient client, PortalTransfer transfer, CancellationToken stop)
+    {
+        using var limit = Soon(stop);
+        return (await client.GetFromJsonAsync<JsonElement>($"{Api}/send/{transfer.Id}", limit.Token)).GetProperty("state").GetString();
+    }
+
+    /// <summary>Tell the other PC to drop this transfer; a PC that can't be reached is not waited for long.</summary>
+    private async Task Forget(HttpClient client, PortalTransfer transfer)
+    {
+        try
+        {
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            using var answer = await client.DeleteAsync($"{Api}/send/{transfer.Id}", limit.Token);
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
+        {
+        }
     }
 
     /// <summary>Fill the buffer from the file at the given place; returns how much was read.</summary>

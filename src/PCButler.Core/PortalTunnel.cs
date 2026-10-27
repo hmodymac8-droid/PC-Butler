@@ -236,7 +236,7 @@ public sealed class ReliableStream : Stream
             if (Over)
                 return;
             var now = Environment.TickCount64;
-            if (now - lastHeard > 45_000 && (unacked.Count > 0 || !ended))
+            if (now - lastHeard > 25_000 && (unacked.Count > 0 || !ended))
             {
                 Fail();
                 return;
@@ -414,8 +414,8 @@ public sealed class PortalLink : IDisposable
     private const byte Magic = 0xB7;
     // 5 to 8 are the streams' own (ReliableStream).
     private const byte Punch = 1, PunchBack = 2, Open = 3, Opened = 4, Ping = 9, Bye = 10;
-    /// <summary>A path nothing is heard on for this long is taken as gone (a Ping goes every 10 seconds).</summary>
-    private const long Silence = 45_000;
+    /// <summary>A path nothing is heard on for this long is taken as gone (a Ping goes every few seconds, so several must be lost).</summary>
+    private const long Silence = 25_000, PingEvery = 5_000;
     private const int MaxStreamsPerPath = 24;
 
     private sealed class Path
@@ -670,21 +670,26 @@ public sealed class PortalLink : IDisposable
     /// <summary>The link's heartbeat: the streams' timers, a small packet now and then to keep the routers' doors open, and forgetting silent paths.</summary>
     private async Task Clock()
     {
-        var ticks = 0;
+        // Timed by the clock, not by counting ticks: a 10 ms wait lasts about 15 ms on Windows, which stretched the pings to 15 seconds.
+        long checkedAt = Environment.TickCount64, pingedAt = checkedAt;
         while (!stopping.IsCancellationRequested)
         {
             foreach (var stream in streams.Values)
                 stream.Tick();
-            if (++ticks % 1000 == 0)
+            var now = Environment.TickCount64;
+            if (now - checkedAt >= 1000)
             {
-                var now = Environment.TickCount64;
+                checkedAt = now;
+                var ping = now - pingedAt >= PingEvery;
+                if (ping)
+                    pingedAt = now;
                 foreach (var (endpoint, path) in paths)
                 {
                     if (!path.Confirmed)
                         continue;
                     if (now - path.LastHeard > Silence)
                         Drop(endpoint);
-                    else
+                    else if (ping)
                         SendControl(Ping, 0, endpoint);
                 }
             }

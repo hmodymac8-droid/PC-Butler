@@ -23,6 +23,8 @@ public sealed class CourierService : Service
     private static int receivedId = 7100;
     private const string PauseAction = "pcbutler.courier.pause", CancelAction = "pcbutler.courier.cancel", DisconnectAction = "pcbutler.courier.disconnect";
     private Timer? timer;
+    /// <summary>Lets the Wi-Fi hand over broadcasts, which is how a PC on the same network asks for this phone.</summary>
+    private global::Android.Net.Wifi.WifiManager.MulticastLock? nearby;
     private string shown = "";
 
     private static Context Context => global::Android.App.Application.Context;
@@ -91,12 +93,32 @@ public sealed class CourierService : Service
         else
             StartForeground(NotificationId, Make());
         timer ??= new Timer(_ => Refresh(), null, 1000, 1000);
+        if (nearby is null)
+        {
+            try
+            {
+                nearby = ((global::Android.Net.Wifi.WifiManager)GetSystemService(WifiService)!).CreateMulticastLock("pcbutler-courier");
+                nearby.SetReferenceCounted(false);
+                nearby.Acquire();
+            }
+            catch (Java.Lang.Exception error)
+            {
+                Log.Warning($"Courier: PCs on this Wi-Fi may not find the phone directly: {error.Message}");
+            }
+        }
         return StartCommandResult.Sticky;
     }
 
     public override void OnDestroy()
     {
         timer?.Dispose();
+        try
+        {
+            nearby?.Release();
+        }
+        catch (Java.Lang.Exception)
+        {
+        }
         base.OnDestroy();
     }
 
