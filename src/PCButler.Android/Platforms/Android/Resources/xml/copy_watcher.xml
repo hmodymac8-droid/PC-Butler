@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Send what I copy" (CopyWatcher.cs): it hears taps, messages and window changes, to tell a copy; it reads no screen content. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+                       android:accessibilityEventTypes="typeViewClicked|typeNotificationStateChanged|typeWindowStateChanged"
+                       android:accessibilityFeedbackType="feedbackGeneric"
+                       android:notificationTimeout="100"
+                       android:canRetrieveWindowContent="false"
+                       android:description="@string/copy_watcher_description" />

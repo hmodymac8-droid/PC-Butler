@@ -154,6 +154,23 @@ public static class ClipboardSync
             Add(text);
     }
 
+    /// <summary>
+    /// Text read from the clipboard outside the app (the floating button, or a copy noticed in
+    /// another app) goes to the connected PCs. Unless <paramref name="again"/>, text already sent
+    /// or received is not sent once more.
+    /// </summary>
+    public static async Task<(int Sent, string? Problem)> SendCopied(string? text, bool again = false)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return (0, null);
+        if (text.Length > PortalNode.MaxClipboard || !again && text == last)
+            return (0, null);
+        var result = await SendToAll(text);
+        if (result.Sent > 0)
+            Add(text);
+        return result;
+    }
+
     private static void Notify(string peer, string text)
     {
         try

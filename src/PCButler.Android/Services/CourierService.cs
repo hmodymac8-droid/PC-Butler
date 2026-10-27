@@ -91,12 +91,14 @@ public sealed class CourierService : Service
         else
             StartForeground(NotificationId, Make());
         timer ??= new Timer(_ => Refresh(), null, 1000, 1000);
+        ClipBubble.Refresh();
         return StartCommandResult.Sticky;
     }
 
     public override void OnDestroy()
     {
         timer?.Dispose();
+        ClipBubble.Hide();
         base.OnDestroy();
     }
 
