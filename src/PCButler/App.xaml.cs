@@ -173,7 +173,7 @@ public partial class App : Application
         StartCourier();
         RecordUsage(ConfigStore.Load().Usage.Record);
         StartResume();
-        OfferIndexingBack();
+        RestoreIndexing();
         TrackInternet(ConfigStore.Load().TrackInternet);
         var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
         waiter.Start();
@@ -652,30 +652,26 @@ public partial class App : Application
     /// Before 1.22.15, Extreme switched off Windows Search. With it off, Windows can fail to
     /// start Store apps (Terminal, Photos, Copilot, PowerToys' menu items), showing "Windows
     /// cannot find ...\WindowsApps\wt.exe" and the like. Indexing is now in no preset, so when a
-    /// preset still has it switched off, offer once to switch it back on.
+    /// preset still has it switched off, it is switched back on by itself, once, without asking.
     /// </summary>
-    private void OfferIndexingBack()
+    private void RestoreIndexing()
     {
         var state = TuneUp.Load();
-        if (ConfigStore.Load().IndexingBackOffered || !state.Applied.ContainsKey("indexing") || state.Level is "" or "custom")
+        if (ConfigStore.Load().IndexingBackRestored || !state.Applied.ContainsKey("indexing") || state.Level is "" or "custom")
             return;
-        ChangeConfig(config => config.IndexingBackOffered = true);
-        Dispatcher.BeginInvoke(AskIndexingBack);
-    }
-
-    private async void AskIndexingBack()
-    {
-        await Task.Delay(TimeSpan.FromSeconds(3));
-        if (!Ui.Ask("Booster", Ui.T("An older version of the Extreme tune-up switched off Windows Search indexing. With it off, Windows can fail "
-                                    + "to start Store apps such as Terminal, Photos and Copilot (\"Windows cannot find ...\").\n\n"
-                                    + "Switch Search indexing back on now? The rest of the tune-up stays as it is."), warning: true))
-            return;
-        if (!await Admin.Ensure("Booster", Ui.T("Switching Search indexing back on needs administrator rights.")))
-            return;
-        var result = await Task.Run(() => TuneUp.Undo(tweak => tweak.Key == "indexing"));
-        Ui.Info("Booster", result.NeedsHelper.Count > 0
-            ? Ui.T("Search indexing could not be switched back on. Press Undo all changes in Booster, Advanced, and allow the helper.")
-            : Ui.T("Search indexing is back on. Store apps start again; if one still doesn't, restart the PC once."));
+        ChangeConfig(config => config.IndexingBackRestored = true);
+        Task.Run(async () =>
+        {
+            // Putting a service back needs the helper; Windows may show its permission prompt.
+            if (!AdminHelper.Running && !Sensors.StartHelper())
+                return;
+            for (var tries = 0; tries < 60 && !AdminHelper.Running; tries++)
+                await Task.Delay(250);
+            var result = TuneUp.Undo(tweak => tweak.Key == "indexing");
+            Log.Info(result.NeedsHelper.Count > 0 ? "Search indexing could not be switched back on" : "Search indexing switched back on");
+            if (result.NeedsHelper.Count == 0)
+                _ = Dispatcher.BeginInvoke(() => Notify("Search indexing is back on, so Store apps such as Terminal and Photos start again.", []));
+        });
     }
 
     // --- Resume yesterday: the apps and folders that were open before Windows restarted ---
