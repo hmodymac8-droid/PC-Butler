@@ -656,21 +656,57 @@ public partial class App : Application
     /// </summary>
     private void RestoreIndexing()
     {
-        var state = TuneUp.Load();
-        if (ConfigStore.Load().IndexingBackRestored || !state.Applied.ContainsKey("indexing") || state.Level is "" or "custom")
+        if (ConfigStore.Load().IndexingBackRestored || TuneUp.ServiceStart("WSearch").Start != 4)
             return;
+        // The service itself decides, not tuneup.json alone: a note from an older version may not read back.
+        string note;
+        try
+        {
+            note = File.Exists(TuneUp.StatePath) ? File.ReadAllText(TuneUp.StatePath) : "";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            note = "";
+        }
+        if (!note.Contains("\"indexing\"", StringComparison.Ordinal))
+        {
+            Log.Info("Search indexing is off, but not by PC Butler: left as it is");
+            return;
+        }
         ChangeConfig(config => config.IndexingBackRestored = true);
+        Log.Info("Search indexing was switched off by an older Extreme tune-up; switching it back on");
         Task.Run(async () =>
         {
-            // Putting a service back needs the helper; Windows may show its permission prompt.
-            if (!AdminHelper.Running && !Sensors.StartHelper())
-                return;
-            for (var tries = 0; tries < 60 && !AdminHelper.Running; tries++)
-                await Task.Delay(250);
-            var result = TuneUp.Undo(tweak => tweak.Key == "indexing");
-            Log.Info(result.NeedsHelper.Count > 0 ? "Search indexing could not be switched back on" : "Search indexing switched back on");
-            if (result.NeedsHelper.Count == 0)
+            try
+            {
+                // Putting a service back needs the helper; Windows may show its permission prompt.
+                if (!AdminHelper.Running && !Sensors.StartHelper())
+                {
+                    Log.Warning("Search indexing stays off: the helper was not allowed to start");
+                    return;
+                }
+                for (var tries = 0; tries < 80 && !AdminHelper.Running; tries++)
+                    await Task.Delay(250);
+                if (!AdminHelper.Running)
+                {
+                    Log.Warning("Search indexing stays off: the helper did not start");
+                    return;
+                }
+                // Windows' own default: automatic, delayed, running.
+                AdminHelper.Send("tune_restore", ["indexing#0=2:1:1"], 60);
+                if (TuneUp.ServiceStart("WSearch").Start == 4)
+                {
+                    Log.Warning("Search indexing stays off: the helper could not switch it on");
+                    return;
+                }
+                TuneUp.Forget("indexing");
+                Log.Info("Search indexing switched back on");
                 _ = Dispatcher.BeginInvoke(() => Notify("Search indexing is back on, so Store apps such as Terminal and Photos start again.", []));
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+                Log.Warning($"Search indexing stays off: {error.Message}");
+            }
         });
     }
 
