@@ -7,7 +7,7 @@ public static class AppInfo
 {
     public const string Name = "PC Butler";
     /// <summary>Must match the tag of the GitHub release this is published as (v1.22.17).</summary>
-    public const string Version = "1.22.35";
+    public const string Version = "1.22.36";
     /// <summary>Where updates are looked for.</summary>
     public const string Repo = "hmodymac8-droid/PC-Butler";
     public const string ExeName = "PCButler.exe";

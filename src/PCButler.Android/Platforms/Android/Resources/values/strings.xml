@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="copy_watcher_description">Sends what you copy in any app to the PCs connected through Courier. It notices a copy by the Copy button or the Copied message, then reads the copied text. It reads nothing else on the screen.</string>
+</resources>
