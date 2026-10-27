@@ -175,8 +175,8 @@ public sealed class Config
     [JsonPropertyName("drop_zone")] public bool DropZone { get; set; } = true;
     /// <summary>"Resume yesterday": note the open apps and folders, so they can be opened again after a restart.</summary>
     [JsonPropertyName("resume_session")] public bool ResumeSession { get; set; }
-    /// <summary>Asked once whether to switch Search indexing back on, after an older Extreme tune-up had switched it off.</summary>
-    [JsonPropertyName("indexing_back_offered")] public bool IndexingBackOffered { get; set; }
+    /// <summary>Search indexing, switched off by an older Extreme tune-up, was switched back on (tried once).</summary>
+    [JsonPropertyName("indexing_back_restored")] public bool IndexingBackRestored { get; set; }
     /// <summary>The Internet page's tracker: count what goes over the network each day.</summary>
     [JsonPropertyName("track_internet")] public bool TrackInternet { get; set; } = true;
     /// <summary>The Internet page's "Which apps use it": the helper counts each app's traffic. Off until started there.</summary>
