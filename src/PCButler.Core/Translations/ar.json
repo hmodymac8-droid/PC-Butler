@@ -1546,6 +1546,7 @@
  "the folder {0} could not be made": "تعذّر إنشاء المجلد {0}",
  "the folder's app doesn't let it be removed": "التطبيق المسؤول عن المجلد لا يسمح بحذفه",
  "the other PC could not be reached": "تعذّر الوصول إلى الحاسوب الآخر",
+ "the other PC stopped answering": "توقّف الحاسوب الآخر عن الرد",
  "the other PC is not connected": "الحاسوب الآخر غير متصل",
  "the other PC no longer trusts this one; pair them again": "الحاسوب الآخر لم يعد يثق بهذا الحاسوب؛ اقرنهما من جديد",
  "the other PC sent more than it announced": "أرسل الحاسوب الآخر أكثر مما أعلن",
