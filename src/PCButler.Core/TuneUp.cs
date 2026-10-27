@@ -258,6 +258,20 @@ public static partial class TuneUp
         return new TuneResult(changed, needsHelper);
     }
 
+    /// <summary>Drop a tweak from the note without touching Windows (it was put back another way).</summary>
+    public static void Forget(string key, string? statePath = null)
+    {
+        lock (Gate)
+        {
+            var state = Load(statePath);
+            if (!state.Applied.Remove(key))
+                return; // not there, or a note that does not read back: left as it is
+            if (!state.Applied.Keys.Any(applied => Catalogue.Any(tweak => tweak.Key == applied && tweak.Group == "tune")))
+                state.Level = "";
+            Save(state, statePath);
+        }
+    }
+
     private static string Entry(List<string> answer, string key, int index)
     {
         var start = $"{key}#{index}=";
