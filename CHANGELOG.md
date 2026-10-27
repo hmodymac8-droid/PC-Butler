@@ -3,9 +3,13 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.22.32
+## 1.22.33
 
 - Phone app (Android 1.2.7), Clipboard: a floating button. Switch on "Floating button" and PC Butler's logo floats over every app while Courier is on (Android asks once to let it show over other apps). Tap it and what you copied goes to the PC's clipboard; drag it anywhere and it settles at the side. Also new, "Send what I copy by itself": switch on "PC Butler: send what I copy" in Android's Accessibility settings and whatever you copy in any app goes to the connected PC at once, even with PC Butler closed, and Courier starts with the phone. Android 10 and later let only the app on the screen read the clipboard, so for a split second PC Butler takes the focus to read it: the keyboard of the app you are in may close.
+
+## 1.22.32
+
+- Command palette: press Alt + Space in any program to open one box for everything. Type a few letters (in English or Arabic) to jump to any page or Settings tab, or to run an action: Sort now, Boost, the performance overlay, the drop zone, Scan for junk, Resume yesterday, Check for updates, Quit. The files that match show underneath, from the same instant index as Win + F. Type "file " to search only files, "=" to work out a sum (also sizes and speeds: "5 GB in MB", "4 GB at 100 Mbps" says how long it takes), and "?" to see these. The commands you use most come first, and each shows its shortcut. It is built the first time you open it and then only hidden, so it costs nothing until then and comes up at once after. Win + F opens the same window for files, as before, now faster after the first time. The shortcut can be changed on Settings, Hotkeys.
 
 ## 1.22.31
 
