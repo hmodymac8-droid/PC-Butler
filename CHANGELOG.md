@@ -3,7 +3,7 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
-## 1.22.34
+## 1.22.35
 
 - Store apps failing to start ("Windows cannot find '…wt.exe'", and Terminal, Photos or Copilot not opening): when an Extreme tune-up from before 1.22.15 still has Windows Search indexing switched off, PC Butler now switches it back on by itself at start, without asking, and leaves the rest of the tune-up as it is. Windows may show its permission prompt once for the helper.
 
