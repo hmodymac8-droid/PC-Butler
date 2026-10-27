@@ -53,8 +53,10 @@ public class MainActivity : MauiAppCompatActivity
     public override void OnWindowFocusChanged(bool hasFocus)
     {
         base.OnWindowFocusChanged(hasFocus);
-        if (hasFocus)
-            _ = ClipboardSync.CheckCopied();
+        if (!hasFocus)
+            return;
+        _ = ClipboardSync.CheckCopied();
+        ClipBubble.CameBack();
     }
 
     protected override void OnNewIntent(Intent? intent)

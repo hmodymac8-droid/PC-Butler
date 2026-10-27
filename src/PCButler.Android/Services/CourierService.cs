@@ -106,6 +106,7 @@ public sealed class CourierService : Service
                 Log.Warning($"Courier: PCs on this Wi-Fi may not find the phone directly: {error.Message}");
             }
         }
+        ClipBubble.Refresh();
         return StartCommandResult.Sticky;
     }
 
@@ -119,6 +120,7 @@ public sealed class CourierService : Service
         catch (Java.Lang.Exception)
         {
         }
+        ClipBubble.Hide();
         base.OnDestroy();
     }
 
