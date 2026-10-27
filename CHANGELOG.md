@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.38
+
+- Search indexing comes back on for sure: 1.22.37 asked PC Butler's administrator helper to do it, and on some PCs the helper did not answer in time. It is now switched back on directly, with one Windows permission prompt (none on PCs set not to ask). It is tried once more on PCs where 1.22.35 to 1.22.37 did not manage.
+
 ## 1.22.37
 
 - Search indexing really comes back on now: 1.22.35 could miss a tune-up note written by an older version, so it did nothing. PC Butler now checks the Windows Search service itself, and when it is off because of an old Extreme tune-up it switches it back on at start (Windows may show its permission prompt for the helper once). Store apps such as Terminal, Photos and Copilot start again.

@@ -673,30 +673,34 @@ public partial class App : Application
             Log.Info("Search indexing is off, but not by PC Butler: left as it is");
             return;
         }
-        ChangeConfig(config => config.IndexingBackRestored = true);
         Log.Info("Search indexing was switched off by an older Extreme tune-up; switching it back on");
         Task.Run(async () =>
         {
             try
             {
-                // Putting a service back needs the helper; Windows may show its permission prompt.
-                if (!AdminHelper.Running && !Sensors.StartHelper())
+                // One small command with administrator rights (Windows may show its permission prompt),
+                // put back to Windows' own default: automatic, delayed, running. The helper is not
+                // used: on some PCs it did not answer in time.
+                var sc = Path.Combine(Environment.SystemDirectory, "sc.exe");
+                var start = new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                                                                    $"/c {sc} config WSearch start= delayed-auto & {sc} start WSearch")
                 {
-                    Log.Warning("Search indexing stays off: the helper was not allowed to start");
+                    UseShellExecute = true, Verb = "runas", WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                };
+                try
+                {
+                    using var process = System.Diagnostics.Process.Start(start);
+                    if (process is not null)
+                        await process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromSeconds(60)).Token);
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    Log.Warning("Search indexing stays off: the permission prompt was declined");
                     return;
                 }
-                for (var tries = 0; tries < 80 && !AdminHelper.Running; tries++)
-                    await Task.Delay(250);
-                if (!AdminHelper.Running)
-                {
-                    Log.Warning("Search indexing stays off: the helper did not start");
-                    return;
-                }
-                // Windows' own default: automatic, delayed, running.
-                AdminHelper.Send("tune_restore", ["indexing#0=2:1:1"], 60);
                 if (TuneUp.ServiceStart("WSearch").Start == 4)
                 {
-                    Log.Warning("Search indexing stays off: the helper could not switch it on");
+                    Log.Warning("Search indexing stays off: Windows did not switch it on");
                     return;
                 }
                 TuneUp.Forget("indexing");
@@ -706,6 +710,11 @@ public partial class App : Application
             catch (Exception error) when (error is not OutOfMemoryException)
             {
                 Log.Warning($"Search indexing stays off: {error.Message}");
+            }
+            finally
+            {
+                // Tried once, whatever came of it: the permission prompt is not shown at every start.
+                _ = Dispatcher.BeginInvoke(() => ChangeConfig(config => config.IndexingBackRestored = true));
             }
         });
     }
