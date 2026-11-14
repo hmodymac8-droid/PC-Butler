@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.39
+
+- Phone app (Android 1.2.9), Clipboard: the page opens at once and stays smooth. It used to freeze because it built a card for every saved text at once, showed each text in full (a text copied on a PC can be up to 1 MB), read and wrote the saved list on the screen's own thread, and rebuilt itself again for every time the page had been opened before. Now the list is read in the background, the newest 30 show first with "Show more" for the rest, a long text shows its start (copying or sending it still takes all of it), and the 200 newest unpinned texts are kept (pinned ones always stay).
+
 ## 1.22.38
 
 - Search indexing comes back on for sure: 1.22.37 asked PC Butler's administrator helper to do it, and on some PCs the helper did not answer in time. It is now switched back on directly, with one Windows permission prompt (none on PCs set not to ask). It is tried once more on PCs where 1.22.35 to 1.22.37 did not manage.
