@@ -29,6 +29,7 @@ public static class ClipboardSync
 {
     private static string StoreFile => Path.Combine(PCButler.Core.AppInfo.DataDir, "snippets.json");
     private static readonly object gate = new();
+    private static readonly object fileGate = new();
     private static List<Snippet>? snippets;
     private static string last = ""; // the last text sent or received: the same text never goes back and forth
     private static int receivedId = 7300;
@@ -46,7 +47,14 @@ public static class ClipboardSync
         get
         {
             lock (gate)
-                return snippets ??= Load();
+            {
+                if (snippets is null)
+                {
+                    snippets = Load();
+                    Trim(snippets);
+                }
+                return snippets;
+            }
         }
     }
 
@@ -62,14 +70,64 @@ public static class ClipboardSync
         }
     }
 
-    public static void Save()
+    /// <summary>The most kept: older unpinned snippets beyond this are let go, so the list stays quick to show.</summary>
+    public const int MaxKept = 200;
+
+    /// <summary>A copy of the snippets, pinned first then newest, safe to read on any thread.</summary>
+    public static List<Snippet> Snapshot()
     {
         lock (gate)
-        {
-            Directory.CreateDirectory(PCButler.Core.AppInfo.DataDir);
-            File.WriteAllText(StoreFile, JsonSerializer.Serialize(Snippets));
-        }
+            return [.. Snippets.OrderByDescending(item => item.Pinned).ThenByDescending(item => item.Id)];
+    }
+
+    public static void TogglePin(Snippet snippet)
+    {
+        lock (gate)
+            snippet.Pinned = !snippet.Pinned;
+        Save();
+    }
+
+    public static void Remove(Snippet snippet)
+    {
+        lock (gate)
+            Snippets.Remove(snippet);
+        Save();
+    }
+
+    /// <summary>The snippets to the file, off the UI thread (a long list or a big text would stall the page).</summary>
+    public static void Save()
+    {
         Changed?.Invoke();
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                string json;
+                lock (gate)
+                    json = JsonSerializer.Serialize(Snippets);
+                lock (fileGate)
+                {
+                    Directory.CreateDirectory(PCButler.Core.AppInfo.DataDir);
+                    File.WriteAllText(StoreFile, json);
+                }
+            }
+            catch (Exception error)
+            {
+                Log.Warning($"The saved snippets could not be written: {error.Message}");
+            }
+        });
+    }
+
+    /// <summary>Unpinned snippets past <see cref="MaxKept"/> go, oldest first. Called under the lock.</summary>
+    private static void Trim(List<Snippet> list)
+    {
+        var extra = list.Count(item => !item.Pinned) - MaxKept;
+        for (var index = list.Count - 1; index >= 0 && extra > 0; index--)
+            if (!list[index].Pinned)
+            {
+                list.RemoveAt(index);
+                extra--;
+            }
     }
 
     /// <summary>Keep a text, the same text once, on top.</summary>
@@ -84,6 +142,7 @@ public static class ClipboardSync
             var pinned = list.Any(item => item.Text == text && item.Pinned);
             list.RemoveAll(item => item.Text == text);
             list.Insert(0, new Snippet { Id = DateTime.UtcNow.Ticks, Text = text, Saved = DateTime.Now, From = from, Pinned = pinned });
+            Trim(list);
         }
         Save();
     }
