@@ -21,7 +21,10 @@ public sealed class ClipboardPage : AppPage
     private readonly Switch watch = new() { OnColor = Theme.Primary, ThumbColor = Theme.Text, VerticalOptions = LayoutOptions.Center };
     private bool showing; // the switches are being set to what is on, not by the user
     private Action closeAdd = () => { };
-    private static List<Snippet> snippets => ClipboardSync.Snippets;
+    private const int PageSize = 30;   // cards built at a time; "Show more" adds the next ones
+    private const int PreviewLength = 400; // a long text shows its start only (up to 1 MB can arrive from a PC)
+    private int shown = PageSize;
+    private bool visible, queued, built;
 
     public ClipboardPage() : base("Clipboard", tool: true)
     {
@@ -66,17 +69,49 @@ public sealed class ClipboardPage : AppPage
             closeAdd();
         });
         addBox = new VerticalStackLayout { Spacing = 12, Children = { Theme.BoxOf(typed, 12, Theme.Card), save } };
-        ClipboardSync.Changed += () => MainThread.BeginInvokeOnMainThread(Show);
-        ClipBubble.Back += () => MainThread.BeginInvokeOnMainThread(Sync);
-        Show();
+        list.Children.Add(Theme.CardOf(Theme.Faint(Tr.T("Loading…"), 13), 16));
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        if (!visible)
+        {
+            visible = true;
+            ClipboardSync.Changed += OnChanged;
+            ClipBubble.Back += OnBack;
+        }
         share.IsToggled = ClipboardSync.On;
         Sync();
-        Show();
+        Queue();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        visible = false;
+        ClipboardSync.Changed -= OnChanged;
+        ClipBubble.Back -= OnBack;
+    }
+
+    private void OnChanged() => MainThread.BeginInvokeOnMainThread(Queue);
+
+    private void OnBack() => MainThread.BeginInvokeOnMainThread(Sync);
+
+    /// <summary>One rebuild for any burst of changes, after the page has had a frame to show.</summary>
+    private void Queue()
+    {
+        if (queued)
+            return;
+        queued = true;
+        Dispatcher.Dispatch(async () =>
+        {
+            // The first time, reading the saved file happens off the UI thread.
+            var items = built ? ClipboardSync.Snapshot() : await Task.Run(ClipboardSync.Snapshot);
+            queued = false;
+            built = true;
+            Show(items);
+        });
     }
 
     /// <summary>The floating button and the copy watcher as Android has them now (the user may come back from its settings).</summary>
@@ -87,8 +122,6 @@ public sealed class ClipboardPage : AppPage
         watch.IsToggled = CopyWatcher.On;
         showing = false;
     }
-
-    private static void Save() => ClipboardSync.Save();
 
     private void OpenAdd() => closeAdd = OpenSheet(Tr.T("Add text"), addBox);
 
@@ -118,40 +151,55 @@ public sealed class ClipboardPage : AppPage
         await Say(sent > 0 ? Tr.T("On the PC's clipboard now: press Ctrl+V there to paste it.") : problem ?? Tr.T("Connect to a PC on the Courier page first."));
     }
 
-    private void Show()
+    private void Show(List<Snippet> items)
     {
-        count.Text = snippets.Count.ToString();
-        list.Children.Clear();
-        if (snippets.Count == 0)
-            list.Children.Add(Theme.CardOf(Theme.Empty("i_clipboard_m.png", Tr.T("No saved text"), Tr.T("Copy something in any app, then tap Save what's copied."))));
-        foreach (var snippet in snippets.OrderByDescending(item => item.Pinned).ThenByDescending(item => item.Id))
+        count.Text = items.Count.ToString();
+        var cards = new List<View>();
+        if (items.Count == 0)
+            cards.Add(Theme.CardOf(Theme.Empty("i_clipboard_m.png", Tr.T("No saved text"), Tr.T("Copy something in any app, then tap Save what's copied."))));
+        foreach (var snippet in items.Take(shown))
+            cards.Add(Card(snippet));
+        if (items.Count > shown)
         {
-            var label = new HorizontalStackLayout { Spacing = 6 };
-            if (snippet.Pinned)
-                label.Children.Add(Theme.Icon("i_pin_m.png", 13));
-            label.Children.Add(Theme.Faint((snippet.Pinned ? Tr.T("Pinned") : snippet.Saved.ToString("g"))
-                                           + (snippet.From.Length > 0 ? "  ·  " + Tr.T("From {0}", snippet.From) : ""), 11.5));
-            var text = new Label { Text = snippet.Text, FontSize = 14.5, TextColor = Theme.Text, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 6 };
-            Border copy = null!;
-            copy = Theme.IconButton("i_copy_w.png", async () =>
-            {
-                await Clipboard.Default.SetTextAsync(snippet.Text);
-                Theme.SetIcon(copy, "i_check_m.png");
-                await Task.Delay(1400);
-                Theme.SetIcon(copy, "i_copy_w.png");
-            }, Theme.SurfaceRaised, 40);
-            var pin = Theme.IconButton(snippet.Pinned ? "i_pin_off_w.png" : "i_pin_w.png", () => { snippet.Pinned = !snippet.Pinned; Save(); }, Theme.SurfaceRaised, 40);
-            var delete = Theme.IconButton("i_trash_2_r.png", () => { snippets.Remove(snippet); Save(); }, Theme.DangerBack, 40);
-            var send = Theme.Tonal(Tr.T("Send to PC"), () => _ = Send(snippet), "i_send_m.png");
-            (send.HeightRequest, send.MinimumHeightRequest, send.Padding, send.FontSize) = (40, 40, new Thickness(14, 0), 13);
-            var buttons = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star) }, ColumnSpacing = 8 };
-            buttons.Add(copy, 0);
-            buttons.Add(pin, 1);
-            buttons.Add(delete, 2);
-            send.HorizontalOptions = LayoutOptions.End;
-            buttons.Add(send, 3);
-            list.Children.Add(Theme.CardOf(new VerticalStackLayout { Spacing = 10, Children = { label, text, buttons } }, 16));
+            var more = Theme.Tonal(Tr.T("Show more ({0})", items.Count - shown), () => { shown += PageSize; Queue(); });
+            more.Margin = new Thickness(0, 4, 0, 12);
+            cards.Add(more);
         }
+        // Swapped in one go, so the page lays out once instead of once per card.
+        list.Children.Clear();
+        foreach (var card in cards)
+            list.Children.Add(card);
+    }
+
+    private static string Preview(string text) => text.Length <= PreviewLength ? text : text[..PreviewLength].TrimEnd() + "…";
+
+    private View Card(Snippet snippet)
+    {
+        var label = new HorizontalStackLayout { Spacing = 6 };
+        if (snippet.Pinned)
+            label.Children.Add(Theme.Icon("i_pin_m.png", 13));
+        label.Children.Add(Theme.Faint((snippet.Pinned ? Tr.T("Pinned") : snippet.Saved.ToString("g"))
+                                       + (snippet.From.Length > 0 ? "  ·  " + Tr.T("From {0}", snippet.From) : ""), 11.5));
+        var text = new Label { Text = Preview(snippet.Text), FontSize = 14.5, TextColor = Theme.Text, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 6 };
+        Border copy = null!;
+        copy = Theme.IconButton("i_copy_w.png", async () =>
+        {
+            await Clipboard.Default.SetTextAsync(snippet.Text);
+            Theme.SetIcon(copy, "i_check_m.png");
+            await Task.Delay(1400);
+            Theme.SetIcon(copy, "i_copy_w.png");
+        }, Theme.SurfaceRaised, 40);
+        var pin = Theme.IconButton(snippet.Pinned ? "i_pin_off_w.png" : "i_pin_w.png", () => ClipboardSync.TogglePin(snippet), Theme.SurfaceRaised, 40);
+        var delete = Theme.IconButton("i_trash_2_r.png", () => ClipboardSync.Remove(snippet), Theme.DangerBack, 40);
+        var send = Theme.Tonal(Tr.T("Send to PC"), () => _ = Send(snippet), "i_send_m.png");
+        (send.HeightRequest, send.MinimumHeightRequest, send.Padding, send.FontSize) = (40, 40, new Thickness(14, 0), 13);
+        var buttons = new Grid { ColumnDefinitions = { new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star) }, ColumnSpacing = 8 };
+        buttons.Add(copy, 0);
+        buttons.Add(pin, 1);
+        buttons.Add(delete, 2);
+        send.HorizontalOptions = LayoutOptions.End;
+        buttons.Add(send, 3);
+        return Theme.CardOf(new VerticalStackLayout { Spacing = 10, Children = { label, text, buttons } }, 16);
     }
 
     /// <summary>The text onto a connected PC's clipboard; a PC with an older PC Butler gets it as a small text file.</summary>

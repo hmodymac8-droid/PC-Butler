@@ -2038,5 +2038,7 @@
  "Scan for junk": "البحث عن الملفات غير الضرورية",
  "Quit PC Butler": "إغلاق PC Butler",
  "PC Butler": "PC Butler",
- "Search indexing is back on, so Store apps such as Terminal and Photos start again.": "عادت فهرسة البحث للعمل، فصارت تطبيقات المتجر مثل Terminal والصور تعمل من جديد."
+ "Search indexing is back on, so Store apps such as Terminal and Photos start again.": "عادت فهرسة البحث للعمل، فصارت تطبيقات المتجر مثل Terminal والصور تعمل من جديد.",
+ "Loading…": "جارٍ التحميل…",
+ "Show more ({0})": "عرض المزيد ({0})"
 }
