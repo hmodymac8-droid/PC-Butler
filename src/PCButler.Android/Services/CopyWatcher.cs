@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
+#if !PLAY_STORE
 using Android.AccessibilityServices;
 using Android.App;
 using Android.Content;
@@ -87,3 +88,4 @@ public sealed class CopyWatcher : AccessibilityService
 
     public override void OnInterrupt() { }
 }
+#endif

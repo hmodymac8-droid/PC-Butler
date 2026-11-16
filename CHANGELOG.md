@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.42
+
+- Phone app (Android 1.2.10): the Google Play version leaves out "Send what I copy by itself", because Google Play does not allow its Accessibility service for this. Everything else is the same there, including the floating button that sends what's copied with one tap. The phone app downloaded from PC Butler (Help & about, Get the phone app) still has it.
+
 ## 1.22.41
 
 - Get the phone app without the Play Store: Help & about has a new "Get the phone app" button. It shows a QR code to scan with the phone's camera, and the same link to copy or open. The link always gives the latest Android app.
