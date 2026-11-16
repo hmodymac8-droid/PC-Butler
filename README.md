@@ -2,7 +2,7 @@
 
 **English** | [العربية](#العربية)
 
-A small Windows program that keeps your PC tidy. It moves files that have been sitting in your Downloads folder for a while into category folders (Documents, Pictures, Videos…), either automatically in the background or only when you say so, and every change is logged and can be undone. It also finds duplicate files, cleans junk files, shows what fills your drives, trims startup apps, uninstalls and updates programs, measures your internet speed and keeps private files in an encrypted vault.
+A small Windows program that keeps your PC tidy. It moves files that have been sitting in your Downloads folder for a while into category folders (Documents, Pictures, Videos…), either automatically in the background or only when you say so, and every change is logged and can be undone. It also finds duplicate files, cleans junk files, shows what fills your drives, trims startup apps, uninstalls and updates programs, finds any file in an instant, measures your internet speed, lists the devices on your network, sends files to your other PCs and your phone, and keeps private files in an encrypted vault. A companion app for Android phones does much the same on the phone.
 
 PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-droid/downloads-sorter), with the same look and everything it could do, plus the pages added since. On first start it brings along Downloads Sorter's settings, history and vault (it copies them; the old program keeps working).
 
@@ -14,9 +14,15 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 
 ![PC Butler: the Benchmark page](docs/screenshot-benchmark.png)
 
+![PC Butler: the Scan LAN page](docs/screenshot-lan.png)
+
+The pages sit in groups in the sidebar: **Files** (Search, Sorter, Duplicates, Storage), **Clean up** (Cleaner, Programs, Shredder), **Speed** (Booster, Benchmark), **Network** (Internet, Scan LAN) and **Share & protect** (Courier, Clipboard, Vault), with Home and History on their own.
+
 ## Features
 
 - **Home.** The PC at a glance, on ring gauges: processor, memory and graphics-card use, the graphics card's temperature, free space on every drive, and a neatness score out of 100 with the reasons it lost points. The tray icon shows processor and memory use and warns when they stay nearly full.
+- **Search.** Every file and folder on your drives, found as you type, from an index PC Butler keeps up to date by itself (no administrator rights). Win + F opens a search box from any program.
+- **Command palette.** Alt + Space in any program opens one box for everything: type a few letters to jump to a page or a Settings tab or to run an action (Sort now, Boost, the overlay, Check for updates…), with matching files underneath. `=` works out sums, sizes and transfer times.
 - **Sorts by age and type.** Files older than a set number of days (7 by default) move into category folders by file extension. Each category can have its own age, and can delete its files (to the Recycle Bin) instead of moving them.
 - **Preview first.** See exactly which files will move and where before anything happens, and exclude the ones you want to keep.
 - **Automatic mode.** Runs in the background with a tray icon, checks on a schedule (every so many minutes, daily or weekly at a time you set), and can start with Windows (a separate switch). Cleaning can be scheduled the same way. After each run a report window lets you approve or undo what moved.
@@ -28,6 +34,7 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Benchmark.** A performance overlay for games: frames per second and frame time, processor, graphics card, memory (RAM) and video memory (VRAM), temperatures, the graphics card's fan, network speed and a clock in a corner of the screen, each with its own tick box. You arrange it yourself: the order of the readings, a column or one line, its size, how far from the corner, and its colours. PC Butler notices a game when it fills the screen and shows the overlay by itself, or it can stay on all the time; it is off until you switch it on, and clicks pass through it. It is an ordinary window on top, so it shows over windowed and borderless games, not over exclusive full screen. Frames per second are counted by the administrator helper from Windows' own events, with nothing added to the game. Each game session is kept with its average and highest frame rate, the slowest 1% and the hottest temperatures. PC Butler also records what each app uses of the processor, the graphics card, the memory and the disk (and of the internet, while the helper runs), day by day for 90 days, for a report that can be saved as a spreadsheet.
 - **Programs.** Every installed program in one list, with the drive it is on and a filter by drive; double-click one to open it. Uninstall runs the program's own uninstaller and then shows what it left behind (folders, shortcuts, its own registry key) for you to tick: folders go to the Recycle Bin, registry keys are saved to a `.reg` file first. Updates come from winget, Windows' package manager.
 - **Internet.** A speed test: download, upload and response time, measured against Cloudflare's speed-test servers, with a history of earlier results. The page also shows the PC's local and public IP address, each with a Copy button.
+- **Scan LAN.** Lists every device on your network (the same Wi-Fi or cable) with its IP and MAC address, its name, the maker of its network adapter, what kind of device it probably is and whether it is online now, with its ping time. Phones and PCs that ignore pings are found too, as every address is also asked for its MAC address. Each device can be copied, connected to (its web page, shared folders, Remote Desktop, SSH, VNC, or Courier to send it files), given a name of your own, and opened in Info. Devices seen before stay listed as offline, with when they were last seen.
 - **Vault.** Password-protected storage: files you add are encrypted (AES-256) and removed from where they were.
 - **Auto clean-up.** Optionally recycle old files in a category (for example installers after 90 days). Only files the program itself moved are touched.
 - **Never-move list.** Protect files by name or pattern (`*.torrent`). Files you put back with Undo are not moved again automatically.
@@ -40,8 +47,17 @@ PC Butler is the C# rewrite of [Downloads Sorter](https://github.com/hmodymac8-d
 - **Hotkeys.** Shortcuts that work in any program, set on a tab of the Settings page: open PC Butler, sort now, start or stop Boost for the program in front, show or hide the overlay or the drop zone, open Courier.
 - **English and Arabic.** The interface follows Windows' language, or you pick one in Settings.
 - **Clipboard manager.** Keeps what you copy (text, files, pictures; 500 items by default), with search and pinning. An item can be locked with a password: it is kept encrypted, shows nothing of itself, and asks for the password when it is pasted, unless you unlock it for a while. A shortcut opens the list in any program and pastes the item you pick. Off until you turn it on.
+- **Phone app.** *Help & about > Get the phone app* shows a QR code: scan it with the phone's camera to download the Android app, no Play Store needed (the link always gives the latest build). See *Phone app* below.
 - **Updates.** Checks this repository's releases, notifies you when a new version is out, and updates with one click (or automatically, if you turn that on).
 - **Safe by design.** Unfinished downloads and shortcuts are skipped, nothing is ever overwritten, and deletions go to the Recycle Bin unless you choose to delete for good.
+
+## Phone app (Android)
+
+PC Butler for Android is a companion for the phone: Courier (send files and folders to and from your PCs by the same nine-digit IDs, with notifications when they arrive), Clipboard (send what you copied to the PC and back, with a floating button that sends it in one tap), Sorter, Duplicates, Storage, Cleaner, Search, Apps (open, inspect or uninstall apps), Benchmark (the phone's processor and storage measured), a Vault and History, in English and Arabic.
+
+![The Get the phone app window](docs/screenshot-phone-app.png)
+
+Get it from *Help & about > Get the phone app* on the PC, or straight from [dist/android/PCButler.apk](dist/android/PCButler.apk). Android asks once to allow installing from that source. The Google Play version is the same app without "Send what I copy by itself", which Google Play does not allow; the downloaded one has it. The app's privacy policy is in [docs/privacy-policy.md](docs/privacy-policy.md).
 
 ## Administrator rights
 
@@ -80,13 +96,16 @@ This publishes the program with the .NET runtime included (nothing else is neede
 |---|---|
 | `src/PCButler.Core` | The engine: settings, rules, moving, history, undo, Recycle Bin, duplicates, cleaner, storage, booster and Boost, the administrator helper, installed programs, speed test, vault, updates and the background loop |
 | `src/PCButler` | The windows (WPF): control panel, tray icon, report window, launch screen |
+| `src/PCButler.Android` | The Android phone app (.NET MAUI), sharing the engine's Courier, sorting and vault code |
 | `tests/PCButler.Tests` | Tests of the engine |
 | `installer/installer.iss` | The setup wizard (Inno Setup script) |
 | `build.ps1` | Publishes the program and compiles the setup wizard |
+| `build-android.ps1` | Builds and signs the phone app and copies it to `dist/android/PCButler.apk` (`-Bundle` makes the Google Play bundle) |
+| `docs/` | Screenshots, the phone app's privacy policy and the plan for search |
 
 Settings, the history log, the activity log and registry backups are stored in `%APPDATA%\PCButler`.
 
-The speed test and the public-IP line talk to `speed.cloudflare.com` and update checks talk to GitHub and winget's source. Courier talks only to the other PCs, and only while it is switched on. It also uses the public directory of the BitTorrent network (its DHT) to look IDs up: the computers in that directory see this PC's internet address, as they do for anyone using a torrent program, and no file or file name is ever sent to them. Each PC running Courier also asks its own router to forward one port to it. Nothing else leaves the PC.
+The speed test and the public-IP line talk to `speed.cloudflare.com` and update checks talk to GitHub and winget's source. Scan LAN talks only to devices on your own network, apart from reading the list of adapter makers from Wireshark's public list once every 120 days. Courier talks only to the other PCs, and only while it is switched on. It also uses the public directory of the BitTorrent network (its DHT) to look IDs up: the computers in that directory see this PC's internet address, as they do for anyone using a torrent program, and no file or file name is ever sent to them. Each PC running Courier also asks its own router to forward one port to it. Nothing else leaves the PC.
 
 ## Support the project
 
@@ -112,13 +131,31 @@ The bundled fonts in `src/PCButler/Fonts`, [DM Sans](https://github.com/googlefo
 
 [English](#pc-butler) | **العربية**
 
-برنامج صغير لنظام ويندوز يحافظ على ترتيب جهازك. ينقل الملفات التي بقيت في مجلد التنزيلات لفترة إلى مجلدات مصنّفة (مستندات، صور، فيديو…)، إما تلقائيًا في الخلفية أو فقط عندما تطلب ذلك، وكل تغيير يُسجَّل ويمكن التراجع عنه. كما يعثر على الملفات المكررة، وينظّف الملفات غير الضرورية، ويعرض ما يملأ أقراصك، ويخفّف برامج بدء التشغيل، ويلغي تثبيت البرامج ويحدّثها، ويقيس سرعة الإنترنت، ويحفظ الملفات الخاصة في خزنة مشفّرة.
+برنامج صغير لنظام ويندوز يحافظ على ترتيب جهازك. ينقل الملفات التي بقيت في مجلد التنزيلات لفترة إلى مجلدات مصنّفة (مستندات، صور، فيديو…)، إما تلقائيًا في الخلفية أو فقط عندما تطلب ذلك، وكل تغيير يُسجَّل ويمكن التراجع عنه. كما يعثر على الملفات المكررة، وينظّف الملفات غير الضرورية، ويعرض ما يملأ أقراصك، ويخفّف برامج بدء التشغيل، ويلغي تثبيت البرامج ويحدّثها، ويعثر على أي ملف فورًا، ويقيس سرعة الإنترنت، ويعرض الأجهزة المتصلة بشبكتك، ويرسل الملفات إلى حواسيبك الأخرى وجوالك، ويحفظ الملفات الخاصة في خزنة مشفّرة. وله تطبيق مرافق لجوالات أندرويد يقوم بأغلب ذلك على الجوال.
 
 PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://github.com/hmodymac8-droid/downloads-sorter) بلغة C#، بالشكل نفسه وبكل ما كان يفعله، مع الصفحات التي أُضيفت بعده. عند أول تشغيل ينسخ إعدادات Downloads Sorter وسجله وخزنته (نسخًا، فيبقى البرنامج القديم يعمل).
+
+</div>
+
+![PC Butler: الصفحة الرئيسية](docs/screenshot-ar.png)
+
+![PC Butler: صفحة الفرز](docs/screenshot-sorter-ar.png)
+
+![PC Butler: تبويب «متقدّم» في المسرّع](docs/screenshot-booster-ar.png)
+
+![PC Butler: صفحة قياس الأداء](docs/screenshot-benchmark-ar.png)
+
+![PC Butler: صفحة فحص الشبكة](docs/screenshot-lan-ar.png)
+
+<div dir="rtl">
+
+الصفحات مجمّعة في الشريط الجانبي: **الملفات** (البحث، الفرز، المكررات، التخزين)، و**التنظيف** (المنظّف، البرامج، الحذف العميق)، و**السرعة** (المسرّع، قياس الأداء)، و**الشبكة** (الإنترنت، فحص الشبكة)، و**المشاركة والحماية** (الساعي، الحافظة، الخزنة)، والرئيسية والسجل كلٌّ وحده.
 
 ### المميزات
 
 - **الرئيسية.** جهازك في لمحة، على عدّادات دائرية: استهلاك المعالج والذاكرة وكرت الشاشة، وحرارة كرت الشاشة، والمساحة الحرة في كل قرص، ونقاط ترتيب من 100 مع أسباب الخصم. أيقونة البرنامج بجانب الساعة تعرض استهلاك المعالج والذاكرة وتنبّه عند امتلائهما المستمر.
+- **البحث.** كل ملف ومجلد على أقراصك يظهر وأنت تكتب، من فهرس يحدّثه PC Butler بنفسه (دون صلاحيات المسؤول). و Win + F يفتح مربع بحث من أي برنامج.
+- **لوحة الأوامر.** Alt + Space في أي برنامج يفتح مربعًا واحدًا لكل شيء: اكتب بضعة أحرف للانتقال إلى صفحة أو تبويب في الإعدادات أو لتنفيذ أمر (الفرز الآن، التعزيز، لوحة الأداء، البحث عن تحديثات…)، والملفات المطابقة تظهر تحتها. و `=` يحسب العمليات والأحجام وأوقات النقل.
 - **الفرز حسب العمر والنوع.** الملفات الأقدم من عدد محدد من الأيام (7 افتراضيًا) تُنقل إلى مجلدات التصنيف حسب امتداد الملف، ويمكن تحديد عمر مختلف لكل تصنيف، أو جعل التصنيف يحذف ملفاته (إلى سلة المحذوفات) بدل نقلها.
 - **المعاينة أولًا.** شاهد الملفات التي ستُنقل ووجهتها قبل أي تنفيذ، واستثنِ ما تريد إبقاءه.
 - **الوضع التلقائي.** يعمل في الخلفية مع أيقونة بجانب الساعة، ويفحص المجلد وفق جدول زمني (كل عدد من الدقائق، أو يوميًا أو أسبوعيًا في وقت تحدده)، ويبدأ مع تسجيل الدخول. ويمكن جدولة التنظيف بالطريقة نفسها. بعد كل عملية تظهر نافذة تقرير للموافقة على ما نُقل أو التراجع عنه.
@@ -130,6 +167,7 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 - **قياس الأداء.** لوحة أداء للألعاب: الإطارات في الثانية وزمن الإطار والمعالج وكرت الشاشة والذاكرة (RAM) وذاكرة كرت الشاشة (VRAM) ودرجات الحرارة ومروحة الكرت وسرعة الشبكة والساعة في زاوية الشاشة، ولكل منها مربع اختيار. وترتّبها بنفسك: ترتيب القراءات، عمود أو سطر واحد، الحجم، البعد عن الزاوية، والألوان. يلاحظ PC Butler اللعبة عندما تملأ الشاشة فيُظهر اللوحة من تلقاء نفسه، أو تبقى ظاهرة دائمًا؛ وهي متوقفة حتى تفعّلها، والنقرات تمرّ من خلالها. هي نافذة عادية فوق النوافذ، فتظهر فوق الألعاب التي تعمل في نافذة أو بلا إطار، لا فوق وضع ملء الشاشة الحصري. الإطارات يعدّها مساعد المسؤول من أحداث ويندوز نفسه دون إضافة شيء إلى اللعبة. وتُحفظ كل جلسة لعب بمتوسط الإطارات وأعلاها وأبطأ 1% وأعلى درجات الحرارة. ويسجّل PC Butler أيضًا ما يستهلكه كل تطبيق من المعالج وكرت الشاشة والذاكرة والقرص (ومن الإنترنت أثناء عمل المساعد)، يومًا بيوم لمدة 90 يومًا، في تقرير يمكن حفظه كجدول بيانات.
 - **البرامج.** كل البرامج المثبّتة في قائمة واحدة، مع القرص الذي عليه كل برنامج وفلتر حسب القرص، والنقر المزدوج يفتح البرنامج. إلغاء التثبيت يشغّل برنامج الإزالة الخاص بالبرنامج ثم يعرض ما تركه خلفه (مجلدات، اختصارات، مفتاحه في السجل) لتختار منه: المجلدات تذهب إلى سلة المحذوفات، ومفاتيح السجل تُحفظ أولًا في ملف `.reg`. التحديثات تأتي من winget، مدير الحزم الخاص بويندوز.
 - **الإنترنت.** قياس السرعة: التنزيل والرفع وزمن الاستجابة، مقابل خوادم Cloudflare لقياس السرعة، مع سجل للنتائج السابقة. وتعرض الصفحة عنوان IP المحلي والعام للحاسوب، ولكل منهما زر «نسخ».
+- **فحص الشبكة.** يعرض كل جهاز على شبكتك (نفس الواي فاي أو الكيبل) مع عنوان IP وعنوان MAC واسمه والشركة المصنعة لبطاقة الشبكة فيه ونوعه المرجّح وهل هو متصل الآن مع زمن الاستجابة. تظهر حتى الجوالات والأجهزة التي لا ترد على ping، لأن كل عنوان يُسأل أيضًا عن عنوان MAC الخاص به. لكل جهاز: نسخ، واتصال (صفحته على المتصفح، أو مجلداته المشاركة، أو سطح المكتب البعيد، أو SSH أو VNC، أو الساعي لإرسال ملفات إليه)، وتسمية باسم من اختيارك، ومعلومات. الأجهزة التي ظهرت من قبل تبقى في القائمة كغير متصلة مع آخر وقت شوهدت فيه.
 - **الخزنة.** مساحة محمية بكلمة مرور: الملفات التي تضيفها تُشفَّر (AES-256) وتُزال من مكانها الأصلي.
 - **التنظيف التلقائي.** خيار لإرسال الملفات القديمة في تصنيف معيّن إلى سلة المحذوفات (مثل ملفات التثبيت بعد 90 يومًا). لا يمسّ إلا الملفات التي نقلها البرنامج نفسه.
 - **قائمة «لا تنقل أبدًا».** احمِ ملفات معيّنة بالاسم أو بالنمط (مثل `*.torrent`). الملفات التي أعدتها بالتراجع لا تُنقل تلقائيًا مرة أخرى.
@@ -141,12 +179,26 @@ PC Butler هو إعادة كتابة لبرنامج [Downloads Sorter](https://g
 - **ما الجديد.** بعد كل تحديث تظهر نافذة بما تغيّر، والقائمة الكاملة في [CHANGELOG.ar.md](CHANGELOG.ar.md).
 - **الاختصارات.** اختصارات تعمل في أي برنامج، تُضبط في تبويب من صفحة الإعدادات: فتح PC Butler، والفرز الآن، وتشغيل التعزيز أو إيقافه للبرنامج الذي في الواجهة، وإظهار اللوحة أو منطقة الإفلات أو إخفاؤهما، وفتح الساعي.
 - **العربية والإنجليزية.** الواجهة تتبع لغة ويندوز، أو تختار اللغة من الإعدادات.
+- **مدير الحافظة.** يحتفظ بما تنسخه (نصوص وملفات وصور؛ 500 عنصر افتراضيًا) مع البحث والتثبيت. ويمكن قفل عنصر بكلمة مرور: يُحفظ مشفّرًا ولا يظهر منه شيء، ويطلب كلمة المرور عند لصقه إلا إذا فتحته لفترة. اختصار يفتح القائمة في أي برنامج ويلصق العنصر الذي تختاره. متوقف حتى تشغّله.
+- **تطبيق الجوال.** «المساعدة وحول ← تطبيق الجوال» يعرض رمز QR: امسحه بكاميرا الجوال لتنزيل تطبيق الأندرويد دون متجر Play (الرابط يعطي دائمًا أحدث نسخة). انظر «تطبيق الجوال» أدناه.
 - **التحديثات.** يتحقق من إصدارات هذا المستودع، وينبّهك عند صدور نسخة جديدة، ويحدّث نفسه بضغطة واحدة (أو تلقائيًا إذا فعّلت ذلك).
 - **آمن في تصميمه.** يتجاوز التنزيلات غير المكتملة والاختصارات، ولا يستبدل أي ملف موجود، والحذف يكون إلى سلة المحذوفات إلا إذا اخترت الحذف النهائي.
 
+### تطبيق الجوال (أندرويد)
+
+PC Butler للأندرويد مرافق للجوال: الساعي (إرسال الملفات والمجلدات من حواسيبك وإليها بالمعرّفات نفسها ذات الأرقام التسعة، مع إشعار عند وصولها)، والحافظة (أرسل ما نسخته إلى الحاسوب والعكس، مع زر عائم يرسله بضغطة)، والفرز، والمكررات، والتخزين، والمنظّف، والبحث، والتطبيقات (فتحها أو معلوماتها أو إلغاء تثبيتها)، وقياس الأداء (معالج الجوال وتخزينه)، وخزنة، والسجل، بالعربية والإنجليزية.
+
+</div>
+
+![نافذة «تطبيق الجوال»](docs/screenshot-phone-app-ar.png)
+
+<div dir="rtl">
+
+نزّله من «المساعدة وحول ← تطبيق الجوال» على الحاسوب، أو مباشرة من [dist/android/PCButler.apk](dist/android/PCButler.apk). يطلب أندرويد مرة واحدة السماح بالتثبيت من هذا المصدر. نسخة Google Play هي التطبيق نفسه بدون «أرسل ما أنسخه تلقائيًا» لأن Google Play لا يسمح بها، والنسخة المحمّلة فيها الميزة. سياسة خصوصية التطبيق في [docs/privacy-policy.md](docs/privacy-policy.md).
+
 ### صلاحيات المسؤول
 
-PC Butler لا يعمل أبدًا بصلاحيات المسؤول. حرارة كرت الشاشة لا تحتاج أي صلاحيات. أما حرارة المعالج نفسه، Intel أو AMD، فلا تُقرأ إلا عبر تعريف (driver) و PC Butler لا يثبّت تعريفات: إذا ثبّتَّ بنفسك تعريف [PawnIO](https://pawnio.eu) المجاني الموقَّع قرأ المساعد حرارة المعالج من خلاله؛ وإذا كان LibreHardwareMonitor يعمل يعرض PC Butler قراءاته. أشياء قليلة تحتاج صلاحيات المسؤول وكلها اختيارية: قراءة حساسات اللوحة الأم للحرارة والمراوح (الصفحة الرئيسية)، وإيقاف الخدمات مؤقتًا أثناء التعزيز، وتغييرات تبويب «متقدّم» في الخدمات وإعدادات الجهاز، وإيقاف تحديثات ويندوز وتغيير اسم الحاسوب (كلاهما في الإعدادات)، وعدّ الإطارات في الثانية وقراءة حرارة المعالج (قياس الأداء)، وقاعدة جدار الحماية للساعي. لها يشغّل PC Butler مساعدًا صغيرًا، نسخة ثانية منه، فقط عندما تطلب وبعد موافقتك على نافذة ويندوز. المساعد يقرأ الحساسات، ويوقف أو يشغّل ثلاث خدمات محددة (Print Spooler و Connected User Experiences and Telemetry و SysMain)، ويطبّق تغييرات القائمة الثابتة في تبويب «متقدّم» ويعيدها، ويوقف تحديثات ويندوز، ويغيّر اسم الحاسوب، ويضيف قاعدة جدار الحماية، ولا شيء غير ذلك. يعيد تشغيل الخدمات الموقوفة مؤقتًا وينتهي عند إغلاق PC Butler.
+PC Butler لا يعمل أبدًا بصلاحيات المسؤول. حرارة كرت الشاشة لا تحتاج أي صلاحيات. أما حرارة المعالج نفسه، Intel أو AMD، فلا تُقرأ إلا عبر تعريف (driver) و PC Butler لا يثبّت تعريفات: إذا ثبّتَّ بنفسك تعريف [PawnIO](https://pawnio.eu) المجاني الموقَّع قرأ المساعد حرارة المعالج من خلاله؛ وإذا كان LibreHardwareMonitor يعمل يعرض PC Butler قراءاته. أشياء قليلة تحتاج صلاحيات المسؤول وكلها اختيارية: قراءة حساسات اللوحة الأم للحرارة والمراوح (الصفحة الرئيسية)، وإيقاف الخدمات مؤقتًا أثناء التعزيز، وتغييرات تبويب «متقدّم» في الخدمات وإعدادات الجهاز، وإيقاف تحديثات ويندوز وتغيير اسم الحاسوب (كلاهما في الإعدادات)، وعدّ الإطارات في الثانية وقراءة حرارة المعالج (قياس الأداء)، وعدّ استهلاك كل تطبيق من الإنترنت (قياس الأداء)، وقاعدة جدار الحماية للساعي. لها يشغّل PC Butler مساعدًا صغيرًا، نسخة ثانية منه، فقط عندما تطلب وبعد موافقتك على نافذة ويندوز. المساعد يقرأ الحساسات، ويوقف أو يشغّل ثلاث خدمات محددة (Print Spooler و Connected User Experiences and Telemetry و SysMain)، ويطبّق تغييرات القائمة الثابتة في تبويب «متقدّم» ويعيدها، ويوقف تحديثات ويندوز، ويغيّر اسم الحاسوب، ويضيف قاعدة جدار الحماية، ويعدّ الإطارات التي تعرضها البرامج واستهلاك كل برنامج من الإنترنت (الكميات فقط)، ويقرأ حرارة المعالج، ولا شيء غير ذلك. يعيد تشغيل الخدمات الموقوفة مؤقتًا وينتهي عند إغلاق PC Butler.
 
 إيقاف تحديثات ويندوز يوقف الإصلاحات الأمنية أيضًا، فتقلّ حماية الجهاز كلما طال الإيقاف.
 
@@ -184,6 +236,8 @@ dotnet run --project tests/PCButler.Tests
 ### أين تُحفظ البيانات
 
 الإعدادات وسجل التغييرات وسجل النشاط تُحفظ في المجلد `%APPDATA%\PCButler`.
+
+قياس السرعة وسطر عنوان IP العام يتصلان بـ `speed.cloudflare.com`، والبحث عن التحديثات يتصل بـ GitHub وبمصدر winget. فحص الشبكة لا يتصل إلا بأجهزة شبكتك، عدا قراءة قائمة الشركات المصنعة من قائمة Wireshark العامة مرة كل 120 يومًا. والساعي لا يتصل إلا بالحواسيب الأخرى وفقط وهو مشغّل، ويستخدم الدليل العام لشبكة BitTorrent (DHT) للبحث عن المعرّفات: أجهزة هذا الدليل ترى عنوان الحاسوب على الإنترنت كما تراه لأي برنامج تورنت، ولا يُرسل إليها أي ملف أو اسم ملف. ولا يخرج من الجهاز شيء غير ذلك.
 
 ### ادعم المشروع
 
