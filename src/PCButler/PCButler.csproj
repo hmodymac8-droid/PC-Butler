@@ -12,7 +12,7 @@
     <RootNamespace>PCButler</RootNamespace>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.22.40</Version>
+    <Version>1.22.41</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
     <Copyright>Copyright (c) 2026 hmodymac8-droid. All rights reserved.</Copyright>
@@ -27,6 +27,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <!-- The QR code of the phone app's download link (MIT licence). -->
+    <PackageReference Include="QRCoder" Version="1.6.0" />
     <Resource Include="icon.png" />
     <Resource Include="icon.ico" />
     <Resource Include="logo.ico" />

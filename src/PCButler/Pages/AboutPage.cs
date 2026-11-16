@@ -36,6 +36,7 @@ public sealed class AboutPage : Page
         description.LineHeight = 26;
         tab.Children.Add(description);
         tab.Children.Add(Ui.Row(6, Ui.Button(Ui.T("What's new"), () => new WhatsNewWindow { Owner = Main }.Show()),
+                                Ui.Button(Ui.T("Get the phone app"), () => new PhoneAppWindow { Owner = Main }.Show()),
                                 Ui.Button(Ui.T("GitHub page"), () => Shell.Open($"https://github.com/{AppInfo.Repo}")),
                                 Ui.Button(Ui.T("Open settings and log folder"), OpenDataFolder),
                                 // Shown again on request, it stays until clicked (or for half a minute).
