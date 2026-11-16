@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.45
+
+- Phone app (Android 1.2.11): fixed the app closing by itself the moment it was opened. The 1.2.10 build was missing the parts Android starts the app with; it is now always built from scratch. Download it again from Help & about, Get the phone app.
+
 ## 1.22.44
 
 - Documentation brought up to date: new screenshots of every page shown in the README, in English and Arabic, including Scan LAN and the Get the phone app window; the README now describes Search, the command palette, Scan LAN, the sidebar groups and the Android phone app, and the phone app's privacy policy covers the clipboard features.
