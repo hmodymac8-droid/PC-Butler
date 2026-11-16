@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.43
+
+- Phone app (Android 1.2.10): the Google Play version leaves out "Send what I copy by itself", because Google Play does not allow its Accessibility service for this. Everything else is the same there, including the floating button that sends what's copied with one tap. The phone app downloaded from PC Butler (Help & about, Get the phone app) still has it.
+
 ## 1.22.42
 
 - Sidebar: Internet and Scan LAN moved out of Speed into a new group, Network. Speed now holds Booster and Benchmark.

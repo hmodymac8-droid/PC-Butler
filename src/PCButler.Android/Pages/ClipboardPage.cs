@@ -46,7 +46,8 @@ public sealed class ClipboardPage : AppPage
         Body.Children.Add(Theme.CardOf(Theme.Line3(null, Theme.TwoLines(Theme.Body(Tr.T("Floating button"), 14.5),
                                                                         Theme.Faint(Tr.T("PC Butler's logo floats over every app while Courier is on. Tap it to send what's copied to the PC; drag it anywhere."), 12)),
                                                    floating, 8), 16));
-        // Android decides this one in its Accessibility settings: the switch opens them.
+#if !PLAY_STORE
+        // Android decides this one in its Accessibility settings: the switch opens them (not in the Google Play build).
         watch.Toggled += (_, e) =>
         {
             if (!showing && e.Value != CopyWatcher.On)
@@ -55,6 +56,7 @@ public sealed class ClipboardPage : AppPage
         Body.Children.Add(Theme.CardOf(Theme.Line3(null, Theme.TwoLines(Theme.Body(Tr.T("Send what I copy by itself"), 14.5),
                                                                         Theme.Faint(Tr.T("Whatever you copy in any app goes to the connected PC at once, even with PC Butler closed. Android allows it only through Accessibility: switch on \"PC Butler: send what I copy\" there."), 12)),
                                                    watch, 8), 16));
+#endif
         var sendCopied = Theme.Accent(Tr.T("Send what's copied to PC"), () => _ = SendCopied(), "i_send_k.png");
         var paste = Theme.Tonal(Tr.T("Save what's copied"), () => _ = SaveCopied(), "i_clipboard_m.png");
         (sendCopied.Margin, paste.Margin) = (new Thickness(0, 12, 0, 0), new Thickness(0, 10, 0, 0));
@@ -119,7 +121,9 @@ public sealed class ClipboardPage : AppPage
     {
         showing = true;
         floating.IsToggled = ClipBubble.On && ClipBubble.Allowed;
+#if !PLAY_STORE
         watch.IsToggled = CopyWatcher.On;
+#endif
         showing = false;
     }
 
