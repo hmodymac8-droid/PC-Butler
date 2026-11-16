@@ -45,3 +45,12 @@ $built = Get-ChildItem $Out -Filter "*-Signed.$format" | Select-Object -First 1
 $target = Join-Path $Out "PCButler.$format"
 Copy-Item $built.FullName $target -Force
 Write-Host "Built $target ($([int]((Get-Item $target).Length / 1MB)) MB)"
+
+# The APK the Windows app links to (Help & about > Get the phone app): it is committed at this
+# fixed path so its GitHub download link never changes. Commit it every time the Android app changes.
+if (-not $Bundle) {
+    $shared = Join-Path $PSScriptRoot "dist\android"
+    New-Item -ItemType Directory -Force $shared | Out-Null
+    Copy-Item $target (Join-Path $shared "PCButler.apk") -Force
+    Write-Host "Copied to $(Join-Path $shared 'PCButler.apk') - commit it"
+}
