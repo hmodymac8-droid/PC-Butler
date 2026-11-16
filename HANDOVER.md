@@ -285,6 +285,13 @@ run the Python program.
   8.0), with NuGet's cache in `D:\nuget\packages`.
 - Release: tag `v1.0.0`, create a GitHub release, attach `PCButlerSetup.exe` (the updater
   matches any asset ending in `setup.exe`). `AppInfo.Version` must equal the tag.
+- Android APK, always kept current: `./build-android.ps1` also copies the signed APK to
+  `dist/android/PCButler.apk`, which is committed. Help & about > "Get the phone app"
+  (`PhoneAppWindow`) shows a QR code of
+  `https://github.com/hmodymac8-droid/PC-Butler/raw/main/dist/android/PCButler.apk`, so the
+  phone downloads straight from `main`. **Rule: every change to the Android app must rebuild
+  the APK and commit `dist/android/PCButler.apk` in the same PR**, or the link hands out an
+  old build. The link needs the repository to stay public.
 - Git identity for this repository is set locally to `hmodymac8-droid` with GitHub's private
   address `hmodymac8-droid@users.noreply.github.com`, so no real email is published.
 - The owner asked that commits and published files not mention AI tools.

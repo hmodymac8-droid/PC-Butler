@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.41
+
+- Get the phone app without the Play Store: Help & about has a new "Get the phone app" button. It shows a QR code to scan with the phone's camera, and the same link to copy or open. The link always gives the latest Android app.
+
 ## 1.22.40
 
 - New page, Scan LAN (in Speed, under Internet): it lists every device on your network (the same Wi-Fi or cable) with its IP and MAC address, its name, the maker of its network adapter and whether it is online now, with its ping time. Phones and PCs that ignore pings are found too, as every address is also asked for its MAC address. Each device can be copied (its IP, its MAC or all its details), connected to (its web page, its shared folders, Remote Desktop, SSH or VNC when it offers them, or Courier to send it files), given a name of your own, which is remembered, and opened in Info for everything known about it. Devices seen before stay in the list as offline, with when they were last seen. The page scans by itself the first time it is opened.
