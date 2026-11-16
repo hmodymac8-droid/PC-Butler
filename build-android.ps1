@@ -38,6 +38,13 @@ if (-not (Test-Path $Keystore) -or -not $password) {
 $project = Join-Path $PSScriptRoot "src\PCButler.Android\PCButler.Android.csproj"
 $format = if ($Bundle) { "aab" } else { "apk" }
 $play = if ($Bundle) { "true" } else { "false" }
+# Always build from scratch. An incremental build after the other kind (APK after AAB, or the
+# other way round) once left every Java class out of the APK (1.2.10), and the app closed
+# itself the moment it was opened.
+$androidDir = Split-Path $project
+foreach ($dir in "obj\Release", "bin\Release") {
+    Remove-Item (Join-Path $androidDir $dir) -Recurse -Force -ErrorAction SilentlyContinue
+}
 & $Dotnet publish $project -c Release -f net10.0-android -o $Out -p:AndroidPackageFormat=$format -p:PlayStore=$play `
     -p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$Keystore -p:AndroidSigningKeyAlias=pcbutler `
     -p:AndroidSigningKeyPass=$password -p:AndroidSigningStorePass=$password
