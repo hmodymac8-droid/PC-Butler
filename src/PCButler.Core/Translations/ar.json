@@ -2111,5 +2111,11 @@
  "Shared folders": "مجلدات مشاركة",
  "Printer (IPP)": "طابعة (IPP)",
  "Cast (TV, speaker)": "بث (تلفاز، سماعة)",
- "Camera (RTSP)": "كاميرا (RTSP)"
+ "Camera (RTSP)": "كاميرا (RTSP)",
+ "Get the phone app": "تطبيق الجوال",
+ "PC Butler for Android": "PC Butler للأندرويد",
+ "Scan the code with your phone's camera to download the app. When it has downloaded, open it and allow installing from this source.": "امسح الرمز بكاميرا جوالك لتنزيل التطبيق. بعد ما يخلص التنزيل افتحه واسمح بالتثبيت من هذا المصدر.",
+ "Copy link": "نسخ الرابط",
+ "Copied.": "تم النسخ.",
+ "Open in browser": "فتح في المتصفح"
 }
