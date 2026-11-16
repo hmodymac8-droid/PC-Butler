@@ -12,7 +12,7 @@ namespace PCButler;
 
 /// <summary>
 /// The control panel: sidebar, top bar, the pages and the status bar. The sidebar folds related
-/// pages into groups (Files, Clean up, Speed, Share &amp; protect) that open in place when clicked.
+/// pages into groups (Files, Clean up, Speed, Network, Share &amp; protect) that open in place when clicked.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -78,7 +78,8 @@ public sealed partial class MainWindow : Window
         ("home", "", "", []),
         ("files", "\uE8B7", "Files", ["search", "preview", "duplicates", "storage"]),
         ("cleanup", "\uE74D", "Clean up", ["cleaner", "programs", "shredder"]),
-        ("speed", "\uE945", "Speed", ["booster", "benchmark", "internet", "lan"]),
+        ("speed", "\uE945", "Speed", ["booster", "benchmark"]),
+        ("network", "", "Network", ["internet", "lan"]),
         ("share", "\uE72D", "Share & protect", ["portal", "clipboard", "vault"]),
         ("history", "", "", []),
     ];

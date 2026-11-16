@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.42
+
+- Sidebar: Internet and Scan LAN moved out of Speed into a new group, Network. Speed now holds Booster and Benchmark.
+
 ## 1.22.41
 
 - Get the phone app without the Play Store: Help & about has a new "Get the phone app" button. It shows a QR code to scan with the phone's camera, and the same link to copy or open. The link always gives the latest Android app.
