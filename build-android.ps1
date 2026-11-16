@@ -6,6 +6,7 @@
     ./build-android.ps1 [-Bundle] [-Dotnet <path to dotnet.exe>] [-Keystore <file>] [-Out <folder>]
 
     -Bundle builds the Android App Bundle (.aab) that Google Play takes, instead of the APK.
+    That build leaves out "Send what I copy by itself" (an accessibility service Play refuses).
 
     Needs the .NET SDK with the maui-android workload, the Android SDK (ANDROID_HOME) and a
     JDK (JAVA_HOME). The APK is signed with the keystore; its password is read from
@@ -36,7 +37,8 @@ if (-not (Test-Path $Keystore) -or -not $password) {
 
 $project = Join-Path $PSScriptRoot "src\PCButler.Android\PCButler.Android.csproj"
 $format = if ($Bundle) { "aab" } else { "apk" }
-& $Dotnet publish $project -c Release -f net10.0-android -o $Out -p:AndroidPackageFormat=$format `
+$play = if ($Bundle) { "true" } else { "false" }
+& $Dotnet publish $project -c Release -f net10.0-android -o $Out -p:AndroidPackageFormat=$format -p:PlayStore=$play `
     -p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$Keystore -p:AndroidSigningKeyAlias=pcbutler `
     -p:AndroidSigningKeyPass=$password -p:AndroidSigningStorePass=$password
 if ($LASTEXITCODE) { throw "dotnet publish failed" }
