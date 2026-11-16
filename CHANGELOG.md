@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a `## heading` followed by `- ` lines.
 
+## 1.22.40
+
+- New page, Scan LAN (in Speed, under Internet): it lists every device on your network (the same Wi-Fi or cable) with its IP and MAC address, its name, the maker of its network adapter and whether it is online now, with its ping time. Phones and PCs that ignore pings are found too, as every address is also asked for its MAC address. Each device can be copied (its IP, its MAC or all its details), connected to (its web page, its shared folders, Remote Desktop, SSH or VNC when it offers them, or Courier to send it files), given a name of your own, which is remembered, and opened in Info for everything known about it. Devices seen before stay in the list as offline, with when they were last seen. The page scans by itself the first time it is opened.
+
 ## 1.22.39
 
 - Phone app (Android 1.2.9), Clipboard: the page opens at once and stays smooth. It used to freeze because it built a card for every saved text at once, showed each text in full (a text copied on a PC can be up to 1 MB), read and wrote the saved list on the screen's own thread, and rebuilt itself again for every time the page had been opened before. Now the list is read in the background, the newest 30 show first with "Show more" for the rest, a long text shows its start (copying or sending it still takes all of it), and the 200 newest unpinned texts are kept (pinned ones always stay).
