@@ -92,7 +92,7 @@ All of it is written in WPF (`net10.0-windows`), built from code; the only XAML 
   (the summary cards and the headers' small print hide).
 - `Chrome.cs`: the `Page` base class (header, page buttons, summary cards), `Sidebar`,
   `NavItem`, `TopBar`, `SplashWindow`.
-- `Pages/`: the eight pages. `Dialogs.cs`: the category and vault change-password dialogs.
+- `Pages/`: one file per page (`MainWindow.PageList` lists all eighteen, `MainWindow.Groups` puts them in the sidebar's groups). `Dialogs.cs`: the category and vault change-password dialogs.
   `ReportWindow.cs`: the window after an automatic run. `Ui.cs`: shared building blocks.
 - Arabic: text goes through `Ui.T`. The layout is not mirrored. An implicit `TextBlock` style
   in `Theme.xaml` makes any text containing Arabic read right to left, so full stops and
@@ -152,6 +152,9 @@ The look now follows that mock-up, not `docs/reference`. Its colours are in `The
 | 1.14 | The feature is renamed Courier for the user (the code still says Portal). Courier over the internet by 12-digit ID, with no server of ours | `PortalInternet.cs` (ID, reachable, `ConnectById`), `PortalDht.cs` (bencode, a minimal BitTorrent-DHT client), `PortalTunnel.cs` (`PortalLink`: one UDP socket, hole punching; `ReliableStream`: reliable ordered bytes over UDP) | `Pages/PortalPage.cs` |
 | 1.22 | File search, phase 1 of `docs/search-plan.md` (no administrator rights): Search page, Win + F search box, Search tab in Settings | `Search/` in Core: `SearchIndex`, `SearchText`, `QueryParser`, `QueryCompiler`, `Searcher`, `IndexStore`, `SearchSettings`, `VolumeSource` (`FolderScanSource`, `FolderWatcher`), `SearchEngine` | `Pages/SearchPage.cs`, `SearchResults.cs`, `SearchPopup.cs`, `WinKeyHook.cs`, `Pages/SettingsSearch.cs`, `Hotkeys` in `Overlay.cs` |
 | 1.22.17 | Drop-zone butler, Resume yesterday, internet usage tracker | `SessionRestore.cs` (`SessionSnapshot`, `StartOfRun`, `Remember`, `Freeze`, `Resume`), `NetUsage.cs` (`NetUsageLog`, `NetUsageRecorder`) | `Butler.cs`, `DropZoneWindow.cs`, `TrayFlyout.cs` (resume button), `App.xaml.cs` (`StartResume`, `ResumeYesterday`, `TrackInternet`), `Pages/InternetPage.cs`, `Pages/SettingsPage.cs` |
+| 1.22.41 | Get the phone app: a QR code and link to the committed APK on `main` (see "Building and releasing") | | `PhoneAppWindow.cs` (QRCoder), button on `Pages/AboutPage.cs` |
+| 1.22.42 | Sidebar group Network (Internet, Scan LAN); Speed keeps Booster and Benchmark | | `MainWindow.Groups` |
+| 1.22.43 | Android 1.2.10: the Google Play build (`build-android.ps1 -Bundle`, `-p:PlayStore=true`, symbol `PLAY_STORE`) leaves out the "send what I copy" Accessibility service; the APK in `dist/android` keeps it | | `src/PCButler.Android` (`CopyWatcher`, manifest) |
 | 1.22.40 | Scan LAN page (Network group since 1.22.42): devices on this PC's network found by ping plus `SendARP` on every address (up to /22, else the /24 around the PC), names by reverse DNS then NetBIOS node status, a dozen well-known TCP ports tried for Connect and the kind guess, makers from Wireshark's `manuf` (IEEE's `oui.csv` as fall-back) cached as `oui.txt` for 120 days; devices and user names kept by MAC in `lan-devices.json` | `LanScan.cs` (`LanScanner`, `LanVendors`, `LanBook`) | `Pages/LanPage.cs` |
 
 Notes on 1.22.17:
@@ -216,8 +219,8 @@ Rules the owner set for these, which still hold:
 - No invented numbers: Boost shows what it measured (memory freed, programs changed), not an
   estimated speed-up.
 
-Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); clipboard history (encrypted, off by default); global hotkeys; unpacking
-archives and cleaning names; a grouped Sorter preview; and a per-file history. (The per-program network monitor is on the Internet page since 1.22.17.)
+Asked for and not built yet: a manager for the right-click menu's entries (disable, not delete); unpacking
+archives and cleaning names; a grouped Sorter preview; and a per-file history. (Clipboard history and global hotkeys were built in 1.18; the per-program network monitor is on the Internet page since 1.22.17.)
 
 ### Still to do
 
@@ -226,6 +229,8 @@ archives and cleaning names; a grouped Sorter preview; and a per-file history. (
 2. The copyright line stays `hmodymac8-droid` (the owner's decision).
 
 ## The design to match
+
+The screenshots in the README (`docs/screenshot*.png`, English, and `*-ar.png`, Arabic) are of 1.22.44. They were drawn with a small throwaway harness that references `src/PCButler`, renders `MainWindow` off screen with `RenderTargetBitmap` page by page (`MainWindow.ShowPage`), against a scratch data folder (`PCBUTLER_DATA`) with made-up Downloads files and made-up Scan LAN devices, so no real file names or network addresses are published. An Arabic render comes out mirrored and must be flipped back. Start `App.Usage` first or the Home gauges stay empty, and give each page its own run so only its sidebar group is open.
 
 Screenshots of the Python program are in `docs/reference/` (Sorter, Duplicates, Cleaner,
 Vault, About, splash). To see the other pages (Booster, History, Settings, the report window)
