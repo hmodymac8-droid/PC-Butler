@@ -87,7 +87,7 @@ All of it is written in WPF (`net10.0-windows`), built from code; the only XAML 
   report window and the main window, the legacy data import, and the arguments `--background`,
   `--no-splash` and `--auto-on`. The window can be closed and reopened; Exit in the tray menu
   ends the program.
-- `MainWindow.cs`: sidebar, breadcrumb bar, update banner, status bar, saved size and
+- `MainWindow.cs`: sidebar (`Groups`: Files, Clean up, Speed with Booster and Benchmark, Network with Internet and Scan LAN, Share & protect; History on its own), breadcrumb bar, update banner, status bar, saved size and
   position (`window_geometry`, in screen pixels), and a compact mode below 720 px of height
   (the summary cards and the headers' small print hide).
 - `Chrome.cs`: the `Page` base class (header, page buttons, summary cards), `Sidebar`,
@@ -152,7 +152,7 @@ The look now follows that mock-up, not `docs/reference`. Its colours are in `The
 | 1.14 | The feature is renamed Courier for the user (the code still says Portal). Courier over the internet by 12-digit ID, with no server of ours | `PortalInternet.cs` (ID, reachable, `ConnectById`), `PortalDht.cs` (bencode, a minimal BitTorrent-DHT client), `PortalTunnel.cs` (`PortalLink`: one UDP socket, hole punching; `ReliableStream`: reliable ordered bytes over UDP) | `Pages/PortalPage.cs` |
 | 1.22 | File search, phase 1 of `docs/search-plan.md` (no administrator rights): Search page, Win + F search box, Search tab in Settings | `Search/` in Core: `SearchIndex`, `SearchText`, `QueryParser`, `QueryCompiler`, `Searcher`, `IndexStore`, `SearchSettings`, `VolumeSource` (`FolderScanSource`, `FolderWatcher`), `SearchEngine` | `Pages/SearchPage.cs`, `SearchResults.cs`, `SearchPopup.cs`, `WinKeyHook.cs`, `Pages/SettingsSearch.cs`, `Hotkeys` in `Overlay.cs` |
 | 1.22.17 | Drop-zone butler, Resume yesterday, internet usage tracker | `SessionRestore.cs` (`SessionSnapshot`, `StartOfRun`, `Remember`, `Freeze`, `Resume`), `NetUsage.cs` (`NetUsageLog`, `NetUsageRecorder`) | `Butler.cs`, `DropZoneWindow.cs`, `TrayFlyout.cs` (resume button), `App.xaml.cs` (`StartResume`, `ResumeYesterday`, `TrackInternet`), `Pages/InternetPage.cs`, `Pages/SettingsPage.cs` |
-| 1.22.40 | Scan LAN page (Speed group): devices on this PC's network found by ping plus `SendARP` on every address (up to /22, else the /24 around the PC), names by reverse DNS then NetBIOS node status, a dozen well-known TCP ports tried for Connect and the kind guess, makers from Wireshark's `manuf` (IEEE's `oui.csv` as fall-back) cached as `oui.txt` for 120 days; devices and user names kept by MAC in `lan-devices.json` | `LanScan.cs` (`LanScanner`, `LanVendors`, `LanBook`) | `Pages/LanPage.cs` |
+| 1.22.40 | Scan LAN page (Network group since 1.22.42): devices on this PC's network found by ping plus `SendARP` on every address (up to /22, else the /24 around the PC), names by reverse DNS then NetBIOS node status, a dozen well-known TCP ports tried for Connect and the kind guess, makers from Wireshark's `manuf` (IEEE's `oui.csv` as fall-back) cached as `oui.txt` for 120 days; devices and user names kept by MAC in `lan-devices.json` | `LanScan.cs` (`LanScanner`, `LanVendors`, `LanBook`) | `Pages/LanPage.cs` |
 
 Notes on 1.22.17:
 
