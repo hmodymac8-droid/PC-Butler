@@ -30,6 +30,7 @@ public static class PaletteCommands
         ["benchmark"] = "fps overlay games performance test",
         ["programs"] = "apps uninstall installed software",
         ["internet"] = "network wifi speed test data usage",
+        ["lan"] = "lan network devices scan ip mac router wifi who is connected",
         ["shredder"] = "delete forever wipe erase secure",
         ["clipboard"] = "copy paste history",
         ["portal"] = "send receive transfer files phone share p2p",
