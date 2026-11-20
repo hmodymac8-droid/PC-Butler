@@ -11,91 +11,6 @@ using Microsoft.Diagnostics.Tracing.Session;
 
 namespace PCButler.Core;
 
-/// <summary>The performance overlay, as set on the Benchmark page.</summary>
-public sealed class OverlaySettings
-{
-    [JsonPropertyName("enabled")] public bool Enabled { get; set; }
-    /// <summary>Start the administrator helper by itself when a game is detected, so frames are counted without a visit to the page.</summary>
-    [JsonPropertyName("auto_helper")] public bool AutoHelper { get; set; }
-    /// <summary>Show it all the time, not only while a game is in front.</summary>
-    [JsonPropertyName("always")] public bool Always { get; set; }
-    /// <summary>0 top left, 1 top right, 2 bottom left, 3 bottom right.</summary>
-    [JsonPropertyName("corner")] public int Corner { get; set; }
-    [JsonPropertyName("fps")] public bool Fps { get; set; } = true;
-    [JsonPropertyName("cpu")] public bool Cpu { get; set; } = true;
-    [JsonPropertyName("gpu")] public bool Gpu { get; set; } = true;
-    [JsonPropertyName("memory")] public bool Memory { get; set; } = true;
-    [JsonPropertyName("temperatures")] public bool Temperatures { get; set; } = true;
-    /// <summary>The graphics card's own memory in use.</summary>
-    [JsonPropertyName("video_memory")] public bool VideoMemory { get; set; } = true;
-    /// <summary>Milliseconds per frame, next to the frames per second.</summary>
-    [JsonPropertyName("frame_time")] public bool FrameTime { get; set; }
-    [JsonPropertyName("fan")] public bool Fan { get; set; }
-    /// <summary>Download and upload speed of the whole PC.</summary>
-    [JsonPropertyName("network")] public bool Network { get; set; }
-    [JsonPropertyName("clock")] public bool Clock { get; set; }
-    /// <summary>The readings in the order the user put them; any left out follow in the usual order.</summary>
-    [JsonPropertyName("order")] public List<string> Order { get; set; } = [];
-    /// <summary>All readings on one line instead of in a column.</summary>
-    [JsonPropertyName("horizontal")] public bool Horizontal { get; set; }
-    /// <summary>Size in percent of the usual one.</summary>
-    [JsonPropertyName("scale")] public int Scale { get; set; } = 100;
-    /// <summary>Pixels from the side and from the top or bottom of the screen, counted from the chosen corner.</summary>
-    [JsonPropertyName("offset_x")] public int OffsetX { get; set; } = 16;
-    [JsonPropertyName("offset_y")] public int OffsetY { get; set; } = 16;
-    /// <summary>Colours as #RRGGBB: the frames per second, the other numbers, the panel behind them.</summary>
-    [JsonPropertyName("accent")] public string Accent { get; set; } = DefaultAccent;
-    [JsonPropertyName("text")] public string Text { get; set; } = DefaultText;
-    [JsonPropertyName("background")] public string Background { get; set; } = DefaultBackground;
-    /// <summary>How solid the panel is, 0 (only the numbers) to 100.</summary>
-    [JsonPropertyName("opacity")] public int Opacity { get; set; } = 35;
-
-    // The program's own colours: its green, its soft white, its card. The panel is mostly see-through by default.
-    public const string DefaultAccent = "#42D8A5", DefaultText = "#E8EBF0", DefaultBackground = "#101216";
-
-    /// <summary>Every reading the overlay can show, in the order it comes in.</summary>
-    public static readonly string[] Rows = ["fps", "frame_time", "cpu", "gpu", "vram", "fan", "ram", "net", "clock"];
-
-    /// <summary>The readings in the user's order: what they arranged first, then whatever that list does not mention.</summary>
-    public List<string> OrderedRows() => Order.Where(Rows.Contains).Distinct().Concat(Rows.Where(row => !Order.Contains(row))).ToList();
-
-    public bool Shows(string row) => row switch
-    {
-        "fps" => Fps, "frame_time" => FrameTime, "cpu" => Cpu, "gpu" => Gpu, "vram" => VideoMemory, "fan" => Fan, "ram" => Memory, "net" => Network, "clock" => Clock,
-        _ => false,
-    };
-
-    public void SetShown(string row, bool on)
-    {
-        switch (row)
-        {
-            case "fps": Fps = on; break;
-            case "frame_time": FrameTime = on; break;
-            case "cpu": Cpu = on; break;
-            case "gpu": Gpu = on; break;
-            case "vram": VideoMemory = on; break;
-            case "fan": Fan = on; break;
-            case "ram": Memory = on; break;
-            case "net": Network = on; break;
-            case "clock": Clock = on; break;
-        }
-    }
-
-    /// <summary>True for a colour written as #RRGGBB.</summary>
-    public static bool IsColour(string text) => text.Length == 7 && text[0] == '#' && text[1..].All(Uri.IsHexDigit);
-
-    /// <summary>The look and the order as they came; what is shown, and where games are detected, stays.</summary>
-    public void ResetLook()
-    {
-        var fresh = new OverlaySettings();
-        (Order, Horizontal, Scale, Corner, OffsetX, OffsetY) = ([], fresh.Horizontal, fresh.Scale, fresh.Corner, fresh.OffsetX, fresh.OffsetY);
-        (Accent, Text, Background, Opacity) = (fresh.Accent, fresh.Text, fresh.Background, fresh.Opacity);
-    }
-
-    /// <summary>Program file names (game.exe) always taken for a game, full screen or not.</summary>
-    [JsonPropertyName("games")] public List<string> Games { get; set; } = [];
-}
-
 /// <summary>The window in front, and whether it fills its screen without a title bar.</summary>
 public sealed record ForegroundApp(int Pid, string Name, string Title, bool FullScreen, int Left, int Top, int Right, int Bottom);
 
@@ -169,7 +84,7 @@ public static class GameDetector
     {
         if (known.Any(name => name.Trim().Equals(app.Name, StringComparison.OrdinalIgnoreCase)))
             return true;
-        return app.FullScreen && app.Title.Length > 0 && !NeverGames.Contains(app.Name) && !Booster.ProtectedNames.Contains(app.Name);
+        return app.FullScreen && app.Title.Length > 0 && !NeverGames.Contains(app.Name) && !ProtectedProcesses.Names.Contains(app.Name);
     }
 }
 

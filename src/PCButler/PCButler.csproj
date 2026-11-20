@@ -12,7 +12,7 @@
     <RootNamespace>PCButler</RootNamespace>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.25.0</Version>
+    <Version>1.26.0</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
     <Copyright>Copyright (c) 2026 hmodymac8-droid. All rights reserved.</Copyright>
@@ -37,15 +37,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PCButler.Ui\PCButler.Ui.csproj" />
     <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Files\PCButler.Core.Files.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Search\PCButler.Core.Search.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Sensors\PCButler.Core.Sensors.csproj" />
+    <ProjectReference Include="..\PCButler.Core.System\PCButler.Core.System.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Portal\PCButler.Core.Portal.csproj" />
     <!-- The QR code of the phone app's download link (MIT licence). -->
     <PackageReference Include="QRCoder" Version="1.6.0" />
-    <Resource Include="icon.png" />
     <Resource Include="icon.ico" />
     <Resource Include="logo.ico" />
     <!-- Also beside PCButler.exe: File Explorer's right-click menu shows it. -->
     <None Include="logo.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Resource Include="Fonts\*.ttf" />
   </ItemGroup>
 
 </Project>

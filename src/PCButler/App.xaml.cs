@@ -103,7 +103,8 @@ public partial class App : Application
         if (arguments.Length >= 3 && arguments[0] == "--sensors")
         {
             // The helper that reads temperatures as administrator (see Sensors): no window, no tray icon.
-            Sensors.RunHelper(arguments[1], int.TryParse(arguments[2], out var parent) ? parent : 0);
+            Sensors.RunHelper(arguments[1], int.TryParse(arguments[2], out var parent) ? parent : 0,
+                             stopped => AdminHelper.Poll(arguments[1], stopped), AdminHelper.ResumeAll);
             Shutdown();
             return;
         }

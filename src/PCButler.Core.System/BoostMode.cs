@@ -7,21 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace PCButler.Core;
 
-/// <summary>What Boost does, as chosen on the Booster page.</summary>
-public sealed class BoostSettings
-{
-    /// <summary>Raise the chosen program's priority and lower the background programs'.</summary>
-    [JsonPropertyName("priorities")] public bool Priorities { get; set; } = true;
-    /// <summary>Switch to the high-performance power plan while Boost is on.</summary>
-    [JsonPropertyName("power_plan")] public bool PowerPlan { get; set; } = true;
-    /// <summary>Push background programs' memory out to the page file. Off by default: they reload it later.</summary>
-    [JsonPropertyName("trim_memory")] public bool TrimMemory { get; set; }
-    /// <summary>Pause a few Windows services while Boost is on. Only works while the administrator helper runs.</summary>
-    [JsonPropertyName("services")] public bool Services { get; set; }
-    /// <summary>Program file names (game.exe) that switch Boost on while they are running.</summary>
-    [JsonPropertyName("auto_apps")] public List<string> AutoApps { get; set; } = [];
-}
-
 /// <summary>A program whose priority Boost changed, and what it was before.</summary>
 public sealed class BoostedProcess
 {

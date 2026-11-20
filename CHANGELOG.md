@@ -1,7 +1,11 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.25.0
+Each version is a `## 1.26.0
+
+- Under the hood, PC Butler's code is split into smaller libraries: one for settings and what all parts share, and one each for files, search, sensors, system tools and Courier, plus one for the look every window shares. The background part loads only the ones it needs (no search, no Courier). Nothing changes in how it works.
+
+## 1.25.0
 
 - The background part is a program of its own now, PCButler.Agent.exe, built without the window framework the tools use, so it is much smaller. It holds the tray icon, the shortcuts, clipboard history, automatic sorting and update checks, usage alerts, automatic Boost, the usage and internet records and Resume yesterday.
 - Its right-click menu is now Windows' own menu: open the board, switch each background feature on or off, Sort now, Resume yesterday, install an update, Exit. A left click opens the board, as before.
