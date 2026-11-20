@@ -377,6 +377,24 @@ public sealed class TopBar : Border
 
     public void SetPage(string glyph, string title) => (pageGlyph.Text, page.Text) = (glyph, title);
 
+    /// <summary>A tool's own window: a small "Board" button at the far end, which opens the board.</summary>
+    public void AddBoard(Action open)
+    {
+        if (Child is not DockPanel row)
+            return;
+        var button = new Button
+        {
+            Content = Ui.Row(6, Ui.Glyph("\uF0E2", 14, "Primary"), Ui.Text(Ui.T("Board"), 13)),
+            ToolTip = Ui.T("Open the board with every tool"),
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(16, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        button.Click += (_, _) => open();
+        DockPanel.SetDock(button, Dock.Right);
+        row.Children.Insert(0, button);
+    }
+
     public void SetStatus(string text, Brush color)
     {
         status.Text = text;

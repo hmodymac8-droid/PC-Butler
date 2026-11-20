@@ -34,6 +34,8 @@ public sealed class ClipboardShare
     public void Apply(bool on)
     {
         On = on;
+        if (!App.Current.RunsServices)
+            return; // the background agent follows the clipboard; it reads the switch from the saved settings
         if (on && !listening)
             listening = AddClipboardFormatListener(source.Handle);
         else if (!on && listening)

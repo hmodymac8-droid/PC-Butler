@@ -86,17 +86,17 @@ Root: HKCU; Subkey: "Software\Classes\*\shell\PCButler"; Flags: dontcreatekey un
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PCButler"; Flags: dontcreatekey uninsdeletekey
 #ifndef TestBuild
 Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValue}"; \
-    ValueData: """{app}\{#AppExe}"" --background"; Check: WantAutostart
+    ValueData: """{app}\{#AppExe}"" --agent"; Check: WantAutostart
 #endif
 
 [Run]
 #ifndef TestBuild
-; One process holds the tray icon and the window. After a silent update it always comes
+; The background agent holds the tray icon (it closes by itself when no background feature is on). After a silent update it always comes
 ; back as it was; in the wizard it starts with automatic sorting on if that was ticked.
-Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: WizardSilent
-Filename: "{app}\{#AppExe}"; Parameters: "--background --auto-on"; Flags: nowait; Check: TickedAutoSort
-Filename: "{app}\{#AppExe}"; Parameters: "--background"; Flags: nowait; Check: TickedAutostartOnly
-; Updating from the window: a second launch brings the window up in the running program.
+Filename: "{app}\{#AppExe}"; Parameters: "--agent"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\{#AppExe}"; Parameters: "--agent --auto-on"; Flags: nowait; Check: TickedAutoSort
+Filename: "{app}\{#AppExe}"; Parameters: "--agent"; Flags: nowait; Check: TickedAutostartOnly
+; Updating from a tool window: the board opens again.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: ReopenRequested
 #endif
 Filename: "{app}\{#AppExe}"; Description: "{cm:OpenApp}"; Flags: nowait postinstall skipifsilent

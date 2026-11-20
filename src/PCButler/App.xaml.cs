@@ -8,51 +8,87 @@ using Forms = System.Windows.Forms;
 
 namespace PCButler;
 
-/// <summary>
-/// One process for everything: the tray icon and the background sorter run for as long as
-/// the program does, and the window can be closed and opened again.
+//// <summary>
+/// One program file, several small processes (see AppMode):
 ///
-/// Arguments: --background starts without a window (sign-in, installer), --auto-on turns
-/// automatic sorting on first (the installer's option), --no-splash skips the launch screen.
+///   PCButler.exe                 the floating board: pick a tool, and the board is gone
+///   PCButler.exe --tool &lt;id&gt;     one tool in a window of its own (one process per tool)
+///   PCButler.exe --agent         the tray icon and the background features that are switched on;
+///                                with none on it does not stay at all (--background is the old name)
+///   PCButler.exe --classic       the old all-in-one window, kept for now
+///
+/// Other arguments: --auto-on turns automatic sorting on first (the installer's option).
 /// </summary>
 public partial class App : Application
 {
-    // A copy pointed at its own data folder (PCBUTLER_DATA, used for testing) counts as a
-    // separate program, so trying it out never disturbs the installed one.
-    private static readonly string Scope =
-        Environment.GetEnvironmentVariable("PCBUTLER_DATA") is { Length: > 0 } custom
-            ? "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                  System.Text.Encoding.UTF8.GetBytes(custom.ToLowerInvariant())))[..8]
-            : "";
-    private static readonly string InstanceName = @"Local\PCButler.Instance" + Scope;
-    private static readonly string ShowSignalName = @"Local\PCButler.Show" + Scope;
-
     private Mutex? instance;
     private EventWaitHandle? showSignal;
     private Forms.NotifyIcon? tray;
     private MainWindow? window;
+    private BoardWindow? board;
     private ReportWindow? report;
     private bool exiting;
 
     public static new App Current => (App)Application.Current;
+    /// <summary>What this process is: the board, the background agent, or one tool.</summary>
+    public AppMode Mode { get; private set; } = AppMode.Board;
+    /// <summary>True only in the background agent: the one process that records the clipboard, holds the shortcuts and so on.</summary>
+    public bool RunsServices => Mode == AppMode.Agent;
+    /// <summary>The tool this process shows (Mode is Tool); "home" for the classic window.</summary>
+    public string ToolKey { get; private set; } = "";
     public BackgroundService Background { get; } = new();
     /// <summary>Processor and memory readings for the Home page and the tray icon.</summary>
     public UsageMonitor Usage { get; } = new();
-    /// <summary>The clipboard manager: records copies while it is on, and opens its list with the shortcut.</summary>
-    public ClipboardManager Clips { get; private set; } = null!;
+    private ClipboardManager? clips;
+    /// <summary>The clipboard manager: records copies while it is on (in the agent), and opens its list.</summary>
+    public ClipboardManager Clips => clips ??= new ClipboardManager();
+    private ClipboardShare? clipShare;
     /// <summary>Copied text shared with the PCs and phones connected through Courier.</summary>
-    public ClipboardShare ClipShare { get; private set; } = null!;
+    public ClipboardShare ClipShare => clipShare ??= new ClipboardShare();
     /// <summary>The performance overlay of the Benchmark page.</summary>
     public OverlayController Overlay { get; } = new();
-    /// <summary>The shortcuts of the Settings page's Hotkeys tab.</summary>
-    public Hotkeys Keys { get; private set; } = null!;
-    /// <summary>File search: the index of the drives, kept up to date while the program runs.</summary>
-    public PCButler.Core.Search.SearchEngine Search { get; } = new();
+    private Hotkeys? keys;
+    /// <summary>The shortcuts of the Settings page's Hotkeys tab (registered in the agent only).</summary>
+    public Hotkeys Keys => keys ??= new Hotkeys(RunHotkey, active: RunsServices);
+    private PCButler.Core.Search.SearchEngine? search;
+    /// <summary>
+    /// File search. Never kept in the background agent: a tool that searches loads the saved
+    /// index when it first asks, keeps it up to date while it is open, and saves it when it closes.
+    /// </summary>
+    public PCButler.Core.Search.SearchEngine Search
+    {
+        get
+        {
+            if (search is null)
+            {
+                search = new PCButler.Core.Search.SearchEngine();
+                if (!RunsServices)
+                    search.Start(ConfigStore.Load().Search);
+            }
+            return search;
+        }
+    }
+
+    /// <summary>
+    /// One search without keeping the index (the agent, when a phone asks Courier for a file by
+    /// name): the saved index is read, searched and let go.
+    /// </summary>
+    public PCButler.Core.Search.SearchResult SearchOnce(string query)
+    {
+        if (search is not null || !RunsServices)
+            return Search.Search(query, PCButler.Core.Search.SearchSort.Name, false, CancellationToken.None);
+        var settings = ConfigStore.Load().Search;
+        var loaded = PCButler.Core.Search.IndexStore.Load(PCButler.Core.Search.IndexStore.DefaultFile);
+        var index = loaded?.Index ?? new PCButler.Core.Search.SearchIndex();
+        return PCButler.Core.Search.Searcher.Run(index, query, PCButler.Core.Search.SearchSort.Name, false,
+                                                 new PCButler.Core.Search.SearchOptions(settings.MatchCase, settings.MatchDiacritics), CancellationToken.None);
+    }
+
     private SearchPopup? searchPopup;
     private string trayState = "";
     private bool firstStart;
     private DropZoneWindow? dropZone;
-    /// <summary>The main window while it is open.</summary>
+    /// <summary>The tool's window while it is open (null in the agent and the board).</summary>
     public MainWindow? Workspace => window;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -95,11 +131,26 @@ public partial class App : Application
             ConfigStore.Save(config);
         }
 
+        var toolAt = Array.IndexOf(arguments, "--tool");
+        if (arguments.Contains("--agent") || arguments.Contains("--background"))
+            Mode = AppMode.Agent;
+        else if (arguments.Contains("--classic"))
+            (Mode, ToolKey) = (AppMode.Tool, "home");
+        else if (toolAt >= 0 && toolAt + 1 < arguments.Length && Tools.IsTool(arguments[toolAt + 1]))
+            (Mode, ToolKey) = (AppMode.Tool, arguments[toolAt + 1]);
+
+        var scope = CrossProcess.Scope;
+        var (instanceName, signalName) = Mode switch
+        {
+            AppMode.Agent => (AgentLink.MutexName, @"Local\PCButler.Agent.Show" + scope),
+            AppMode.Tool => (ToolMutex(ToolKey), ToolMutex(ToolKey) + ".Show"),
+            _ => (@"Local\PCButler.Board" + scope, @"Local\PCButler.Board.Show" + scope),
+        };
         bool first;
         try
         {
-            instance = new Mutex(true, InstanceName, out first);
-            showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSignalName);
+            instance = new Mutex(true, instanceName, out first);
+            showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, signalName);
         }
         catch (UnauthorizedAccessException)
         {
@@ -110,15 +161,20 @@ public partial class App : Application
         }
         if (!first)
         {
-            // Already running: a plain launch brings its window up, a background start has nothing to do.
-            if (!arguments.Contains("--background"))
+            // Already open: a second launch brings the board or the tool forward (with what it was asked to do).
+            // A second agent has nothing to do.
+            if (Mode == AppMode.Tool)
+                ToolRequest.Write(ToolKey, arguments);
+            if (Mode != AppMode.Agent)
+            {
+                AllowSetForegroundWindow(-1);
                 showSignal.Set();
+            }
             Shutdown();
             return;
         }
 
         AppInfo.ImportLegacyData();
-        BoostMode.Recover(); // if the program was closed the hard way while Boost was on
         Tr.Language = ConfigStore.Load().EffectiveLanguage();
         DispatcherUnhandledException += OnUnhandledException;
         // Errors on other threads can't be shown, but they are logged.
@@ -129,7 +185,241 @@ public partial class App : Application
             Log.Seldom("unobserved " + e.Exception.GetBaseException().Message, TimeSpan.FromHours(1), $"ERROR Unobserved: {e.Exception}");
             e.SetObserved();
         };
-        Log.Info("Started (tray icon, updates, and automatic sorting when it is on)");
+        var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
+        waiter.Start();
+
+        switch (Mode)
+        {
+            case AppMode.Agent:
+                StartAgentMode();
+                break;
+            case AppMode.Tool:
+                StartToolMode(arguments);
+                break;
+            default:
+                StartBoardMode();
+                break;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
+
+    private static string ToolMutex(string key) => @"Local\PCButler.Tool." + key + CrossProcess.Scope;
+
+    /// <summary>True while the window of that tool is open (in its own process).</summary>
+    public static bool ToolRunning(string key)
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(ToolMutex(key), out var mutex))
+                return false;
+            mutex.Dispose();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    // --- the board ---
+
+    private void StartBoardMode()
+    {
+        // The background features that are switched on run in the agent: start it if it is not running
+        // (after a sign-in with "start with Windows" off, say).
+        if (!AgentLink.Running && AgentNeeds.Any(ConfigStore.Load()))
+            Tools.StartAgent();
+        board = new BoardWindow(firstStart);
+        board.Closed += (_, _) =>
+        {
+            board = null;
+            if (!exiting)
+            {
+                exiting = true;
+                Shutdown();
+            }
+        };
+        board.Show();
+        board.Activate();
+    }
+
+    // --- one tool ---
+
+    private bool reopening;
+
+    private void StartToolMode(string[] arguments)
+    {
+        var id = TaskbarIdentity.IdFor(ToolKey);
+        TaskbarIdentity.ForProcess(id);
+        // Anything this tool switches on or off reaches the background agent (or starts it).
+        ConfigStore.Saved += () => Dispatcher.BeginInvoke(QueueConfigChanged);
+        if (ToolKey is "benchmark" or "booster" or "home")
+            Usage.Start(); // their live figures
+        window = new MainWindow(ToolKey == "home" ? null : ToolKey);
+        var opened = window;
+        opened.SourceInitialized += (_, _) =>
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(opened).Handle;
+            TaskbarIdentity.ForWindow(handle, id, ToolKey == "home" ? "--classic" : $"--tool {ToolKey}", opened.Title);
+        };
+        opened.Closed += (_, _) =>
+        {
+            window = null;
+            ExitTool();
+        };
+        opened.Reveal();
+        ToolArguments(arguments);
+        if (ToolKey == "portal")
+            BorrowCourier();
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (window is { } shown && IsOpen(shown))
+            {
+                if (ToolKey is "vault" or "home")
+                    shown.TakeVaultInbox();
+                if (ToolKey == "portal" && courierReady)
+                    shown.TakeCourierInbox();
+            }
+        }, DispatcherPriority.ApplicationIdle);
+        if (ToolKey == "home")
+            ShowWhatsNew(opened);
+    }
+
+    /// <summary>What a launch asked the tool to do: files for its list, a search, the What's new list.</summary>
+    private void ToolArguments(string[] arguments)
+    {
+        if (window is not { } shown)
+            return;
+        string? After(string name)
+        {
+            var at = Array.IndexOf(arguments, name);
+            return at >= 0 && at + 1 < arguments.Length ? arguments[at + 1] : null;
+        }
+        if (After("--paths") is { } list && Tools.TakeList(list) is { Count: > 0 } paths)
+        {
+            if (ToolKey == "shredder")
+                shown.ShredLater(paths);
+            else if (ToolKey == "portal")
+                shown.SendWithPortal(paths);
+        }
+        if (After("--query") is { } query && ToolKey == "search")
+            shown.SearchPage.SearchFor(query);
+        if (arguments.Contains("--whats-new"))
+            ShowWhatsNew(shown, always: true);
+        if (arguments.Contains("--auto-sort"))
+            shown.SetAutoSort(true);
+    }
+
+    private DispatcherTimer? configTimer;
+
+    /// <summary>Several saves in a row (a page writes a few settings at once) make one message to the agent.</summary>
+    private void QueueConfigChanged()
+    {
+        if (configTimer is null)
+        {
+            configTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            configTimer.Tick += (_, _) =>
+            {
+                configTimer.Stop();
+                AgentLink.ConfigChanged();
+            };
+        }
+        configTimer.Stop();
+        configTimer.Start();
+    }
+
+    /// <summary>The tool's window closed: so does its process.</summary>
+    private void ExitTool()
+    {
+        if (exiting)
+            return;
+        exiting = true;
+        if (configTimer is { IsEnabled: true })
+        {
+            configTimer.Stop();
+            AgentLink.ConfigChanged();
+        }
+        if (BoostMode.Active is not null)
+            BoostMode.Stop(); // a Boost started from the Booster lasts while it is open
+        Usage.Stop();
+        search?.Stop(); // saves the index, so the next search opens at once
+        if (ToolKey == "portal" || Portal.Current is not null)
+        {
+            Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4));
+            Portal.Current = null;
+            // Courier goes back to the background agent, or the agent starts and takes it.
+            if (AgentLink.Running)
+                AgentLink.Send("courier-resume", 3000);
+            else if (AgentNeeds.Any(ConfigStore.Load()))
+                Tools.StartAgent();
+        }
+        if (reopening)
+        {
+            // Opened again (in another language): this process lets go of the tool before the new one starts.
+            try
+            {
+                instance?.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+            }
+            instance?.Dispose();
+            instance = null;
+            if (ToolKey == "home")
+                System.Diagnostics.Process.Start(Environment.ProcessPath!, "--classic")?.Dispose();
+            else
+                Tools.Open(ToolKey);
+        }
+        showSignal?.Set();
+        Shutdown();
+    }
+
+    private bool courierReady;
+
+    /// <summary>
+    /// The Courier tool runs Courier itself while it is open, so its page shows the connections
+    /// live: the agent stops its own first and starts it again when the tool closes.
+    /// </summary>
+    private void BorrowCourier()
+    {
+        Task.Run(() =>
+        {
+            var reply = AgentLink.Send("courier-release", 8000);
+            var settings = ConfigStore.Load().Portal;
+            var start = reply == "released" || (reply is null && settings.AutoStart && (settings.Used || settings.Role.Length > 0));
+            Dispatcher.BeginInvoke(async () =>
+            {
+                if (start && !exiting)
+                    await Courier.Start();
+                courierReady = true;
+                if (!exiting && window is { } shown)
+                {
+                    shown.ShowSwitches();
+                    shown.TakeCourierInbox();
+                }
+            });
+        });
+    }
+
+    // --- the background agent ---
+
+    private void StartAgentMode()
+    {
+        var config = ConfigStore.Load();
+        if (!AgentNeeds.Any(config))
+        {
+            // Nothing that needs to run in the background is switched on: no process at all.
+            Log.Info("Agent: no background feature is on, so nothing stays running");
+            exiting = true;
+            Shutdown();
+            return;
+        }
+        // If the program was closed the hard way while Boost was on (and no Booster has it now).
+        if (!ToolRunning("booster"))
+            BoostMode.Recover();
+        Log.Info($"Agent started: {string.Join(", ", AgentNeeds.Of(config))}");
         // Windows is about to shut down or restart: note once more what is open, for Resume yesterday.
         // (Windows' own notice, which reaches a program that only has a tray icon open too.)
         Microsoft.Win32.SystemEvents.SessionEnding += (_, _) =>
@@ -137,61 +427,173 @@ public partial class App : Application
             if (ConfigStore.Load().ResumeSession)
                 SessionRestore.Freeze();
         };
-
-        // The launch screen comes first; everything else waits until it is on screen.
-        var launching = !arguments.Contains("--background");
-        var withSplash = launching && !arguments.Contains("--no-splash");
-        if (withSplash)
-        {
-            splashOpen = true;
-            new SplashWindow(onClose: SplashClosed).Show();
-        }
-        Dispatcher.BeginInvoke(() => FinishStartup(launching, withSplash), System.Windows.Threading.DispatcherPriority.Background);
+        // Older versions started with Windows as "--background": the entry is written again as "--agent".
+        if (Autostart.IsEnabled() && AppInfo.IsInstalled)
+            PCButler.MainWindow.SetAutostart(true);
+        Dispatcher.BeginInvoke(FinishStartup, DispatcherPriority.Background);
     }
 
-    /// <summary>The rest of the start, once the launch screen (if any) has been drawn.</summary>
-    private void FinishStartup(bool launching, bool withSplash)
+    /// <summary>The agent's features, once the dispatcher is running.</summary>
+    private void FinishStartup()
     {
         if (exiting)
             return;
-        SyncExplorerMenu(ConfigStore.Load().ExplorerMenu);
-        if (ConfigStore.Load().DropZone)
+        var config = ConfigStore.Load();
+        SyncExplorerMenu(config.ExplorerMenu);
+        if (config.DropZone)
             ShowDropZone(true);
 
         StartTray();
-        Clips = new ClipboardManager();
-        if (Clips.Apply(ConfigStore.Load().Clipboard) is { } clipboardError)
+        if (Clips.Apply(config.Clipboard) is { } clipboardError)
             Log.Warning($"Clipboard manager: {clipboardError}");
-        ClipShare = new ClipboardShare();
-        ClipShare.Apply(ConfigStore.Load().Portal.ShareClipboard);
-        Keys = new Hotkeys(RunHotkey);
-        foreach (var (action, problem) in Keys.Apply(ConfigStore.Load().Hotkeys))
+        ClipShare.Apply(config.Portal.ShareClipboard);
+        foreach (var (action, problem) in Keys.Apply(config.Hotkeys))
             Log.Warning($"Hotkey for {action}: {problem}");
-        Overlay.Apply(ConfigStore.Load());
-        Search.Start(ConfigStore.Load().Search);
+        Overlay.Apply(config);
         StartBackground();
         StartCourier();
-        RecordUsage(ConfigStore.Load().Usage.Record);
+        RecordUsage(config.Usage.Record);
         StartResume();
         RestoreIndexing();
-        TrackInternet(ConfigStore.Load().TrackInternet);
-        var waiter = new Thread(WaitForShowSignal) { IsBackground = true, Name = "PC Butler show signal" };
-        waiter.Start();
-
-        if (launching)
-            ShowMainWindow(splash: withSplash);
+        TrackInternet(config.TrackInternet);
+        Remember(config);
+        WatchConfig();
+        AgentLink.Serve(AgentCommand, agentStop.Token);
     }
 
-    private bool splashOpen;
-    private bool buildingWindow;
-    private Action? afterSplash; // shows the window once the launch screen closes
+    private readonly CancellationTokenSource agentStop = new();
+    private FileSystemWatcher? configWatcher;
+    private DispatcherTimer? reapplyTimer;
+    private readonly Dictionary<string, string> applied = [];
+    private bool courierLent;
 
-    private void SplashClosed()
+    /// <summary>A tool (or anything else) wrote config.json: apply what changed, a moment later.</summary>
+    private void WatchConfig()
     {
-        splashOpen = false;
-        var next = afterSplash;
-        afterSplash = null;
-        next?.Invoke();
+        reapplyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        reapplyTimer.Tick += (_, _) =>
+        {
+            reapplyTimer.Stop();
+            Reapply();
+        };
+        try
+        {
+            Directory.CreateDirectory(AppInfo.DataDir);
+            configWatcher = new FileSystemWatcher(AppInfo.DataDir, "config.json")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName | NotifyFilters.CreationTime,
+            };
+            configWatcher.Changed += (_, _) => Dispatcher.BeginInvoke(QueueReapply);
+            configWatcher.Created += (_, _) => Dispatcher.BeginInvoke(QueueReapply);
+            configWatcher.Renamed += (_, _) => Dispatcher.BeginInvoke(QueueReapply);
+            configWatcher.EnableRaisingEvents = true;
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            Log.Warning($"Agent: cannot watch the settings file: {error.Message}");
+        }
+    }
+
+    private void QueueReapply()
+    {
+        if (exiting || reapplyTimer is null)
+            return;
+        reapplyTimer.Stop();
+        reapplyTimer.Start();
+    }
+
+    /// <summary>One request from the board or a tool, over the agent's pipe (on the pipe's thread).</summary>
+    private string AgentCommand(string command)
+    {
+        switch (command)
+        {
+            case "ping":
+                return "agent";
+            case "config-changed":
+                Dispatcher.BeginInvoke(QueueReapply);
+                return "ok";
+            case "courier-release":
+                var stopping = Dispatcher.Invoke(() =>
+                {
+                    courierLent = true;
+                    return Courier.Node is null ? Task.CompletedTask : Courier.Stop();
+                });
+                stopping.Wait(TimeSpan.FromSeconds(6));
+                return "released";
+            case "courier-resume":
+                Dispatcher.BeginInvoke(ResumeCourier);
+                return "ok";
+            case "exit":
+                Dispatcher.BeginInvoke(ExitProgram);
+                return "ok";
+            default:
+                return "unknown";
+        }
+    }
+
+    /// <summary>The Courier tool closed: Courier runs here again, if it starts by itself.</summary>
+    private void ResumeCourier()
+    {
+        if (!courierLent || exiting)
+            return;
+        courierLent = false;
+        var settings = ConfigStore.Load().Portal;
+        if (Courier.Node is null && settings.AutoStart && (settings.Used || settings.Role.Length > 0))
+            _ = Courier.Start();
+    }
+
+    private static string Snapshot(object value) => System.Text.Json.JsonSerializer.Serialize(value);
+
+    private static string CourierSnapshot(Config config) => $"{config.Portal.AutoStart}{config.Portal.Used}{config.Portal.Role}";
+
+    private void Remember(Config config)
+    {
+        applied["clipboard"] = Snapshot(config.Clipboard);
+        applied["hotkeys"] = Snapshot(config.Hotkeys);
+        applied["overlay"] = Snapshot(config.Overlay) + Snapshot(config.Boost.AutoApps);
+        applied["resume"] = config.ResumeSession.ToString();
+        applied["courier"] = CourierSnapshot(config);
+        applied["language"] = config.EffectiveLanguage();
+    }
+
+    private bool Changed(string key, string now) => !applied.TryGetValue(key, out var before) || before != now;
+
+    /// <summary>The settings changed on disk: switch the background features to match, or close when none is left.</summary>
+    private void Reapply()
+    {
+        if (exiting)
+            return;
+        var config = ConfigStore.Load();
+        if (!AgentNeeds.Any(config))
+        {
+            Log.Info("Agent: every background feature is off now; closing");
+            ExitProgram();
+            return;
+        }
+        if (Changed("language", config.EffectiveLanguage()))
+            Tr.Language = config.EffectiveLanguage();
+        if (Changed("clipboard", Snapshot(config.Clipboard)) && Clips.Apply(config.Clipboard) is { } clipboardError)
+            Log.Warning($"Clipboard manager: {clipboardError}");
+        ClipShare.Apply(config.Portal.ShareClipboard);
+        if (Changed("hotkeys", Snapshot(config.Hotkeys)))
+            foreach (var (action, problem) in Keys.Apply(config.Hotkeys))
+                Log.Warning($"Hotkey for {action}: {problem}");
+        if (Changed("overlay", Snapshot(config.Overlay) + Snapshot(config.Boost.AutoApps)))
+            Overlay.Apply(config);
+        TrackInternet(config.TrackInternet);
+        RecordUsage(config.Usage.Record);
+        if (Changed("resume", config.ResumeSession.ToString()))
+        {
+            if (config.ResumeSession)
+                SessionRestore.StartOfRun();
+            RememberSession(config.ResumeSession);
+        }
+        ShowDropZone(config.DropZone);
+        Courier.WidgetOn = config.Portal.Widget;
+        if (Changed("courier", CourierSnapshot(config)) && !courierLent
+            && Courier.Node is null && config.Portal.AutoStart && (config.Portal.Used || config.Portal.Role.Length > 0))
+            _ = Courier.Start();
+        Remember(config);
     }
 
     private void WaitForShowSignal()
@@ -200,8 +602,18 @@ public partial class App : Application
         {
             if (exiting)
                 return;
-            // A second launch: the program is already running, so no launch screen.
-            Dispatcher.BeginInvoke(() => ShowMainWindow(splash: false));
+            // A second launch: bring the board or the tool forward.
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (Mode == AppMode.Board)
+                    board?.Bring();
+                else if (Mode == AppMode.Tool)
+                {
+                    ShowMainWindow();
+                    if (ToolRequest.Take(ToolKey) is { } asked)
+                        ToolArguments(asked);
+                }
+            });
         }
     }
 
@@ -214,70 +626,33 @@ public partial class App : Application
 
     // --- the window ---
 
-    /// <summary>Bring up the main window, opening it if it is closed.</summary>
+    /// <summary>
+    /// "Open PC Butler": the board, from the agent and the board; in a tool, its own window comes forward.
+    /// </summary>
     public void ShowMainWindow(bool splash = false)
     {
         if (exiting)
             return;
-        if (window is not null)
+        if (Mode == AppMode.Agent)
         {
-            if (window.WindowState == WindowState.Minimized)
-                SystemCommands.RestoreWindow(window); // back to normal or maximized, as it was
-            window.Show();
-            window.Activate();
+            Tools.OpenBoard();
+            return;
+        }
+        if (Mode == AppMode.Board)
+        {
+            board?.Bring();
+            return;
+        }
+        if (window is null)
+            return;
+        if (window.WindowState == WindowState.Minimized)
+            SystemCommands.RestoreWindow(window); // back to normal or maximized, as it was
+        window.Show();
+        window.Activate();
+        if (ToolKey is "vault" or "home")
             window.TakeVaultInbox();
+        if ((ToolKey == "portal" && courierReady) || ToolKey == "home")
             window.TakeCourierInbox();
-            return;
-        }
-        // Building the window takes a moment, and some of it lets other clicks through (a tray icon
-        // double-click is two clicks): while one is being built, a second click must not build another.
-        if (buildingWindow)
-            return;
-        buildingWindow = true;
-        try
-        {
-            window = new MainWindow();
-        }
-        finally
-        {
-            buildingWindow = false;
-        }
-        window.Closed += (_, _) => window = null;
-        var opened = window;
-        if (splash)
-        {
-            // The launch screen is already up (see OnStartup): the window waits for it to close.
-            void Show()
-            {
-                // Not shown yet, so it has no window handle: what matters is that it is still the program's window.
-                if (window == opened)
-                {
-                    opened.Reveal();
-                    ShowWhatsNew(opened);
-                }
-            }
-            if (splashOpen)
-                afterSplash = Show;
-            else
-                Show(); // it was clicked away before the window was ready
-            // While the launch screen is up: look for junk and for program updates, so the results are waiting.
-            opened.Cleaner.ScanNow();
-            opened.Programs.CheckAtLaunch();
-        }
-        else
-        {
-            opened.Reveal();
-            ShowWhatsNew(opened);
-        }
-        // After the window is up (and after the launch screen, if there is one).
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (IsOpen(opened))
-            {
-                opened.TakeVaultInbox();
-                opened.TakeCourierInbox();
-            }
-        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>
@@ -290,6 +665,8 @@ public partial class App : Application
 
     private void ShowDropZone(bool show)
     {
+        if (!RunsServices)
+            return; // the drop zone lives in the background agent
         if (show && dropZone is null && !exiting)
         {
             dropZone = new DropZoneWindow();
@@ -302,6 +679,29 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Send files to another PC: on the Courier tool's list (opened for it when it is not the one open).</summary>
+    public void SendWithPortal(IEnumerable<string> paths)
+    {
+        if (window is not null)
+        {
+            window.SendWithPortal(paths);
+            return;
+        }
+        CourierInbox.Add(paths.ToList());
+        Tools.Open("portal");
+    }
+
+    /// <summary>Put items on the Shredder's list, in its own window.</summary>
+    public void ShredLater(IEnumerable<string> paths)
+    {
+        if (window is not null)
+        {
+            window.ShredLater(paths);
+            return;
+        }
+        Tools.OpenWith("shredder", paths);
+    }
+
     /// <summary>A shortcut from the Hotkeys tab was pressed, in whatever program.</summary>
     public void RunHotkey(string action)
     {
@@ -310,16 +710,14 @@ public partial class App : Application
         switch (action)
         {
             case "open":
-                ShowMainWindow();
-                break;
             case "palette":
-                ShowSearchPopup(forCommands: true);
+                // The board is the launcher now: type to find a tool there.
+                Tools.OpenBoard();
                 break;
             case "search":
-                ShowSearchPopup();
-                break;
             case "searchpage":
-                ShowPage("search");
+                // The index is not kept in the background: the Search tool loads it when it opens.
+                Tools.Open("search");
                 break;
             case "sort":
                 Background.RequestSort();
@@ -328,8 +726,7 @@ public partial class App : Application
                 SetDropZone(!ConfigStore.Load().DropZone);
                 break;
             case "courier":
-                ShowMainWindow();
-                window?.ShowPage("portal");
+                Tools.Open("portal");
                 break;
             case "overlay":
                 var on = !ConfigStore.Load().Overlay.Enabled;
@@ -424,10 +821,15 @@ public partial class App : Application
         switch (key)
         {
             case "sort" when on:
-                // Turning it on moves files, so the window asks first, as its own switch does.
+                // Turning it on moves files, so the Sorter asks first, as its own switch does.
+                if (window is null)
+                {
+                    Tools.Open("preview", "--auto-sort");
+                    break;
+                }
                 ShowMainWindow();
-                window?.ShowSwitches();
-                window?.SetAutoSort(true);
+                window.ShowSwitches();
+                window.SetAutoSort(true);
                 break;
             case "sort":
                 ChangeConfig(config => config.AutoSort = false);
@@ -494,13 +896,13 @@ public partial class App : Application
     }
 
     /// <summary>Once after each update, when the window first opens: the list of what changed.</summary>
-    private void ShowWhatsNew(MainWindow owner)
+    private void ShowWhatsNew(MainWindow owner, bool always = false)
     {
         var seen = ConfigStore.Load().LastSeenVersion;
-        if (seen == AppInfo.Version)
+        if (seen == AppInfo.Version && !always)
             return;
         owner.UpdateConfig(config => config.LastSeenVersion = AppInfo.Version);
-        if (!Changelog.ShouldShow(seen, firstStart))
+        if (!always && !Changelog.ShouldShow(seen, firstStart))
             return;
         Dispatcher.BeginInvoke(() =>
         {
@@ -512,12 +914,13 @@ public partial class App : Application
     /// <summary>Close the window and open it again, e.g. in a new language.</summary>
     public void ReopenMainWindow()
     {
-        var old = window;
-        old?.Quit();
-        if (old is not null && IsOpen(old))
-            return; // the window is waiting for a job to finish
-        window = null;
-        ShowMainWindow();
+        if (window is not { } old)
+            return;
+        // The tool's process ends with its window, and a new one starts in its place.
+        reopening = true;
+        old.Quit();
+        if (IsOpen(old))
+            reopening = false; // the window is waiting for a job to finish
     }
 
     /// <summary>The report window after an automatic run. Only one is open at a time; it refreshes itself.</summary>
@@ -573,15 +976,13 @@ public partial class App : Application
         tray.BalloonTipClosed += (_, _) => receivedPath = null;
         tray.MouseClick += (_, e) =>
         {
-            if (e.Button is Forms.MouseButtons.Left or Forms.MouseButtons.Right)
+            if (e.Button == Forms.MouseButtons.Left)
+            {
+                flyout?.Dismiss();
+                Tools.OpenBoard();
+            }
+            else if (e.Button == Forms.MouseButtons.Right)
                 ToggleFlyout();
-        };
-        tray.MouseDoubleClick += (_, e) =>
-        {
-            if (e.Button != Forms.MouseButtons.Left)
-                return;
-            flyout?.Dismiss();
-            ShowMainWindow();
         };
     }
 
@@ -608,8 +1009,15 @@ public partial class App : Application
     /// <summary>Open the window at one of its pages.</summary>
     public void ShowPage(string key)
     {
+        if (window is null)
+        {
+            // The agent and the board open the tool in a window of its own.
+            Tools.Open(key);
+            board?.Close();
+            return;
+        }
         ShowMainWindow();
-        window?.ShowPage(key);
+        window.ShowPage(key);
     }
 
     /// <summary>The tray panel's update button.</summary>
@@ -635,8 +1043,8 @@ public partial class App : Application
         if (exiting)
             return;
         Notify("{0}", [message]);
-        // The widget asks right there; without it, the Courier page does.
-        if (Courier.WidgetOn)
+        // The widget asks right there; without it, the Courier page does. In the agent a pop-up asks (see WatchCourier).
+        if (RunsServices)
         {
             widgetDismissed = false;
             WatchCourier();
@@ -762,9 +1170,10 @@ public partial class App : Application
     public void SetResumeSession(bool on)
     {
         ChangeConfig(config => config.ResumeSession = on);
-        if (on)
+        if (on && RunsServices)
             SessionRestore.StartOfRun();
-        RememberSession(on);
+        if (RunsServices)
+            RememberSession(on); // in a tool, the agent sees the switch in the saved settings
         if (!on)
             SessionRestore.Forget();
     }
@@ -811,6 +1220,8 @@ public partial class App : Application
 
     public void TrackInternet(bool on)
     {
+        if (!RunsServices)
+            return; // counted by the background agent, which reads the switch from the saved settings
         if (on && NetTracker is null)
             NetTracker = new NetUsageRecorder();
         else if (!on && NetTracker is not null)
@@ -841,6 +1252,8 @@ public partial class App : Application
     /// <summary>Record what each app uses, or stop. While the administrator helper runs, it is asked to count internet use per app too.</summary>
     public void RecordUsage(bool on)
     {
+        if (!RunsServices)
+            return; // recorded by the background agent, which reads the switch from the saved settings
         if (on && usageRecorder is null)
         {
             usageRecorder = new AppUsageRecorder();
@@ -906,6 +1319,7 @@ public partial class App : Application
     private CourierNotices? courierNotices;
     private bool widgetDismissed, widgetWasBusy;
     private readonly DispatcherTimer courierWatch = new() { Interval = TimeSpan.FromSeconds(1) };
+    private int lentChecks;
 
     private void StartCourier()
     {
@@ -923,6 +1337,9 @@ public partial class App : Application
     {
         if (exiting)
             return;
+        // Lent to the Courier tool, which then closed the hard way: Courier comes back here.
+        if (courierLent && ++lentChecks % 5 == 0 && !ToolRunning("portal"))
+            ResumeCourier();
         var node = Courier.Node;
         var busy = node is not null && Courier.Busy(node);
         // Closing it lasts until things calm down and start again (the next connection or question).
@@ -1051,10 +1468,21 @@ public partial class App : Application
     {
         if (exiting)
             return;
-        window?.Quit();
-        if (window is not null && IsOpen(window))
-            return; // the window is waiting for a job to finish
+        if (Mode == AppMode.Tool)
+        {
+            window?.Quit(); // its Closed ends the process (ExitTool)
+            if (window is null)
+                ExitTool();
+            return;
+        }
+        if (Mode == AppMode.Board)
+        {
+            board?.Close();
+            return;
+        }
         exiting = true;
+        agentStop.Cancel();
+        configWatcher?.Dispose();
         report?.Close();
         foreach (var open in Windows.OfType<Window>().ToList())
             open.Close();
@@ -1065,7 +1493,7 @@ public partial class App : Application
         RecordUsage(false);
         sessionTimer?.Dispose();
         TrackInternet(false);
-        Search.Stop(); // saves the index, so the next start is instant
+        search?.Stop();
         courierWatch.Stop();
         courierWidget?.Close();
         Portal.Current?.Stop().Wait(TimeSpan.FromSeconds(4)); // and so does Portal: nothing listens once the program is gone
@@ -1082,8 +1510,8 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         tray?.Dispose();
-        Clips?.Dispose();
-        Keys?.Dispose();
+        clips?.Dispose();
+        keys?.Dispose();
         instance?.Dispose();
         base.OnExit(e);
     }

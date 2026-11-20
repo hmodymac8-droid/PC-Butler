@@ -162,6 +162,9 @@ public sealed class OverlayController
 
     public void Apply(Config config)
     {
+        // The overlay runs in the background agent only; a tool's switch reaches it through the saved settings.
+        if (!App.Current.RunsServices)
+            return;
         settings = config.Overlay;
         boostApps = config.Boost.AutoApps;
         if (settings.Enabled)
@@ -353,17 +356,20 @@ public sealed class Hotkeys : IDisposable
 
     private const int WM_HOTKEY = 0x0312, FirstId = 0xB100;
     private const uint MOD_NOREPEAT = 0x4000;
-    private readonly HwndSource source;
+    private readonly HwndSource? source;
     private readonly List<int> registered = [];
     private readonly Action<string> run;
-    private readonly WinKeyHook hook;
+    private readonly WinKeyHook? hook;
 
     [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint key);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
 
-    public Hotkeys(Action<string> run)
+    /// <param name="active">False in a tool's process: the shortcuts belong to the background agent, so only their spelling is checked here.</param>
+    public Hotkeys(Action<string> run, bool active = true)
     {
         this.run = run;
+        if (!active)
+            return;
         hook = new WinKeyHook(index => run(Actions[index].Key));
         source = new HwndSource(new HwndSourceParameters("PC Butler hotkeys") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
         source.AddHook(WndProc);
@@ -373,6 +379,14 @@ public sealed class Hotkeys : IDisposable
     public Dictionary<string, string> Apply(Dictionary<string, string> saved)
     {
         var wanted = Effective(saved);
+        if (source is null || hook is null)
+        {
+            var spelling = new Dictionary<string, string>();
+            foreach (var (action, keys) in wanted)
+                if (keys.Length > 0 && !Shortcut.TryParse(keys, out _, out _))
+                    spelling[action] = Ui.T("“{0}” is not a shortcut PC Butler can use.", keys);
+            return spelling;
+        }
         foreach (var id in registered)
             UnregisterHotKey(source.Handle, id);
         registered.Clear();
@@ -418,6 +432,8 @@ public sealed class Hotkeys : IDisposable
 
     public void Dispose()
     {
+        if (source is null || hook is null)
+            return;
         foreach (var id in registered)
             UnregisterHotKey(source.Handle, id);
         hook.Dispose();
