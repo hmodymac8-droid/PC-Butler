@@ -24,8 +24,10 @@ $version = [regex]::Match((Get-Content (Join-Path $PSScriptRoot "src\PCButler.Co
                           'Version = "([^"]+)"').Groups[1].Value
 $project = [regex]::Match((Get-Content (Join-Path $PSScriptRoot "src\PCButler\PCButler.csproj") -Raw),
                           '<Version>([^<]+)</Version>').Groups[1].Value
-if (-not $version -or $version -ne $project) {
-    throw "AppInfo.Version ($version) and the <Version> in PCButler.csproj ($project) must be the same."
+$agent = [regex]::Match((Get-Content (Join-Path $PSScriptRoot "src\PCButler.Agent\PCButler.Agent.csproj") -Raw),
+                        '<Version>([^<]+)</Version>').Groups[1].Value
+if (-not $version -or $version -ne $project -or $version -ne $agent) {
+    throw "AppInfo.Version ($version) and the <Version> in PCButler.csproj ($project) and PCButler.Agent.csproj ($agent) must be the same."
 }
 
 function Find-Dotnet {
@@ -57,6 +59,10 @@ if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 & (Find-Dotnet) publish (Join-Path $PSScriptRoot "src\PCButler") -c Release -r win-x64 --self-contained `
     -p:DebugType=none -p:PublishReadyToRun=true -o $dist
 if ($LASTEXITCODE) { throw "dotnet publish failed" }
+# The background agent, PCButler.Agent.exe (no WPF), beside it, sharing the same runtime.
+& (Find-Dotnet) publish (Join-Path $PSScriptRoot "src\PCButler.Agent") -c Release -r win-x64 --self-contained `
+    -p:DebugType=none -p:PublishReadyToRun=true -o $dist
+if ($LASTEXITCODE) { throw "dotnet publish of the agent failed" }
 
 # Each tool has a program file of its own: a copy of PCButler.exe under the tool's name, which runs
 # the same PCButler.dll beside it (see Tools.ExeNames). Courier stays in PCButler.exe, which the firewall rule names.

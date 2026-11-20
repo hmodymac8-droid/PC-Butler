@@ -1,7 +1,13 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.24.1
+Each version is a `## 1.25.0
+
+- The background part is a program of its own now, PCButler.Agent.exe, built without the window framework the tools use, so it is much smaller. It holds the tray icon, the shortcuts, clipboard history, automatic sorting and update checks, usage alerts, automatic Boost, the usage and internet records and Resume yesterday.
+- Its right-click menu is now Windows' own menu: open the board, switch each background feature on or off, Sort now, Resume yesterday, install an update, Exit. A left click opens the board, as before.
+- What has to appear on screen (the drop zone, Courier and its widget and questions, the performance overlay, the clipboard list, the report after a sort) is shown by a small companion process that runs only while one of those is on, and closes by itself otherwise. Courier runs there too, so the firewall rule and the administrator helper keep working.
+
+## 1.24.1
 
 - The background part now gives unused memory back to Windows also while the performance overlay or the drop zone is on screen (only not while you are using one of its windows).
 

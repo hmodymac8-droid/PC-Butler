@@ -18,87 +18,40 @@ namespace PCButler;
 /// </summary>
 public sealed class ClipboardManager : IDisposable
 {
-    private const int WM_CLIPBOARDUPDATE = 0x031D, WM_HOTKEY = 0x0312, HotkeyId = 0xB070;
-    private readonly HwndSource source;
-    private readonly KeyHook hook = new();
     private ClipboardSettings settings = new();
-    private bool listening, hotkey;
-    private DateTime ignoreUntil; // our own copy, when an item is pasted again
     private ClipboardPicker? picker;
-
-    public ClipboardManager()
-    {
-        // HWND_MESSAGE: a window that is never shown, only there for messages.
-        source = new HwndSource(new HwndSourceParameters("PC Butler clipboard") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
-        source.AddHook(WndProc);
-    }
 
     public ClipboardSettings Settings => settings;
 
-    /// <summary>Apply the settings: start or stop recording, and register the shortcut. Returns an error to show, or null.</summary>
+    /// <summary>
+    /// Apply the settings. The background agent (PCButler.Agent.exe) records the copies and holds
+    /// the shortcut, so it is asked to; returns its error to show, or null.
+    /// </summary>
     public string? Apply(ClipboardSettings wanted)
+    {
+        Use(wanted);
+        return AgentLink.Send("apply-clipboard", 4000, System.Text.Json.JsonSerializer.Serialize(wanted)) is { Length: > 0 } problem ? problem : null;
+    }
+
+    /// <summary>Take the settings for showing the list and putting items back, without asking the agent.</summary>
+    public void Use(ClipboardSettings wanted)
     {
         settings = wanted;
         ClipboardHistory.Apply(wanted);
-        // In a tool's process the list is only shown: the background agent records copies and holds the shortcut.
-        if (!App.Current.RunsServices)
-            return AgentLink.Send("apply-clipboard", 4000, System.Text.Json.JsonSerializer.Serialize(wanted)) is { Length: > 0 } problem ? problem : null;
-        if (wanted.Enabled && !listening)
-            listening = AddClipboardFormatListener(source.Handle);
-        else if (!wanted.Enabled && listening)
-        {
-            RemoveClipboardFormatListener(source.Handle);
-            listening = false;
-        }
-        if (hotkey)
-            UnregisterHotKey(source.Handle, HotkeyId);
-        hotkey = false;
-        hook.Clear();
-        if (!wanted.Enabled || wanted.Shortcut.Length == 0)
-            return null;
-        if (!Shortcut.TryParse(wanted.Shortcut, out var modifiers, out var key))
-            return Ui.T("“{0}” is not a shortcut PC Butler can use.", wanted.Shortcut);
-        hotkey = RegisterHotKey(source.Handle, HotkeyId, (uint)modifiers | MOD_NOREPEAT, (uint)KeyInterop.VirtualKeyFromKey(key));
-        // Windows keeps Win+V (its own clipboard history) and other Win shortcuts for itself: those are taken over with a keyboard hook.
-        if (!hotkey && modifiers.HasFlag(ModifierKeys.Windows))
-        {
-            if (hook.Set(modifiers, key, ShowPicker))
-                return null;
-            return IsWindowsHistory(wanted.Shortcut)
-                ? Ui.T("Win+V belongs to Windows' own clipboard history, and PC Butler could not take it over. Choose another shortcut.")
-                : Ui.T("Windows keeps {0} for itself, and PC Butler could not take it over.", wanted.Shortcut);
-        }
-        return hotkey ? null : Ui.T("Another program already uses {0}, and Windows does not say which one. Choose another shortcut, or close that program and try again.",
-                                    wanted.Shortcut);
     }
 
     /// <summary>True for Win+V, the shortcut of Windows' own clipboard history.</summary>
     public static bool IsWindowsHistory(string keys) =>
         Shortcut.TryParse(keys, out var modifiers, out var key) && modifiers == ModifierKeys.Windows && key == System.Windows.Input.Key.V;
 
-    private IntPtr WndProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (message == WM_CLIPBOARDUPDATE)
-        {
-            // The program that copied may still hold the clipboard for a moment.
-            _ = Application.Current.Dispatcher.BeginInvoke(async () =>
-            {
-                await Task.Delay(60);
-                Record();
-            });
-        }
-        else if (message == WM_HOTKEY && wParam.ToInt32() == HotkeyId)
-        {
-            ShowPicker();
-            handled = true;
-        }
-        return IntPtr.Zero;
-    }
-
     /// <summary>Open the list over the program in front, which gets the pick pasted into it.</summary>
-    public void ShowPicker()
+    public void ShowPicker() => ShowPicker(GetForegroundWindow());
+
+    /// <summary>Open the list for that window (the agent says which one was in front when its shortcut was pressed).</summary>
+    public void ShowPicker(IntPtr target)
     {
-        var target = GetForegroundWindow();
+        if (target == IntPtr.Zero)
+            target = GetForegroundWindow();
         if (picker is { IsVisible: true })
         {
             BringToFront(picker);
@@ -130,75 +83,6 @@ public sealed class ClipboardManager : IDisposable
             AttachThreadInput(ours, theirs, false);
     }
 
-    // --- recording ---
-
-    private void Record()
-    {
-        if (!settings.Enabled || DateTime.Now < ignoreUntil || Excluded())
-            return;
-        for (var attempt = 0; attempt < 4; attempt++)
-        {
-            try
-            {
-                if (Read() is { } entry)
-                    ClipboardHistory.Add(entry, settings.Limit);
-                return;
-            }
-            catch (Exception error) when (error is COMException or ExternalException)
-            {
-                Thread.Sleep(50); // another program has the clipboard open
-            }
-        }
-    }
-
-    /// <summary>Password managers mark what they copy as not for clipboard history; that is respected.</summary>
-    private static bool Excluded()
-    {
-        if (IsClipboardFormatAvailable(RegisterClipboardFormat("ExcludeClipboardContentFromMonitorProcessing"))
-            || IsClipboardFormatAvailable(RegisterClipboardFormat("Clipboard Viewer Ignore")))
-            return true;
-        try
-        {
-            if (Clipboard.GetData("CanIncludeInClipboardHistory") is MemoryStream flag && flag.Length >= 4 && new BinaryReader(flag).ReadInt32() == 0)
-                return true;
-        }
-        catch (Exception error) when (error is COMException or ExternalException)
-        {
-        }
-        return false;
-    }
-
-    private ClipEntry? Read()
-    {
-        if (Clipboard.ContainsFileDropList())
-        {
-            var files = Clipboard.GetFileDropList().Cast<string>().ToList();
-            return files.Count > 0 ? new ClipEntry { Kind = "files", Files = files } : null;
-        }
-        if (Clipboard.ContainsText())
-        {
-            var text = Clipboard.GetText();
-            return string.IsNullOrWhiteSpace(text) || text.Length > ClipboardHistory.MaxText ? null : new ClipEntry { Kind = "text", Text = text };
-        }
-        if (settings.Pictures && Clipboard.ContainsImage() && Clipboard.GetImage() is { } image)
-        {
-            var entry = new ClipEntry { Kind = "image", Width = image.PixelWidth, Height = image.PixelHeight };
-            var pixels = new FormatConvertedBitmap(image, PixelFormats.Pbgra32, null, 0);
-            var bytes = new byte[pixels.PixelWidth * pixels.PixelHeight * 4];
-            pixels.CopyPixels(bytes, pixels.PixelWidth * 4, 0);
-            entry.Hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
-            if (ClipboardHistory.Entries.Any(known => known.Kind == "image" && known.Hash == entry.Hash))
-                return entry; // already kept: it just moves to the top
-            Directory.CreateDirectory(ClipboardHistory.ImageFolder);
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(pixels));
-            using (var file = File.Create(entry.ImageFile))
-                encoder.Save(file);
-            return entry;
-        }
-        return null;
-    }
-
     // --- putting an item back ---
 
     /// <summary>
@@ -211,7 +95,6 @@ public sealed class ClipboardManager : IDisposable
         var what = content ?? entry;
         if (what.Hidden)
             return false;
-        ignoreUntil = DateTime.Now.AddMilliseconds(800);
         for (var attempt = 0; attempt < 4; attempt++)
         {
             try
@@ -270,15 +153,7 @@ public sealed class ClipboardManager : IDisposable
             Log.Warning($"Paste: SendInput was refused (error {Marshal.GetLastWin32Error()})");
     }
 
-    public void Dispose()
-    {
-        if (hotkey)
-            UnregisterHotKey(source.Handle, HotkeyId);
-        hook.Dispose();
-        if (listening)
-            RemoveClipboardFormatListener(source.Handle);
-        source.Dispose();
-    }
+    public void Dispose() => picker?.Close();
 
     // --- Windows ---
 

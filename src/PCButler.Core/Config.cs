@@ -389,7 +389,7 @@ public static class Autostart
 #if WINDOWS
         using var key = Registry.CurrentUser.CreateSubKey(Key);
         if (enabled)
-            key.SetValue(ValueName, $"\"{AppInfo.MainExe}\" --agent");
+            key.SetValue(ValueName, File.Exists(Launcher.AgentExe) ? $"\"{Launcher.AgentExe}\"" : $"\"{AppInfo.MainExe}\" --agent");
         else
             key.DeleteValue(ValueName, throwOnMissingValue: false);
 #endif
