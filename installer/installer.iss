@@ -111,7 +111,7 @@ var
 begin
 #ifndef TestBuild
   // The running program locks its files.
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM {#AppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /FI "IMAGENAME eq PCButler.*"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(1500);
 #endif
 end;

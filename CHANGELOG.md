@@ -1,7 +1,12 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.23.2
+Each version is a `## 1.24.0
+
+- Each tool has a program file of its own now (PCButler.Search.exe, PCButler.Cleaner.exe and so on, beside PCButler.exe), so Task Manager names the tool that is running. A tool's program file opened by itself opens that tool. Courier, the board and the background part stay in PCButler.exe, so the firewall rule and the administrator helper keep working.
+- The background part gives the memory it no longer uses back to Windows once it has started and every few minutes after, while none of its windows is open.
+
+## 1.23.2
 
 - The quick search box is back: Win+F brings up the small search box over whatever program is in front, and Alt+Space the command palette, as before. They run in a small process of their own that loads the saved index when it opens and closes by itself after ten idle minutes, so the index is still not kept in memory all day.
 - Settings, Hotkeys: a shortcut another program already uses is reported again the moment you set it (and so is the clipboard list's shortcut).

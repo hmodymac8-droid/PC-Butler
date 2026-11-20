@@ -125,7 +125,7 @@ public static class Sensors
             LiveSlot.Prepare(Slot);
             LiveSlot.Prepare(FpsMeter.Slot);
             LiveSlot.Prepare(NetMeter.Slot);
-            var start = new ProcessStartInfo(Environment.ProcessPath!)
+            var start = new ProcessStartInfo(AppInfo.MainExe)
             {
                 UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden,
             };
