@@ -1,7 +1,11 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.24.0
+Each version is a `## 1.24.1
+
+- The background part now gives unused memory back to Windows also while the performance overlay or the drop zone is on screen (only not while you are using one of its windows).
+
+## 1.24.0
 
 - Each tool has a program file of its own now (PCButler.Search.exe, PCButler.Cleaner.exe and so on, beside PCButler.exe), so Task Manager names the tool that is running. A tool's program file opened by itself opens that tool. Courier, the board and the background part stay in PCButler.exe, so the firewall rule and the administrator helper keep working.
 - The background part gives the memory it no longer uses back to Windows once it has started and every few minutes after, while none of its windows is open.
