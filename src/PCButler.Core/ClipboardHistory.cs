@@ -107,7 +107,47 @@ public static class ClipboardHistory
     /// <summary>Raised after every change, for the page and the picker.</summary>
     public static event Action? Changed;
 
-    public static List<ClipEntry> Entries => entries ??= Load();
+    private static DateTime loadedStamp;
+
+    /// <summary>
+    /// The list, read again when another process wrote the file since (the background agent
+    /// records copies while a tool shows the list). Items unlocked here stay unlocked.
+    /// </summary>
+    public static List<ClipEntry> Entries
+    {
+        get
+        {
+            var stamp = Stamp();
+            if (entries is not null && (!KeepOnDisk || stamp == loadedStamp))
+                return entries;
+            var before = entries;
+            List<ClipEntry> loaded;
+            using (CrossProcess.Lock("clipboard"))
+                loaded = Load();
+            loadedStamp = stamp;
+            if (before is not null)
+            {
+                var open = before.Where(entry => entry.Open).ToDictionary(entry => entry.Id);
+                for (var index = 0; index < loaded.Count; index++)
+                    if (open.TryGetValue(loaded[index].Id, out var kept))
+                        loaded[index] = kept;
+            }
+            entries = loaded;
+            return entries;
+        }
+    }
+
+    private static DateTime Stamp()
+    {
+        try
+        {
+            return File.Exists(File_) ? File.GetLastWriteTimeUtc(File_) : DateTime.MinValue;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return loadedStamp;
+        }
+    }
 
     /// <summary>Pinned first, then newest first.</summary>
     public static List<ClipEntry> Ordered(string search = "") =>
@@ -156,8 +196,12 @@ public static class ClipboardHistory
                     Sealed = entry.Sealed,
                 }
                 : entry).ToList();
-            File.WriteAllText(temporary, JsonSerializer.Serialize(written, Options));
-            File.Move(temporary, File_, overwrite: true);
+            using (CrossProcess.Lock("clipboard"))
+            {
+                File.WriteAllText(temporary, JsonSerializer.Serialize(written, Options));
+                File.Move(temporary, File_, overwrite: true);
+            }
+            loadedStamp = Stamp();
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {

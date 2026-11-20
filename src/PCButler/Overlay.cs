@@ -363,16 +363,10 @@ public sealed class Hotkeys : IDisposable
     ];
 
     /// <summary>Shortcuts an action has until the user changes them; cleared, they are saved as "" so the default does not come back.</summary>
-    public static readonly Dictionary<string, string> Defaults = new() { ["search"] = "Win+F", ["palette"] = "Alt+Space" };
+    public static Dictionary<string, string> Defaults => HotkeyDefaults.Defaults;
 
     /// <summary>The saved shortcuts with the defaults filled in.</summary>
-    public static Dictionary<string, string> Effective(Dictionary<string, string> saved)
-    {
-        var all = new Dictionary<string, string>(saved);
-        foreach (var (action, keys) in Defaults)
-            all.TryAdd(action, keys);
-        return all;
-    }
+    public static Dictionary<string, string> Effective(Dictionary<string, string> saved) => HotkeyDefaults.Effective(saved);
 
     /// <summary>Starts the message for a Win shortcut Windows would not give up: the Hotkeys tab then offers to take it from File Explorer.</summary>
     public const string HeldByWindows = "held-by-windows:";

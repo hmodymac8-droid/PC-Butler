@@ -10,11 +10,12 @@ using PCButler.Core;
 namespace PCButler;
 
 /// <summary>
-/// What this process is. PC Butler is one program file that runs as several small processes:
-/// the background agent (tray icon and the background features that are switched on), the
-/// floating board (plain launch), and one process per open tool (--tool &lt;id&gt;).
+/// What this process is. PC Butler runs as several small processes: the floating board (plain
+/// launch), one process per open tool (--tool &lt;id&gt;, or the tool's own PCButler.&lt;Tool&gt;.exe), and
+/// the companion (--ui) that shows the background agent's windows and runs Courier. The agent
+/// itself is PCButler.Agent.exe, which has no WPF at all.
 /// </summary>
-public enum AppMode { Board, Agent, Tool }
+public enum AppMode { Board, Companion, Tool }
 
 /// <summary>The tools the board lists, grouped as the board shows them, and how each is started.</summary>
 public static class Tools
@@ -31,47 +32,9 @@ public static class Tools
     ];
 
     /// <summary>The quick search box and command palette: a process of its own with no window of its own (--popup).</summary>
-    public const string Popup = "popup";
+    public const string Popup = Launcher.Popup;
 
-    /// <summary>Open the search box (or the command palette) over whatever program is in front.</summary>
-    public static void OpenPopup(bool palette) => Start(palette ? ["--popup", "palette"] : ["--popup"], ExeOf(Popup));
-
-    /// <summary>
-    /// The program file of each tool: a copy of PCButler.exe under the tool's name (made by
-    /// build.ps1), so Task Manager and the taskbar tell them apart. Courier has none: it runs in
-    /// PCButler.exe, which the firewall rule and the administrator helper name.
-    /// </summary>
-    public static readonly Dictionary<string, string> ExeNames = new()
-    {
-        ["search"] = "Search", ["preview"] = "Sorter", ["duplicates"] = "Duplicates", ["storage"] = "Storage",
-        ["cleaner"] = "Cleaner", ["programs"] = "Programs", ["shredder"] = "Shredder", ["booster"] = "Booster",
-        ["benchmark"] = "Benchmark", ["internet"] = "Internet", ["lan"] = "ScanLAN", ["clipboard"] = "Clipboard",
-        ["vault"] = "Vault", ["history"] = "History", ["settings"] = "Settings", ["about"] = "Help", [Popup] = "QuickSearch",
-    };
-
-    /// <summary>The tool's own program file when it is there, else PCButler.exe (which opens it with --tool).</summary>
-    public static string ExeOf(string key)
-    {
-        if (ExeNames.TryGetValue(key, out var name))
-        {
-            var own = Path.Combine(AppContext.BaseDirectory, $"PCButler.{name}.exe");
-            if (File.Exists(own))
-                return own;
-        }
-        return AppInfo.MainExe;
-    }
-
-    /// <summary>The tool a program file belongs to ("PCButler.Search.exe" is "search"), or null.</summary>
-    public static string? KeyOfExe(string? path)
-    {
-        var name = Path.GetFileNameWithoutExtension(path ?? "");
-        if (!name.StartsWith("PCButler.", StringComparison.OrdinalIgnoreCase))
-            return null;
-        var suffix = name["PCButler.".Length..];
-        return ExeNames.FirstOrDefault(pair => pair.Value.Equals(suffix, StringComparison.OrdinalIgnoreCase)).Key;
-    }
-
-    /// <summary>Not a window: the board's switch for the performance overlay (it runs in the background agent).</summary>
+    /// <summary>Not a window: the board's switch for the performance overlay (it runs in the companion).</summary>
     public const string Overlay = "overlay";
 
     /// <summary>One line about each tool: the subtitle its page already shows.</summary>
@@ -107,220 +70,13 @@ public static class Tools
     public static string Name(string key) =>
         key == Overlay ? Ui.T("Performance overlay") : Ui.T(MainWindow.PageList.FirstOrDefault(page => page.Key == key).Name ?? key);
 
-    /// <summary>Open a tool in a process of its own (or bring its window forward if it is open already).</summary>
-    public static void Open(string key, params string[] extra)
-    {
-        if (key == "home")
-        {
-            OpenBoard();
-            return;
-        }
-        Start(["--tool", key, .. extra], ExeOf(key));
-    }
-
-    /// <summary>Open a tool with files handed to it (Shredder's list, say).</summary>
-    public static void OpenWith(string key, IEnumerable<string> paths)
-    {
-        var list = Path.Combine(Path.GetTempPath(), $"PCButler-{key}-{Guid.NewGuid():N}.txt");
-        try
-        {
-            File.WriteAllLines(list, paths);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Log.Warning($"Could not hand files to {key}: {error.Message}");
-            Open(key);
-            return;
-        }
-        Open(key, "--paths", list);
-    }
-
-    public static void OpenBoard() => Start([]);
-
-    /// <summary>Start the background agent, unless it is running already (it checks that itself too).</summary>
-    public static void StartAgent()
-    {
-        if (!AgentLink.Running)
-            Start(["--agent"]);
-    }
-
-    private static void Start(string[] arguments, string? program = null)
-    {
-        try
-        {
-            // The new window may come to the front (the tray icon's click gave this process that right).
-            AllowSetForegroundWindow(-1);
-            var start = new ProcessStartInfo(program ?? AppInfo.MainExe) { UseShellExecute = false };
-            foreach (var argument in arguments)
-                start.ArgumentList.Add(argument);
-            Process.Start(start)?.Dispose();
-        }
-        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            Log.Warning($"Could not start {string.Join(' ', arguments)}: {error.Message}");
-        }
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool AllowSetForegroundWindow(int processId);
-
-    /// <summary>The paths of a list file given with --paths, which is then deleted.</summary>
-    public static List<string> TakeList(string file)
-    {
-        try
-        {
-            var paths = File.ReadAllLines(file).Where(line => line.Length > 0).ToList();
-            File.Delete(file);
-            return paths;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            return [];
-        }
-    }
-}
-
-/// <summary>
-/// Which background features are switched on, and so whether the background agent has anything
-/// to do. With none of them on, no PC Butler process runs at all until a tool is opened.
-/// </summary>
-public static class AgentNeeds
-{
-    /// <summary>The names of the features that need the agent, in the order the board's footer lists them.</summary>
-    public static List<string> Of(Config config)
-    {
-        var on = new List<string>();
-        if (config.AutoSortOn)
-            on.Add("Automatic sorting");
-        if (config.Clipboard.Enabled)
-            on.Add("Clipboard history");
-        if (config.Portal.ShareClipboard)
-            on.Add("Clipboard sharing");
-        if (Hotkeys.Effective(config.Hotkeys).Values.Any(keys => keys.Length > 0))
-            on.Add("Hotkeys");
-        if (config.Portal.AutoStart && (config.Portal.Used || config.Portal.Role.Length > 0))
-            on.Add("Courier");
-        if (config.TrackInternet)
-            on.Add("Internet tracking");
-        if (config.Usage.Record)
-            on.Add("Usage recording");
-        if (config.ResumeSession)
-            on.Add("Resume yesterday");
-        if (config.DropZone)
-            on.Add("Drop zone");
-        if (config.Overlay.Enabled)
-            on.Add("Performance overlay");
-        if (config.UsageAlerts)
-            on.Add("Usage alerts");
-        if (config.Boost.AutoApps.Count > 0)
-            on.Add("Automatic Boost");
-        return on;
-    }
-
-    public static bool Any(Config config) => Of(config).Count > 0;
-}
-
-/// <summary>
-/// The named pipe "PCButler.Agent": how the board and the tools talk to the background agent.
-/// One JSON line each way: {"cmd":"config-changed","data":"…"} and the like, answered with {"ok":true,"reply":"…"}.
-/// </summary>
-public static class AgentLink
-{
-    private static readonly string PipeName = "PCButler.Agent" + CrossProcess.Scope;
-    public static readonly string MutexName = @"Local\PCButler.Agent" + CrossProcess.Scope;
-
-    /// <summary>True while the background agent runs (it holds its mutex for as long as it does).</summary>
-    public static bool Running
-    {
-        get
-        {
-            try
-            {
-                if (Mutex.TryOpenExisting(MutexName, out var mutex))
-                {
-                    mutex.Dispose();
-                    return true;
-                }
-                return false;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return true; // one started as administrator: it is there, only out of reach
-            }
-        }
-    }
-
-    /// <summary>Ask the agent something. Null when no agent answered in time.</summary>
-    public static string? Send(string command, int timeoutMs = 1500, string data = "")
-    {
-        if (!Running)
-            return null;
-        try
-        {
-            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
-            pipe.Connect(timeoutMs);
-            using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(pipe, leaveOpen: true);
-            writer.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["cmd"] = command, ["data"] = data }));
-            var task = reader.ReadLineAsync();
-            if (!task.Wait(Math.Max(timeoutMs, 6000)))
-                return null;
-            var answer = task.Result is { } line ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(line) : null;
-            return answer is not null && answer.TryGetValue("reply", out var reply) ? reply.GetString() : null;
-        }
-        catch (Exception error) when (error is IOException or TimeoutException or JsonException or UnauthorizedAccessException
-                                          or AggregateException or InvalidOperationException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The settings were saved by this process: tell the agent, or start it when something that
-    /// needs it was just switched on and it is not running.
-    /// </summary>
-    public static void ConfigChanged()
-    {
-        Task.Run(() =>
-        {
-            if (Running)
-                Send("config-changed");
-            else if (AgentNeeds.Any(ConfigStore.Load()))
-                Tools.StartAgent();
-        });
-    }
-
-    /// <summary>The agent's side: answer each connection with <paramref name="handle"/> (run off the window's thread).</summary>
-    public static void Serve(Func<string, string, string> handle, CancellationToken stop)
-    {
-        var thread = new Thread(() =>
-        {
-            while (!stop.IsCancellationRequested)
-            {
-                try
-                {
-                    using var pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-                    pipe.WaitForConnectionAsync(stop).GetAwaiter().GetResult();
-                    using var reader = new StreamReader(pipe, leaveOpen: true);
-                    using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-                    var line = reader.ReadLine();
-                    var request = line is null ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(line);
-                    var reply = request is not null && request.TryGetValue("cmd", out var command) ? handle(command, request.GetValueOrDefault("data", "")) : "unknown";
-                    writer.WriteLine(JsonSerializer.Serialize(new Dictionary<string, object> { ["ok"] = true, ["reply"] = reply }));
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-                catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
-                {
-                    Log.Seldom("agent pipe", TimeSpan.FromHours(1), $"WARNING Agent pipe: {error.Message}");
-                    Thread.Sleep(200);
-                }
-            }
-        }) { IsBackground = true, Name = "PC Butler agent pipe" };
-        thread.Start();
-    }
+    public static void Open(string key, params string[] extra) => Launcher.Open(key, extra);
+    public static void OpenWith(string key, IEnumerable<string> paths) => Launcher.OpenWith(key, paths);
+    public static void OpenBoard() => Launcher.OpenBoard();
+    public static void OpenPopup(bool palette) => Launcher.OpenPopup(palette);
+    public static void StartAgent() => Launcher.StartAgent();
+    public static string? KeyOfExe(string? path) => Launcher.KeyOfExe(path);
+    public static List<string> TakeList(string file) => Launcher.TakeList(file);
 }
 
 /// <summary>
@@ -417,60 +173,4 @@ public static class TaskbarIdentity
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     private static extern void SetCurrentProcessExplicitAppUserModelID(string id);
-}
-
-/// <summary>What a second launch of an open tool asked for (files, a search), handed to the open one through a small file.</summary>
-public static class ToolRequest
-{
-    private static string FileFor(string key) =>
-        Path.Combine(Path.GetTempPath(), $"PCButler{CrossProcess.Scope}-request-{key}.json");
-
-    public static void Write(string key, string[] arguments)
-    {
-        try
-        {
-            File.WriteAllText(FileFor(key), JsonSerializer.Serialize(arguments));
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-        }
-    }
-
-    public static string[]? Take(string key)
-    {
-        var file = FileFor(key);
-        try
-        {
-            if (!File.Exists(file))
-                return null;
-            var arguments = JsonSerializer.Deserialize<string[]>(File.ReadAllText(file));
-            File.Delete(file);
-            return arguments;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return null;
-        }
-    }
-}
-
-/// <summary>Giving memory back to Windows while a process waits in the background.</summary>
-public static class Memory
-{
-    public static void Trim()
-    {
-        try
-        {
-            GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
-            GC.WaitForPendingFinalizers();
-            using var self = Process.GetCurrentProcess();
-            SetProcessWorkingSetSize(self.Handle, -1, -1);
-        }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-        {
-        }
-    }
-
-    [DllImport("kernel32.dll")]
-    private static extern bool SetProcessWorkingSetSize(IntPtr process, nint minimum, nint maximum);
 }

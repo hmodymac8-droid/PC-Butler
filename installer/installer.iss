@@ -86,16 +86,16 @@ Root: HKCU; Subkey: "Software\Classes\*\shell\PCButler"; Flags: dontcreatekey un
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PCButler"; Flags: dontcreatekey uninsdeletekey
 #ifndef TestBuild
 Root: HKCU; Subkey: "{#RunKey}"; ValueType: string; ValueName: "{#RunValue}"; \
-    ValueData: """{app}\{#AppExe}"" --agent"; Check: WantAutostart
+    ValueData: """{app}\PCButler.Agent.exe"""; Check: WantAutostart
 #endif
 
 [Run]
 #ifndef TestBuild
 ; The background agent holds the tray icon (it closes by itself when no background feature is on). After a silent update it always comes
 ; back as it was; in the wizard it starts with automatic sorting on if that was ticked.
-Filename: "{app}\{#AppExe}"; Parameters: "--agent"; Flags: nowait; Check: WizardSilent
-Filename: "{app}\{#AppExe}"; Parameters: "--agent --auto-on"; Flags: nowait; Check: TickedAutoSort
-Filename: "{app}\{#AppExe}"; Parameters: "--agent"; Flags: nowait; Check: TickedAutostartOnly
+Filename: "{app}\PCButler.Agent.exe"; Flags: nowait; Check: WizardSilent
+Filename: "{app}\PCButler.Agent.exe"; Parameters: "--auto-on"; Flags: nowait; Check: TickedAutoSort
+Filename: "{app}\PCButler.Agent.exe"; Flags: nowait; Check: TickedAutostartOnly
 ; Updating from a tool window: the board opens again.
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: ReopenRequested
 #endif
