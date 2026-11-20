@@ -733,9 +733,9 @@ public partial class App : Application
         }
         if (window is null)
             return;
-        if (window.WindowState == WindowState.Minimized)
-            SystemCommands.RestoreWindow(window); // back to normal or maximized, as it was
+        // Brought forward by a second launch: always maximized, as it opened.
         window.Show();
+        window.WindowState = WindowState.Maximized;
         window.Activate();
         if (ToolKey == "vault")
             window.TakeVaultInbox();
@@ -906,8 +906,7 @@ public partial class App : Application
         lastBusy = Environment.TickCount64;
         if (report is not null)
         {
-            if (report.WindowState == WindowState.Minimized)
-                SystemCommands.RestoreWindow(report);
+            report.WindowState = WindowState.Maximized;
             report.Activate();
             return;
         }
