@@ -56,8 +56,7 @@ public sealed class CourierWidget : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         buttons.Children.Add(Small("\uE8A7", Ui.T("Open Courier"), () =>
         {
-            App.Current.ShowMainWindow();
-            App.Current.Workspace?.ShowPage("portal");
+            App.Current.ShowPage("portal");
         }));
         collapseButton = Small("\uE70D", Ui.T("Make it smaller"), () => SetCollapsed(!collapsed));
         buttons.Children.Add(collapseButton);

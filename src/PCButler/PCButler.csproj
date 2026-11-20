@@ -12,12 +12,23 @@
     <RootNamespace>PCButler</RootNamespace>
     <ApplicationIcon>logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.22.45</Version>
+    <Version>1.23.0</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
     <Copyright>Copyright (c) 2026 hmodymac8-droid. All rights reserved.</Copyright>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Memory: PC Butler is several small processes now (agent, board, one per tool), so each
+         uses the workstation collector without a background GC thread, and gives memory back
+         to Windows sooner (ConserveMemory below). Tiered PGO keeps the hot paths quick. -->
+    <TieredPGO>true</TieredPGO>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 0-9: how hard the collector works to keep the heap small; 5 trades a little speed for a lot less memory. -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Both UI frameworks define Application, Button, MessageBox...; WPF's are the ones meant here. -->
