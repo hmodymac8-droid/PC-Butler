@@ -18,6 +18,7 @@ namespace PCButler;
 public sealed class BoardWindow : Window
 {
     private readonly ContentControl body = new();
+    private readonly StackPanel links;
     private readonly TextBox find;
     private readonly bool firstStart;
     private bool wasActive, leaving, closing, refocused;
@@ -73,7 +74,7 @@ public sealed class BoardWindow : Window
         // The footer: what runs in the background, then What's new and Help.
         var footer = new DockPanel { Margin = new Thickness(24, 12, 24, 14), LastChildFill = true };
         var running = AgentNeeds.Of(ConfigStore.Load()).Select(name => Ui.T(name)).ToList();
-        var links = Ui.Row(18, WhatsNewLink(), Link(Ui.T("Help & about"), () => Launch("about")));
+        links = Ui.Row(18, WhatsNewLink(), Link(Ui.T("Help & about"), () => Launch("about")));
         footer.Children.Add(links.Dock(Dock.Right));
         var state = Ui.Muted(running.Count > 0 ? Ui.T("Running in the background: {0}", string.Join(Tr.IsArabic ? "، " : ", ", running))
                                                : Ui.T("Nothing runs in the background."), 11.5);
@@ -96,7 +97,11 @@ public sealed class BoardWindow : Window
             var round = 2; // DWMWCP_ROUND
             DwmSetWindowAttribute(handle, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
         };
-        Loaded += (_, _) => Bring();
+        Loaded += (_, _) =>
+        {
+            Bring();
+            LookForUpdate();
+        };
         Activated += (_, _) =>
         {
             if (!wasActive)
@@ -381,6 +386,25 @@ public sealed class BoardWindow : Window
         var fresh = seen != AppInfo.Version && Changelog.ShouldShow(seen, firstStart);
         return Link(fresh ? Ui.T("What's new in {0}", AppInfo.Version) : Ui.T("What's new"),
                     () => Launch("about", "--whats-new"), fresh ? "Primary" : "Muted");
+    }
+
+    /// <summary>
+    /// A newer version: the agent's last check says so (it looks every few hours), or, when no
+    /// agent runs, a quick look now. Shown as a link in the footer that opens Help &amp; about.
+    /// </summary>
+    private void LookForUpdate()
+    {
+        Task.Run(() =>
+        {
+            var version = AgentLink.Running ? AgentLink.Send("update", 1000) : Updater.CheckForUpdate()?.Version;
+            if (string.IsNullOrEmpty(version) || version == AppInfo.Version)
+                return;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!closing)
+                    links.Children.Insert(0, Link(Ui.T("Update to {0}", version), () => Launch("about", "--check-updates"), "Amber"));
+            });
+        });
     }
 
     // --- leaving ---

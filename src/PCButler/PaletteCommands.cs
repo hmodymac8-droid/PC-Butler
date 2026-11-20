@@ -50,8 +50,13 @@ public static class PaletteCommands
         foreach (var (key, name) in new[] { ("general", "General settings"), ("search", "Search settings"), ("hotkeys", "Hotkeys") })
             list.Add(new PaletteCommand("settings:" + key, "", name, "Settings", "settings shortcuts keys", () =>
             {
-                app.ShowMainWindow();
-                app.Workspace?.Settings.ShowTab(key);
+                if (app.Workspace is { IsTool: false } classic)
+                {
+                    app.ShowMainWindow();
+                    classic.Settings.ShowTab(key);
+                }
+                else
+                    Tools.Open("settings", "--tab", key);
             }));
         list.AddRange(
         [
@@ -67,15 +72,25 @@ public static class PaletteCommands
             new("dropzone", "", "Show or hide the drop zone", "Sorter", "drop zone drag", () => app.RunHotkey("dropzone"), Hotkey: "dropzone"),
             new("scan", "", "Scan for junk", "Cleaner", "clean junk temp scan free space", () =>
             {
-                app.ShowPage("cleaner");
-                app.Workspace?.Cleaner.ScanNow();
+                if (app.Workspace is { IsTool: false } classic)
+                {
+                    app.ShowPage("cleaner");
+                    classic.Cleaner.ScanNow();
+                }
+                else
+                    Tools.Open("cleaner", "--scan");
             }),
             new("resume", "", "Resume yesterday", "Home", "reopen restore session apps", app.ResumeYesterday,
                 Available: () => app.ResumeAvailable is not null),
             new("updates", "", "Check for updates", "Help & about", "update new version", () =>
             {
-                app.ShowPage("about");
-                app.Workspace?.About.CheckUpdates();
+                if (app.Workspace is { IsTool: false } classic)
+                {
+                    app.ShowPage("about");
+                    classic.About.CheckUpdates();
+                }
+                else
+                    Tools.Open("about", "--check-updates");
             }),
             new("exit", "", "Quit PC Butler", "PC Butler", "exit close quit", app.ExitProgram),
         ]);
