@@ -60,15 +60,15 @@ public static class Tools
         ["about"] = "A little help, whenever you need it.",
     };
 
-    /// <summary>A window this program can open with --tool (every page of the old main window except Home).</summary>
-    public static bool IsTool(string key) => key != "home" && MainWindow.PageList.Any(page => page.Key == key);
+    /// <summary>A window this program can open with --tool.</summary>
+    public static bool IsTool(string key) => ToolWindow.PageList.Any(page => page.Key == key);
 
     public static string Glyph(string key) =>
-        key == Overlay ? "" : MainWindow.PageList.FirstOrDefault(page => page.Key == key).Glyph ?? "";
+        key == Overlay ? "" : ToolWindow.PageList.FirstOrDefault(page => page.Key == key).Glyph ?? "";
 
     /// <summary>The tool's name in the user's language.</summary>
     public static string Name(string key) =>
-        key == Overlay ? Ui.T("Performance overlay") : Ui.T(MainWindow.PageList.FirstOrDefault(page => page.Key == key).Name ?? key);
+        key == Overlay ? Ui.T("Performance overlay") : Ui.T(ToolWindow.PageList.FirstOrDefault(page => page.Key == key).Name ?? key);
 
     public static void Open(string key, params string[] extra) => Launcher.Open(key, extra);
     public static void OpenWith(string key, IEnumerable<string> paths) => Launcher.OpenWith(key, paths);

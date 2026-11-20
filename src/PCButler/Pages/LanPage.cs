@@ -27,7 +27,7 @@ public sealed class LanPage : Page
     private CancellationTokenSource? running;
     private bool scannedOnce;
 
-    public LanPage(MainWindow main) : base(main, "Scan LAN", "Which devices are on your network?")
+    public LanPage(ToolWindow main) : base(main, "Scan LAN", "Which devices are on your network?")
     {
         scanButton = AddAction("Scan network", ToggleScan, accent: true);
         stats = AddStats(("Online now", ""), ("Known devices", ""), ("Network", ""));

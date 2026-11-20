@@ -18,7 +18,7 @@ public sealed class ShredderPage : Page
     private readonly List<string> chosen = [];
     private CancellationTokenSource? running;
 
-    public ShredderPage(MainWindow main) : base(main, "Shredder", "Gone means gone.")
+    public ShredderPage(ToolWindow main) : base(main, "Shredder", "Gone means gone.")
     {
         shredButton = AddAction("Shred", ShredAll, accent: true);
         stats = AddStats(("Items chosen", ""), ("Files inside", ""), ("Size", ""));

@@ -274,7 +274,7 @@ public sealed class BoardWindow : Window
         var all = Tools.Groups.SelectMany(group => group.Members.Select(member => (member, group.Name))).Append(("settings", "")).Append(("about", ""));
         foreach (var (tool, group) in all)
         {
-            var english = MainWindow.PageList.FirstOrDefault(page => page.Key == tool).Name ?? tool;
+            var english = ToolWindow.PageList.FirstOrDefault(page => page.Key == tool).Name ?? tool;
             string[] words = [Tools.Name(tool), english, Ui.T(Tools.Lines.GetValueOrDefault(tool, "")), Tools.Lines.GetValueOrDefault(tool, ""),
                               group.Length > 0 ? Ui.T(group) : "", group];
             if (words.Any(word => word.Contains(text, StringComparison.CurrentCultureIgnoreCase)))

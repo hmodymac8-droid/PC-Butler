@@ -44,7 +44,7 @@ public sealed partial class SettingsPage : Page
         Match(resume, Main.Config.ResumeSession);
     }
 
-    public SettingsPage(MainWindow main) : base(main, "Settings", "Your folders. Your rules.")
+    public SettingsPage(ToolWindow main) : base(main, "Settings", "Your folders. Your rules.")
     {
         var config = main.Config;
 
@@ -54,7 +54,7 @@ public sealed partial class SettingsPage : Page
         quickTitle.FontFamily = Ui.DisplayFont;
         quick.Children.Add(quickTitle);
         // Two separate things: whether PC Butler starts with Windows, and whether it sorts by itself.
-        autostart = Ui.Switch(Ui.T("Start PC Butler when Windows starts"), Autostart.IsEnabled(), MainWindow.SetAutostart);
+        autostart = Ui.Switch(Ui.T("Start PC Butler when Windows starts"), Autostart.IsEnabled(), ToolWindow.SetAutostart);
         quick.Children.Add(autostart);
         quick.Children.Add(Ui.Muted(Ui.T("It waits in the taskbar tray, for automatic sorting, updates and the drop zone."), 12, wrap: true)
                              .Margin(0, 2, 0, 0));

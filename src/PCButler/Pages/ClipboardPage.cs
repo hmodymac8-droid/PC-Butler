@@ -32,7 +32,7 @@ public sealed class ClipboardPage : Page
     public override void ShowSwitches() => Match(enabled, Main.Config.Clipboard.Enabled);
     private readonly TextBox limit;
 
-    public ClipboardPage(MainWindow main) : base(main, "Clipboard", "Everything you copy, ready to paste again.")
+    public ClipboardPage(ToolWindow main) : base(main, "Clipboard", "Everything you copy, ready to paste again.")
     {
         AddAction("Open the list", () => App.Current.Clips.ShowPicker(), accent: true);
         var settings = main.Config.Clipboard;

@@ -472,13 +472,7 @@ public sealed class SearchPopup : Window
     {
         var text = FileQuery();
         Dismiss();
-        if (App.Current.Workspace is { IsTool: false } classic)
-        {
-            App.Current.ShowPage("search");
-            classic.SearchPage.SearchFor(text);
-        }
-        else
-            Tools.Open("search", "--query", text); // the Search tool, with what was typed
+        Tools.Open("search", "--query", text); // the Search tool, with what was typed
     }
 
     /// <summary>Across the screen the mouse is on, a fifth of the way down, like a launcher.</summary>
