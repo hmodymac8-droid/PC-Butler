@@ -147,14 +147,37 @@ public sealed class OverlayController
     private bool itselfSawFrames;
 
     /// <summary>True when this program counts frames with no helper: Windows allows that to accounts in its "Performance Log Users" group.</summary>
-    public bool CountsItself => countsItself == true;
+    public bool CountsItself => mirrored?.Itself ?? countsItself == true;
 
     public OverlayController() => timer.Tick += (_, _) => Tick();
 
     /// <summary>The newest reading, for the Benchmark page; null while the overlay is off.</summary>
     public BenchmarkSample? Latest { get; private set; }
     /// <summary>The game being measured now, "" when none is.</summary>
-    public string Game => recorder?.Game ?? "";
+    public string Game => mirrored?.Game ?? recorder?.Game ?? "";
+
+    /// <summary>What the Benchmark tool shows of the agent's overlay (see State and Mirror).</summary>
+    public sealed record Shared(BenchmarkSample? Latest, string Game, bool Counting, bool Itself, int Sessions);
+    private Shared? mirrored;
+
+    /// <summary>The agent's side: the overlay's state as JSON, for the Benchmark tool.</summary>
+    public string State() => System.Text.Json.JsonSerializer.Serialize(new Shared(Latest, Game, CountingFrames, CountsItself, SessionsSaved));
+
+    /// <summary>A tool's side: show the agent's overlay as this one (null or bad JSON: as off).</summary>
+    public void Mirror(string? state)
+    {
+        try
+        {
+            mirrored = state is { Length: > 0 } ? System.Text.Json.JsonSerializer.Deserialize<Shared>(state) : null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            mirrored = null;
+        }
+        Latest = mirrored?.Latest;
+        CountingFrames = mirrored?.Counting ?? false;
+        SessionsSaved = mirrored?.Sessions ?? SessionsSaved;
+    }
     /// <summary>True while the helper is counting frames.</summary>
     public bool CountingFrames { get; private set; }
     /// <summary>Goes up each time a game session is added to the log.</summary>
@@ -381,6 +404,17 @@ public sealed class Hotkeys : IDisposable
         var wanted = Effective(saved);
         if (source is null || hook is null)
         {
+            // A tool: the background agent registers them, and says which it could not.
+            if (AgentLink.Send("apply-hotkeys", 4000, System.Text.Json.JsonSerializer.Serialize(saved)) is { Length: > 0 } reply)
+            {
+                try
+                {
+                    return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(reply) ?? [];
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                }
+            }
             var spelling = new Dictionary<string, string>();
             foreach (var (action, keys) in wanted)
                 if (keys.Length > 0 && !Shortcut.TryParse(keys, out _, out _))

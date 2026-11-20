@@ -2133,5 +2133,7 @@
  "Clipboard sharing": "مشاركة الحافظة",
  "Internet tracking": "تتبّع استخدام الإنترنت",
  "Usage recording": "تسجيل استخدام التطبيقات",
- "Automatic Boost": "التسريع التلقائي"
+ "Automatic Boost": "التسريع التلقائي",
+ "PC Butler is not running in the background. Switch a background feature on in Settings first.": "PC Butler لا يعمل في الخلفية. شغّل ميزة من ميزات الخلفية في الإعدادات أولًا.",
+ "Update to {0}": "حدّث إلى {0}"
 }
