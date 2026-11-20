@@ -20,7 +20,8 @@ public sealed class BoardWindow : Window
     private readonly ContentControl body = new();
     private readonly TextBox find;
     private readonly bool firstStart;
-    private bool wasActive, leaving;
+    private bool wasActive, leaving, closing, refocused;
+    private long activeSince;
 
     public BoardWindow(bool firstStart)
     {
@@ -96,19 +97,39 @@ public sealed class BoardWindow : Window
             DwmSetWindowAttribute(handle, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
         };
         Loaded += (_, _) => Bring();
-        Activated += (_, _) => wasActive = true;
+        Activated += (_, _) =>
+        {
+            if (!wasActive)
+                activeSince = Environment.TickCount64;
+            wasActive = true;
+        };
+        Closing += (_, _) => closing = true;
         // A click anywhere else closes it, like a menu.
         Deactivated += (_, _) =>
         {
-            if (wasActive && !leaving)
-                Close();
+            if (!wasActive || leaving || closing)
+                return;
+            // Focus taken away the moment it opened (the program that started it was not in front):
+            // that was no click elsewhere, so it asks for the focus back once instead of closing.
+            if (!refocused && Environment.TickCount64 - activeSince < 800)
+            {
+                refocused = true;
+                Dispatcher.BeginInvoke(Bring, System.Windows.Threading.DispatcherPriority.Input);
+                return;
+            }
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!closing)
+                    Close();
+            });
         };
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
             {
                 e.Handled = true;
-                Close();
+                if (!closing)
+                    Close();
             }
         };
         // Dragged by any empty spot.
@@ -389,7 +410,8 @@ public sealed class BoardWindow : Window
             return;
         }
         Tools.Open(tool, extra);
-        Close();
+        if (!closing)
+            Close();
     }
 
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]

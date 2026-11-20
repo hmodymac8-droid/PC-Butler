@@ -1,7 +1,11 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.23.0
+Each version is a `## 1.23.1
+
+- The board stays open when it comes up without the focus (started from another program), instead of closing at once.
+
+## 1.23.0
 
 - A lighter PC Butler. Opening it now shows the board: a small floating window in the middle of the screen with six blocks (Files, Clean up, Speed, Network, Share & protect, History). Click a block to see its tools, click a tool to open it, and the board is gone. Type in "Find a tool" to jump straight to one. Esc or a click anywhere else closes the board. A click on the tray icon and the command palette shortcut (Alt+Space) open it too.
 - Every tool is a program of its own now: Search, Sorter, Cleaner, Courier and the rest each open in their own window, with their own taskbar button you can pin, and a Board button at the top to get back to the board. Closing a tool's window ends it completely, so nothing it used stays in memory. File Explorer's right-click entries open the matching tool directly.
