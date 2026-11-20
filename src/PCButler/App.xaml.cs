@@ -131,6 +131,8 @@ public partial class App : Application
             ConfigStore.Save(config);
         }
 
+        if (arguments.Length == 0 && Tools.KeyOfExe(Environment.ProcessPath) is { } own)
+            arguments = own == Tools.Popup ? ["--popup"] : ["--tool", own];
         var toolAt = Array.IndexOf(arguments, "--tool");
         if (arguments.Contains("--agent") || arguments.Contains("--background"))
             Mode = AppMode.Agent;
@@ -435,7 +437,7 @@ public partial class App : Application
             instance?.Dispose();
             instance = null;
             if (ToolKey == "home")
-                System.Diagnostics.Process.Start(Environment.ProcessPath!, "--classic")?.Dispose();
+                System.Diagnostics.Process.Start(AppInfo.MainExe, "--classic")?.Dispose();
             else
                 Tools.Open(ToolKey);
         }
@@ -526,6 +528,25 @@ public partial class App : Application
         Remember(config);
         WatchConfig();
         AgentLink.Serve(AgentCommand, agentStop.Token);
+        TrimWhenIdle();
+    }
+
+    /// <summary>
+    /// While nothing of the agent's is on screen: once its start has settled, and then every few
+    /// minutes, the memory it no longer uses goes back to Windows (what it still uses comes back
+    /// in as soon as it is touched).
+    /// </summary>
+    private void TrimWhenIdle()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Interval = TimeSpan.FromMinutes(5);
+            if (exiting || Windows.OfType<Window>().Any(open => open.IsVisible && open is not DropZoneWindow))
+                return;
+            Memory.Trim();
+        };
+        timer.Start();
     }
 
     private readonly CancellationTokenSource agentStop = new();
@@ -754,7 +775,7 @@ public partial class App : Application
     /// </summary>
     public static string? SyncExplorerMenu(bool wanted) =>
         !AppInfo.IsInstalled ? null
-            : ExplorerMenu.Sync(wanted, Environment.ProcessPath!, english => Ui.T(english));
+            : ExplorerMenu.Sync(wanted, AppInfo.MainExe, english => Ui.T(english));
 
     private void ShowDropZone(bool show)
     {

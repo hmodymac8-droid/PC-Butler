@@ -1328,7 +1328,7 @@ public static partial class Portal
     /// <summary>True if the Windows firewall already lets other PCs reach this copy of the program. Needs no special rights.</summary>
     public static bool FirewallAllows(string? program = null) =>
         Netsh("advfirewall", "firewall", "show", "rule", $"name={FirewallRule}", "verbose")
-            .Contains(program ?? Environment.ProcessPath ?? "?", StringComparison.OrdinalIgnoreCase);
+            .Contains(program ?? AppInfo.MainExe, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Let clients across the internet reach the Courier host (administrator only; the helper
@@ -1337,7 +1337,7 @@ public static partial class Portal
     /// </summary>
     public static bool AllowThroughFirewall()
     {
-        var program = Environment.ProcessPath!;
+        var program = AppInfo.MainExe;
         Netsh("advfirewall", "firewall", "delete", "rule", $"name={FirewallRule}");
         Netsh("advfirewall", "firewall", "add", "rule", $"name={FirewallRule}", "dir=in", "action=allow", $"program={program}",
               "protocol=UDP", "profile=any", "enable=yes");
