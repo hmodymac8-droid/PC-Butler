@@ -532,7 +532,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// While nothing of the agent's is on screen: once its start has settled, and then every few
+    /// While none of the agent's windows is being used: once its start has settled, and then every few
     /// minutes, the memory it no longer uses goes back to Windows (what it still uses comes back
     /// in as soon as it is touched).
     /// </summary>
@@ -542,7 +542,7 @@ public partial class App : Application
         timer.Tick += (_, _) =>
         {
             timer.Interval = TimeSpan.FromMinutes(5);
-            if (exiting || Windows.OfType<Window>().Any(open => open.IsVisible && open is not DropZoneWindow))
+            if (exiting || Windows.OfType<Window>().Any(open => open.IsActive)) // not while one is being used
                 return;
             Memory.Trim();
         };
