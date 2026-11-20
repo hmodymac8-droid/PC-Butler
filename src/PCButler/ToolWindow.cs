@@ -151,10 +151,10 @@ public sealed class ToolWindow : Window
         firstCheck.Start();
     }
 
-    /// <summary>Show the window at its own size, in the middle of the screen.</summary>
+    /// <summary>Show the window maximized: within the work area of its screen, so the taskbar stays visible.</summary>
     public void Reveal()
     {
-        WindowState = WindowState.Normal;
+        WindowState = WindowState.Maximized;
         Show();
         Activate();
     }

@@ -23,6 +23,7 @@ public sealed class WhatsNewWindow : Window
         MinWidth = 420;
         MinHeight = 320;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        WindowState = WindowState.Maximized; // a screen of its own, like every tool window
         ShowInTaskbar = false;
 
         var log = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };

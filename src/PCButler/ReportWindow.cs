@@ -31,6 +31,7 @@ public sealed class ReportWindow : Window
         MinWidth = Math.Min(660, area.Width - 40);
         MinHeight = Math.Min(420, area.Height - 40);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        WindowState = WindowState.Maximized; // a screen of its own, like every tool window
 
         var page = new DockPanel { Margin = new Thickness(24, 20, 24, 20) };
         page.Children.Add(Ui.Text(Ui.T(Ui.Eyebrow), 10, "Primary", FontWeights.Bold).Margin(0, 0, 0, 4).Dock(Dock.Top));
