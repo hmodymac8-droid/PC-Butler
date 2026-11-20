@@ -70,7 +70,7 @@ public static class Courier
         }
         try
         {
-            var result = App.Current.Search.Search($"\"{name.Replace("\"", "")}\"", PCButler.Core.Search.SearchSort.Name, false, CancellationToken.None);
+            var result = App.Current.SearchOnce($"\"{name.Replace("\"", "")}\"");
             foreach (var row in result.Rows.Take(500))
             {
                 if (result.Index.IsFolder(row) || !string.Equals(result.Index.Name(row), name, StringComparison.OrdinalIgnoreCase))

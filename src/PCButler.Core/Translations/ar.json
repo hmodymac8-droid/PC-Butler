@@ -2117,5 +2117,21 @@
  "Scan the code with your phone's camera to download the app. When it has downloaded, open it and allow installing from this source.": "امسح الرمز بكاميرا جوالك لتنزيل التطبيق. بعد ما يخلص التنزيل افتحه واسمح بالتثبيت من هذا المصدر.",
  "Copy link": "نسخ الرابط",
  "Copied.": "تم النسخ.",
- "Open in browser": "فتح في المتصفح"
+ "Open in browser": "فتح في المتصفح",
+ "Board": "اللوحة",
+ "Open the board with every tool": "افتح اللوحة بكل الأدوات",
+ "Pick a tool. The board steps aside.": "اختر أداة، وتتنحّى اللوحة جانبًا.",
+ "Find a tool…": "ابحث عن أداة…",
+ "1 tool": "أداة واحدة",
+ "{0} tools": "{0} أدوات",
+ "Back": "رجوع",
+ "No tool matches “{0}”.": "لا توجد أداة تطابق «{0}».",
+ "Running in the background: {0}": "يعمل في الخلفية: {0}",
+ "Nothing runs in the background.": "لا شيء يعمل في الخلفية.",
+ "What's new in {0}": "الجديد في {0}",
+ "Frames per second and temperatures over your games.": "عدد الإطارات في الثانية ودرجات الحرارة فوق ألعابك.",
+ "Clipboard sharing": "مشاركة الحافظة",
+ "Internet tracking": "تتبّع استخدام الإنترنت",
+ "Usage recording": "تسجيل استخدام التطبيقات",
+ "Automatic Boost": "التسريع التلقائي"
 }

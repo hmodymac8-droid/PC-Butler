@@ -65,7 +65,7 @@ public static class MenuActions
             return;
         }
         VaultInbox.Add(files);
-        Shell.Open(Environment.ProcessPath!);
+        Tools.Open("vault"); // the Vault opens in a window of its own and takes them
     }
 
     /// <summary>
@@ -75,7 +75,7 @@ public static class MenuActions
     private static void Share(List<string> paths)
     {
         CourierInbox.Add(paths);
-        Shell.Open(Environment.ProcessPath!);
+        Tools.Open("portal"); // the Courier tool opens with them ready to send
     }
 
     private static void Shred(List<string> paths)

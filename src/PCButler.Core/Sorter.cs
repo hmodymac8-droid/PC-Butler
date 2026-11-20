@@ -59,6 +59,7 @@ public static class History
     {
         lock (Gate)
         {
+            using var held = CrossProcess.Lock("history");
             try
             {
                 return JsonSerializer.Deserialize<List<Run>>(File.ReadAllText(AppInfo.HistoryFile), Options) ?? [];
@@ -74,6 +75,7 @@ public static class History
     {
         lock (Gate)
         {
+            using var held = CrossProcess.Lock("history");
             Directory.CreateDirectory(AppInfo.DataDir);
             File.WriteAllText(AppInfo.HistoryFile, JsonSerializer.Serialize(history, Options));
         }
@@ -83,6 +85,7 @@ public static class History
     {
         lock (History.Gate)
         {
+            using var held = CrossProcess.Lock("history");
             var history = Load();
             history.Add(new Run { Time = DateTime.Now.ToString(TimeFormat), Moves = moves, Review = review });
             Save(history);

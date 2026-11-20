@@ -252,7 +252,9 @@ public static class ConfigStore
         JsonObject? saved = null;
         try
         {
-            var text = File.ReadAllText(AppInfo.ConfigFile);
+            string text;
+            using (CrossProcess.Lock("config"))
+                text = File.ReadAllText(AppInfo.ConfigFile);
             saved = JsonNode.Parse(text) as JsonObject;
             if (saved is not null && saved.ContainsKey("downloads_folder"))
             {
@@ -304,6 +306,7 @@ public static class ConfigStore
     public static void Save(Config config)
     {
         var text = JsonSerializer.Serialize(config, Options);
+        using var held = CrossProcess.Lock("config");
         try
         {
             if (File.Exists(AppInfo.ConfigFile) && File.ReadAllText(AppInfo.ConfigFile) == text)
@@ -314,7 +317,15 @@ public static class ConfigStore
         }
         Directory.CreateDirectory(AppInfo.DataDir);
         File.WriteAllText(AppInfo.ConfigFile, text);
+        held.Dispose();
+        Saved?.Invoke();
     }
+
+    /// <summary>
+    /// The settings file was written by this process (on whatever thread wrote it). The tools
+    /// pass that on to the background agent, which runs in a process of its own.
+    /// </summary>
+    public static event Action? Saved;
 
     /// <summary>Look up a per-user Windows folder, honouring a relocated one.</summary>
     public static string ShellFolder(string valueName, string fallback)
@@ -378,7 +389,7 @@ public static class Autostart
 #if WINDOWS
         using var key = Registry.CurrentUser.CreateSubKey(Key);
         if (enabled)
-            key.SetValue(ValueName, $"\"{Environment.ProcessPath}\" --background");
+            key.SetValue(ValueName, $"\"{Environment.ProcessPath}\" --agent");
         else
             key.DeleteValue(ValueName, throwOnMissingValue: false);
 #endif

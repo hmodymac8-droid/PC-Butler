@@ -105,19 +105,17 @@ public sealed class DropZoneWindow : Window
         var vault = Ui.Item(Ui.T("Lock in the Vault ({0} file(s))", files.Count), () =>
         {
             VaultInbox.Add(files);
-            App.Current.ShowMainWindow();
+            Tools.Open("vault");
         });
         vault.IsEnabled = files.Count > 0;
         menu.Items.Add(vault);
         menu.Items.Add(Ui.Item(Ui.T("Send to another PC (Courier)"), () =>
         {
-            App.Current.ShowMainWindow();
-            App.Current.Workspace?.SendWithPortal(dropped);
+            App.Current.SendWithPortal(dropped);
         }));
         menu.Items.Add(Ui.Item(Ui.T("Shred…"), () =>
         {
-            App.Current.ShowMainWindow();
-            App.Current.Workspace?.ShredLater(dropped);
+            App.Current.ShredLater(dropped);
         }));
         var recycle = Ui.Item(Ui.T("Move to the Recycle Bin ({0} file(s))", files.Count), () =>
         {

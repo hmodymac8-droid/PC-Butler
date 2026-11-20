@@ -33,6 +33,10 @@ public sealed partial class MainWindow : Window
     private readonly Button pauseButton;
     private readonly DispatcherTimer statusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool? compact;
+    /// <summary>The one tool this window shows (a process of its own, see App), or null for the classic window with every page.</summary>
+    private readonly string? only;
+    /// <summary>True for a tool's own window: one page, no sidebar.</summary>
+    public bool IsTool => only is not null;
 
     public Config Config { get; private set; }
     public SorterPage Sorter => Get<SorterPage>("preview");
@@ -107,15 +111,16 @@ public sealed partial class MainWindow : Window
         _ => throw new ArgumentException($"No page {key}", nameof(key)),
     };
 
-    public MainWindow()
+    public MainWindow(string? only = null)
     {
+        this.only = only;
         Ui.StyleWindow(this);
-        Title = AppInfo.Name;
+        Title = only is null ? AppInfo.Name : $"{Tools.Name(only)} · {AppInfo.Name}";
         Config = ConfigStore.Load();
-        Width = 1200;
-        Height = 800;
-        MinWidth = 980;
-        MinHeight = 680;
+        Width = only is null ? 1200 : 1120;
+        Height = only is null ? 800 : 760;
+        MinWidth = only is null ? 980 : 760;
+        MinHeight = only is null ? 680 : 540;
         FitInWorkArea();
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         foreach (var category in Config.Categories)
@@ -123,6 +128,8 @@ public sealed partial class MainWindow : Window
 
         sidebar = new Sidebar(ShowPage);
         var main = new DockPanel();
+        if (only is not null)
+            topBar.AddBoard(Tools.OpenBoard);
         main.Children.Add(topBar.Dock(Dock.Top));
 
         // Shown across the top only when a newer version exists.
@@ -146,7 +153,8 @@ public sealed partial class MainWindow : Window
         bar.Children.Add(pauseButton);
         backgroundLabel.TextTrimming = TextTrimming.CharacterEllipsis;
         bar.Children.Add(backgroundLabel);
-        main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
+        if (only is null)
+            main.Children.Add(new Border { BorderBrush = Ui.Paint("Line"), BorderThickness = new Thickness(0, 1, 0, 0), Child = bar }.Dock(Dock.Bottom));
         main.Children.Add(pageHost);
 
         foreach (var (key, glyph, name) in PageList)
@@ -169,17 +177,19 @@ public sealed partial class MainWindow : Window
         var root = new Grid();
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition());
-        root.Children.Add(sidebar.At(0, 0));
+        if (only is null)
+            root.Children.Add(sidebar.At(0, 0));
         root.Children.Add(main.At(0, 1));
         root.SizeChanged += (_, _) => FitHeight(root.ActualHeight);
         Content = root;
 
-        SourceInitialized += (_, _) => RestoreGeometry();
+        if (only is null)
+            SourceInitialized += (_, _) => RestoreGeometry();
         Closing += (_, e) =>
         {
             if (!Built.All(page => page.CanClose()))
                 e.Cancel = true;
-            else if (!quitting)
+            else if (!quitting && only is null)
             {
                 // Closed to the tray, the window is kept (hidden), so opening it again is instant.
                 e.Cancel = true;
@@ -189,12 +199,18 @@ public sealed partial class MainWindow : Window
                 OnClosing();
         };
         // Nothing to keep up to date while nobody sees it.
-        IsVisibleChanged += (_, _) => statusTimer.IsEnabled = IsVisible;
-        RefreshPreview();
+        if (only is null)
+        {
+            IsVisibleChanged += (_, _) => statusTimer.IsEnabled = IsVisible;
+            statusTimer.Tick += (_, _) => RefreshBackgroundStatus();
+            statusTimer.Start();
+        }
         RefreshBackgroundStatus();
-        statusTimer.Tick += (_, _) => RefreshBackgroundStatus();
-        statusTimer.Start();
-        ShowPage("home");
+        ShowPage(only ?? "home");
+        RefreshPreview(); // after: a tool's own page is built by now
+        // Updates are looked for by the classic window and by Settings and Help (the background agent looks too).
+        if (only is not (null or "settings" or "about"))
+            return;
         var firstCheck = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
         firstCheck.Tick += (_, _) =>
         {
@@ -207,7 +223,8 @@ public sealed partial class MainWindow : Window
     /// <summary>Show the window (after the launch screen, when there is one).</summary>
     public void Reveal()
     {
-        WindowState = WindowState.Maximized; // always opens filling the screen
+        // The classic window always opens filling the screen; a tool opens at its own size, in the middle.
+        WindowState = only is null ? WindowState.Maximized : WindowState.Normal;
         Show();
         Activate();
     }
@@ -234,6 +251,12 @@ public sealed partial class MainWindow : Window
 
     public void ShowPage(string key)
     {
+        if (only is not null && key != only)
+        {
+            // Another tool: it opens in a window of its own.
+            Tools.Open(key);
+            return;
+        }
         foreach (var page in Built)
             page.Visibility = Visibility.Collapsed;
         var shown = Page(key);
@@ -267,6 +290,13 @@ public sealed partial class MainWindow : Window
     /// <summary>Plan the Sorter list again, and History with it, after anything that moves files.</summary>
     public void RefreshPreview()
     {
+        if (only is not null)
+        {
+            // A tool builds no page it does not show.
+            (pages["preview"].Page as SorterPage)?.Refresh();
+            (pages["history"].Page as HistoryPage)?.Refresh();
+            return;
+        }
         Sorter.Refresh();
         History.Refresh();
     }
@@ -298,6 +328,12 @@ public sealed partial class MainWindow : Window
     /// <summary>Send files to another PC through Portal (from the drop zone).</summary>
     public void SendWithPortal(IEnumerable<string> paths)
     {
+        if (only is not (null or "portal"))
+        {
+            CourierInbox.Add(paths.ToList());
+            Tools.Open("portal");
+            return;
+        }
         ShowPage("portal");
         PortalPage.Queue(paths);
     }
@@ -305,6 +341,11 @@ public sealed partial class MainWindow : Window
     /// <summary>Put items on the Shredder page's list. Nothing is shredded until the user presses Shred there.</summary>
     public void ShredLater(IEnumerable<string> paths)
     {
+        if (only is not (null or "shredder"))
+        {
+            Tools.OpenWith("shredder", paths);
+            return;
+        }
         ShowPage("shredder");
         Shredder.AddPaths(paths);
     }
@@ -313,7 +354,10 @@ public sealed partial class MainWindow : Window
     public void DataChanged()
     {
         RefreshBackgroundStatus();
-        History.Refresh();
+        if (only is null)
+            History.Refresh();
+        else
+            (pages["history"].Page as HistoryPage)?.Refresh();
     }
 
     // --- updates ---
@@ -387,6 +431,8 @@ public sealed partial class MainWindow : Window
         statusTimer.Stop();
         foreach (var page in Built)
             page.Closing(); // saves edits to opened vault files and the Duplicates settings
+        if (only is not null)
+            return; // the saved size and place are the classic window's
         var geometry = Geometry();
         UpdateConfig(config => config.WindowGeometry = geometry);
     }

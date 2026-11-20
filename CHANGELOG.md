@@ -1,7 +1,14 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## heading` followed by `- ` lines.
+Each version is a `## 1.23.0
+
+- A lighter PC Butler. Opening it now shows the board: a small floating window in the middle of the screen with six blocks (Files, Clean up, Speed, Network, Share & protect, History). Click a block to see its tools, click a tool to open it, and the board is gone. Type in "Find a tool" to jump straight to one. Esc or a click anywhere else closes the board. A click on the tray icon and the command palette shortcut (Alt+Space) open it too.
+- Every tool is a program of its own now: Search, Sorter, Cleaner, Courier and the rest each open in their own window, with their own taskbar button you can pin, and a Board button at the top to get back to the board. Closing a tool's window ends it completely, so nothing it used stays in memory. File Explorer's right-click entries open the matching tool directly.
+- Much less memory in the background: only the tray icon and the background features you have switched on (automatic sorting, clipboard history and sharing, hotkeys, Courier, internet and usage tracking, Resume yesterday, the drop zone, the performance overlay) keep running. The file search index is no longer held in memory all day: the Search tool loads it when it opens. With every background feature off, PC Butler does not stay running at all.
+- The board's footer shows what runs in the background. Settings, What's new and Help & about are on the board too.
+
+## heading` followed by `- ` lines.
 
 ## 1.22.45
 
