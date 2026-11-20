@@ -47,7 +47,7 @@ public sealed class StoragePage : Page
     private CancellationTokenSource? cancel;
     private bool busy;
 
-    public StoragePage(MainWindow main) : base(main, "A little more breathing room.", "See what fills your disk. Decide what stays.")
+    public StoragePage(ToolWindow main) : base(main, "A little more breathing room.", "See what fills your disk. Decide what stays.")
     {
         scanButton = AddAction("Scan now", Scan, accent: true);
         stopButton = AddAction("Stop scan", () => cancel?.Cancel());

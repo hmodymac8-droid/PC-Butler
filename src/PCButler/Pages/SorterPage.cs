@@ -24,7 +24,7 @@ public sealed class SorterPage : Page
     /// <summary>How many files the list shows.</summary>
     public int Count => list.Items.Count;
 
-    public SorterPage(MainWindow main) : base(main, "Let’s tidy things up.", "A little organization. A lot more peace of mind.")
+    public SorterPage(ToolWindow main) : base(main, "Let’s tidy things up.", "A little organization. A lot more peace of mind.")
     {
         moveButton = AddAction("Organize files", Move, accent: true);
         // What automatic sorting moved, to approve or undo.

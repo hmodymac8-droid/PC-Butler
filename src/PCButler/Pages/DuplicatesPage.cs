@@ -38,7 +38,7 @@ public sealed class DuplicatesPage : Page
     private bool scanned;
     private bool scanning;
 
-    public DuplicatesPage(MainWindow main) : base(main, "Duplicates", "Find extra copies. Keep what matters.")
+    public DuplicatesPage(ToolWindow main) : base(main, "Duplicates", "Find extra copies. Keep what matters.")
     {
         var settings = main.Config.Duplicates;
         scanButton = AddAction("Scan now", Scan, accent: true);

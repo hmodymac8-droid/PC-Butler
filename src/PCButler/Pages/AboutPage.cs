@@ -17,7 +17,7 @@ public sealed class AboutPage : Page
     private readonly Button updateButton;
     private UpdateInfo? update; // the newer release, once a check has found one
 
-    public AboutPage(MainWindow main) : base(main, "A little help, whenever you need it.", "Meet the butler behind your tidier digital space.")
+    public AboutPage(ToolWindow main) : base(main, "A little help, whenever you need it.", "Meet the butler behind your tidier digital space.")
     {
         var tab = new StackPanel();
 

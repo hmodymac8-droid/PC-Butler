@@ -44,19 +44,13 @@ public static class PaletteCommands
     {
         var app = App.Current;
         var list = new List<PaletteCommand>();
-        foreach (var (key, glyph, name) in MainWindow.PageList)
+        foreach (var (key, glyph, name) in ToolWindow.PageList)
             list.Add(new PaletteCommand("page:" + key, glyph, name, "Page", PageWords.GetValueOrDefault(key, ""), () => app.ShowPage(key),
                                         Hotkey: key == "portal" ? "courier" : key == "search" ? "searchpage" : null));
         foreach (var (key, name) in new[] { ("general", "General settings"), ("search", "Search settings"), ("hotkeys", "Hotkeys") })
             list.Add(new PaletteCommand("settings:" + key, "", name, "Settings", "settings shortcuts keys", () =>
             {
-                if (app.Workspace is { IsTool: false } classic)
-                {
-                    app.ShowMainWindow();
-                    classic.Settings.ShowTab(key);
-                }
-                else
-                    Tools.Open("settings", "--tab", key);
+                Tools.Open("settings", "--tab", key);
             }));
         list.AddRange(
         [
@@ -72,25 +66,13 @@ public static class PaletteCommands
             new("dropzone", "", "Show or hide the drop zone", "Sorter", "drop zone drag", () => app.RunHotkey("dropzone"), Hotkey: "dropzone"),
             new("scan", "", "Scan for junk", "Cleaner", "clean junk temp scan free space", () =>
             {
-                if (app.Workspace is { IsTool: false } classic)
-                {
-                    app.ShowPage("cleaner");
-                    classic.Cleaner.ScanNow();
-                }
-                else
-                    Tools.Open("cleaner", "--scan");
+                Tools.Open("cleaner", "--scan");
             }),
             new("resume", "", "Resume yesterday", "Home", "reopen restore session apps", app.ResumeYesterday,
                 Available: () => app.ResumeAvailable is not null),
             new("updates", "", "Check for updates", "Help & about", "update new version", () =>
             {
-                if (app.Workspace is { IsTool: false } classic)
-                {
-                    app.ShowPage("about");
-                    classic.About.CheckUpdates();
-                }
-                else
-                    Tools.Open("about", "--check-updates");
+                Tools.Open("about", "--check-updates");
             }),
             new("exit", "", "Quit PC Butler", "PC Butler", "exit close quit", app.ExitProgram),
         ]);

@@ -30,7 +30,7 @@ public sealed class BenchmarkPage : Page
     private List<AppUseRow> usageRows = [];
     private DateTime usageShown;
 
-    public BenchmarkPage(MainWindow main) : base(main, "Benchmark", "See how your PC is really doing, while you play.")
+    public BenchmarkPage(ToolWindow main) : base(main, "Benchmark", "See how your PC is really doing, while you play.")
     {
         stats = AddStats(("Frames per second", ""), ("Processor", ""), ("Graphics card", ""));
         var settings = main.Config.Overlay;

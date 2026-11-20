@@ -23,11 +23,11 @@ public abstract class Page : DockPanel
     private readonly StackPanel heading;
     private readonly List<FrameworkElement> statRows = [];
 
-    protected MainWindow Main { get; }
+    protected ToolWindow Main { get; }
     /// <summary>The right side of the header: the page's main buttons, the first one rightmost.</summary>
     protected StackPanel Actions { get; } = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom };
 
-    protected Page(MainWindow main, string title, string descriptionText)
+    protected Page(ToolWindow main, string title, string descriptionText)
     {
         Main = main;
         Margin = new Thickness(30, 24, 30, 12);
