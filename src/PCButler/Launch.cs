@@ -34,7 +34,42 @@ public static class Tools
     public const string Popup = "popup";
 
     /// <summary>Open the search box (or the command palette) over whatever program is in front.</summary>
-    public static void OpenPopup(bool palette) => Start(palette ? ["--popup", "palette"] : ["--popup"]);
+    public static void OpenPopup(bool palette) => Start(palette ? ["--popup", "palette"] : ["--popup"], ExeOf(Popup));
+
+    /// <summary>
+    /// The program file of each tool: a copy of PCButler.exe under the tool's name (made by
+    /// build.ps1), so Task Manager and the taskbar tell them apart. Courier has none: it runs in
+    /// PCButler.exe, which the firewall rule and the administrator helper name.
+    /// </summary>
+    public static readonly Dictionary<string, string> ExeNames = new()
+    {
+        ["search"] = "Search", ["preview"] = "Sorter", ["duplicates"] = "Duplicates", ["storage"] = "Storage",
+        ["cleaner"] = "Cleaner", ["programs"] = "Programs", ["shredder"] = "Shredder", ["booster"] = "Booster",
+        ["benchmark"] = "Benchmark", ["internet"] = "Internet", ["lan"] = "ScanLAN", ["clipboard"] = "Clipboard",
+        ["vault"] = "Vault", ["history"] = "History", ["settings"] = "Settings", ["about"] = "Help", [Popup] = "QuickSearch",
+    };
+
+    /// <summary>The tool's own program file when it is there, else PCButler.exe (which opens it with --tool).</summary>
+    public static string ExeOf(string key)
+    {
+        if (ExeNames.TryGetValue(key, out var name))
+        {
+            var own = Path.Combine(AppContext.BaseDirectory, $"PCButler.{name}.exe");
+            if (File.Exists(own))
+                return own;
+        }
+        return AppInfo.MainExe;
+    }
+
+    /// <summary>The tool a program file belongs to ("PCButler.Search.exe" is "search"), or null.</summary>
+    public static string? KeyOfExe(string? path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path ?? "");
+        if (!name.StartsWith("PCButler.", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var suffix = name["PCButler.".Length..];
+        return ExeNames.FirstOrDefault(pair => pair.Value.Equals(suffix, StringComparison.OrdinalIgnoreCase)).Key;
+    }
 
     /// <summary>Not a window: the board's switch for the performance overlay (it runs in the background agent).</summary>
     public const string Overlay = "overlay";
@@ -80,7 +115,7 @@ public static class Tools
             OpenBoard();
             return;
         }
-        Start(["--tool", key, .. extra]);
+        Start(["--tool", key, .. extra], ExeOf(key));
     }
 
     /// <summary>Open a tool with files handed to it (Shredder's list, say).</summary>
@@ -109,13 +144,13 @@ public static class Tools
             Start(["--agent"]);
     }
 
-    private static void Start(string[] arguments)
+    private static void Start(string[] arguments, string? program = null)
     {
         try
         {
             // The new window may come to the front (the tray icon's click gave this process that right).
             AllowSetForegroundWindow(-1);
-            var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
+            var start = new ProcessStartInfo(program ?? AppInfo.MainExe) { UseShellExecute = false };
             foreach (var argument in arguments)
                 start.ArgumentList.Add(argument);
             Process.Start(start)?.Dispose();
@@ -417,4 +452,25 @@ public static class ToolRequest
             return null;
         }
     }
+}
+
+/// <summary>Giving memory back to Windows while a process waits in the background.</summary>
+public static class Memory
+{
+    public static void Trim()
+    {
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+            using var self = Process.GetCurrentProcess();
+            SetProcessWorkingSetSize(self.Handle, -1, -1);
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+        }
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetProcessWorkingSetSize(IntPtr process, nint minimum, nint maximum);
 }

@@ -60,7 +60,7 @@ public sealed class ProcessWindow : Window
             {
                 // The main window holds the vault and asks for its password, so the file is handed over to it.
                 VaultInbox.Add([path]);
-                Shell.Open(Environment.ProcessPath!);
+                Shell.Open(AppInfo.MainExe);
                 Close();
             });
             Add(body, Ui.T("Move it to the Recycle Bin"), true, Recycle);
@@ -69,7 +69,7 @@ public sealed class ProcessWindow : Window
             Add(body, Ui.T("Shred it (deep delete, cannot be undone)"), !Shredder.IsProtected(path), Shred);
         Add(body, Ui.T($"Open {AppInfo.Name}"), true, () =>
         {
-            Shell.Open(Environment.ProcessPath!);
+            Shell.Open(AppInfo.MainExe);
             Close();
         });
         var cancel = Ui.Button(Ui.T("Cancel"), Close);

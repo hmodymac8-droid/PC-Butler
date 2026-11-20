@@ -58,6 +58,13 @@ if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
     -p:DebugType=none -p:PublishReadyToRun=true -o $dist
 if ($LASTEXITCODE) { throw "dotnet publish failed" }
 
+# Each tool has a program file of its own: a copy of PCButler.exe under the tool's name, which runs
+# the same PCButler.dll beside it (see Tools.ExeNames). Courier stays in PCButler.exe, which the firewall rule names.
+foreach ($name in "Search", "Sorter", "Duplicates", "Storage", "Cleaner", "Programs", "Shredder", "Booster", "Benchmark",
+                  "Internet", "ScanLAN", "Clipboard", "Vault", "History", "Settings", "Help", "QuickSearch") {
+    Copy-Item (Join-Path $dist "PCButler.exe") (Join-Path $dist "PCButler.$name.exe")
+}
+
 # 2. The setup wizard, compiled from installer.iss with Inno Setup.
 $arguments = @("/DAppVersion=$version", "/DDistDir=$dist", "/O$PSScriptRoot")
 if ($Test) { $arguments += "/DTestBuild" }

@@ -7,10 +7,17 @@ public static class AppInfo
 {
     public const string Name = "PC Butler";
     /// <summary>Must match the tag of the GitHub release this is published as (v1.22.17).</summary>
-    public const string Version = "1.23.2";
+    public const string Version = "1.24.0";
     /// <summary>Where updates are looked for.</summary>
     public const string Repo = "hmodymac8-droid/PC-Butler";
     public const string ExeName = "PCButler.exe";
+
+    /// <summary>
+    /// PCButler.exe beside this program. Each tool also has its own copy of the program file
+    /// (PCButler.Search.exe and so on); the board, the background agent, Courier, start-up with
+    /// Windows, the firewall rule and the administrator helper always use the main one.
+    /// </summary>
+    public static string MainExe => Path.Combine(AppContext.BaseDirectory, ExeName);
     public const string Copyright = "© 2026 hmodymac8-droid";
     public const string DonateUrl = "https://paypal.me/mfsafadi";
 
