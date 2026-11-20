@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What every PC Butler window shares: the theme, the fonts, the controls and dialogs, the
+       sidebar and top bar, the launch screen. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the folder picker and the screen a pop-up opens on. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PCButler</RootNamespace>
+    <AssemblyName>PCButler.Ui</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Both UI frameworks define Application, Button, MessageBox...; WPF's are the ones meant here. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <!-- The vault's password dialog. -->
+    <ProjectReference Include="..\PCButler.Core.Files\PCButler.Core.Files.csproj" />
+    <Resource Include="icon.png" />
+    <Resource Include="..\PCButler\logo.ico" Link="logo.ico" />
+    <Resource Include="Fonts\*.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PCButler" />
+  </ItemGroup>
+
+</Project>

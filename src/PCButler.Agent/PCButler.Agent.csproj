@@ -12,7 +12,7 @@
     <RootNamespace>PCButler.Agent</RootNamespace>
     <ApplicationIcon>..\PCButler\logo.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.25.0</Version>
+    <Version>1.26.0</Version>
     <Product>PC Butler</Product>
     <Company>hmodymac8-droid</Company>
     <Copyright>Copyright (c) 2026 hmodymac8-droid. All rights reserved.</Copyright>
@@ -28,7 +28,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Only what the background needs: no file search, and Courier stays in the companion
+         (PCButler.Core.System still knows Courier, for the firewall rule its helper sets). -->
     <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Files\PCButler.Core.Files.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Sensors\PCButler.Core.Sensors.csproj" />
+    <ProjectReference Include="..\PCButler.Core.System\PCButler.Core.System.csproj" />
   </ItemGroup>
 
 </Project>

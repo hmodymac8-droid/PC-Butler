@@ -12,13 +12,6 @@ using Microsoft.Diagnostics.Tracing.Session;
 
 namespace PCButler.Core;
 
-/// <summary>Recording what each app uses, for the report on the Benchmark page.</summary>
-public sealed class UsageSettings
-{
-    /// <summary>Record how much each app uses of the processor, graphics card, memory, disk and internet.</summary>
-    [JsonPropertyName("record")] public bool Record { get; set; } = true;
-}
-
 /// <summary>What one app used over some time: one day, or a whole report's period.</summary>
 public sealed class AppUse
 {

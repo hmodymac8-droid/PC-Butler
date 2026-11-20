@@ -9,15 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Reads the graphics card's use from Windows' own counters (the number Task Manager shows). -->
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
-    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.2.8" />
-    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0" />
-    <!-- Reads temperature and fan sensors through WMI (only used by the optional administrator helper). -->
-    <PackageReference Include="System.Management" Version="10.0.2" />
-    <!-- Portal: Windows' own protection for the key of this PC's certificate. -->
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
-
+    <!-- The base library: settings, translations, the log, history, and how PC Butler's processes talk.
+         The features are in PCButler.Core.Files, .Search, .Sensors, .System and .Portal. -->
+    <InternalsVisibleTo Include="PCButler.Core.Files" />
+    <InternalsVisibleTo Include="PCButler.Core.Search" />
+    <InternalsVisibleTo Include="PCButler.Core.Sensors" />
+    <InternalsVisibleTo Include="PCButler.Core.System" />
+    <InternalsVisibleTo Include="PCButler.Core.Portal" />
+    <InternalsVisibleTo Include="PCButler" />
+    <InternalsVisibleTo Include="PCButler.Agent" />
   </ItemGroup>
 
   <ItemGroup>
