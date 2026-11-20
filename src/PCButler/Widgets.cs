@@ -189,32 +189,3 @@ public sealed class AmountCard : Border
     }
 }
 
-public static class Widgets
-{
-    /// <summary>The look every card shares: the card colour, a hairline border, rounded corners.</summary>
-    public static void StyleCard(Border card)
-    {
-        card.Background = Ui.Paint("Card");
-        card.BorderBrush = Ui.Paint("Line");
-        card.BorderThickness = new Thickness(1);
-        card.CornerRadius = new CornerRadius(8);
-    }
-
-    /// <summary>The version in a softly lit pill, as at the top of the Home page.</summary>
-    public static Border VersionPill()
-    {
-        var dot = new Ellipse { Width = 6, Height = 6, Fill = Ui.Paint("Primary"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 9, 0) };
-        var text = new TextBlock
-        {
-            Text = "v" + AppInfo.Version, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 13, FontWeight = FontWeights.SemiBold,
-            Foreground = Ui.Paint("Primary"), VerticalAlignment = VerticalAlignment.Center, FlowDirection = FlowDirection.LeftToRight,
-        };
-        return new Border
-        {
-            CornerRadius = new CornerRadius(14), Padding = new Thickness(12, 5, 15, 5), HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Ui.Mix("#42d8a5", "#080a0e", 0.10)), BorderBrush = new SolidColorBrush(Ui.Mix("#42d8a5", "#080a0e", 0.30)),
-            BorderThickness = new Thickness(1), Child = Ui.Row(0, dot, text),
-        };
-    }
-}

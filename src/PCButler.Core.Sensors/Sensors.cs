@@ -145,7 +145,9 @@ public static class Sensors
     /// The helper's whole life: read, hand over, repeat until the main program is gone.
     /// "directory" is the data folder, where requests come in (see AdminHelper).
     /// </summary>
-    public static void RunHelper(string directory, int parentId)
+    /// <param name="poll">Carries out a waiting request of the main program (AdminHelper.Poll); stopped is the list of services it paused.</param>
+    /// <param name="resumeAll">Starts those services again when the main program is gone.</param>
+    public static void RunHelper(string directory, int parentId, Action<List<string>> poll, Action<List<string>> resumeAll)
     {
         LiveSlot.Owner = parentId;
         // Readings went through files here before; leave none behind.
@@ -162,7 +164,7 @@ public static class Sensors
         var stopped = new List<string>(); // services paused for Boost (see AdminHelper)
         for (var tick = 0; ParentAlive(parentId); tick++)
         {
-            AdminHelper.Poll(directory, stopped);
+            poll(stopped);
             if (tick % IntervalSeconds != 0)
             {
                 Thread.Sleep(1000);
@@ -171,7 +173,7 @@ public static class Sensors
             LiveSlot.Write(Slot, JsonSerializer.Serialize(Read()));
             Thread.Sleep(1000);
         }
-        AdminHelper.ResumeAll(stopped); // the main program is gone: nothing stays paused
+        resumeAll(stopped); // the main program is gone: nothing stays paused
         CpuSensor.Close();
         FpsMeter.Stop();
         NetMeter.Stop();

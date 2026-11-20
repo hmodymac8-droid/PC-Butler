@@ -26,8 +26,8 @@
     <SolidColorBrush x:Key="Lilac" Color="#b697f1" />
 
     <!-- Nunito for text, headings and figures and Almarai for Arabic, both bundled; Segoe UI covers what they lack. -->
-    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler;component/Fonts/#Nunito, pack://application:,,,/PCButler;component/Fonts/#Almarai, Segoe UI</FontFamily>
-    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler;component/Fonts/#Nunito, pack://application:,,,/PCButler;component/Fonts/#Almarai, Segoe UI</FontFamily>
+    <FontFamily x:Key="TextFont">pack://application:,,,/PCButler.Ui;component/Fonts/#Nunito, pack://application:,,,/PCButler.Ui;component/Fonts/#Almarai, Segoe UI</FontFamily>
+    <FontFamily x:Key="DisplayFont">pack://application:,,,/PCButler.Ui;component/Fonts/#Nunito, pack://application:,,,/PCButler.Ui;component/Fonts/#Almarai, Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
     <!-- In Arabic the whole window is laid out right to left (Ui.StyleWindow sets that). Each

@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PCButler.Core\PCButler.Core.csproj" />
+    <ProjectReference Include="..\..\src\PCButler.Core.Files\PCButler.Core.Files.csproj" />
+    <ProjectReference Include="..\..\src\PCButler.Core.Search\PCButler.Core.Search.csproj" />
+    <ProjectReference Include="..\..\src\PCButler.Core.Sensors\PCButler.Core.Sensors.csproj" />
+    <ProjectReference Include="..\..\src\PCButler.Core.System\PCButler.Core.System.csproj" />
+    <ProjectReference Include="..\..\src\PCButler.Core.Portal\PCButler.Core.Portal.csproj" />
   </ItemGroup>
 
 </Project>

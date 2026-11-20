@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PCButler.Core</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PCButler.Core\PCButler.Core.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Files\PCButler.Core.Files.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Sensors\PCButler.Core.Sensors.csproj" />
+    <ProjectReference Include="..\PCButler.Core.Portal\PCButler.Core.Portal.csproj" />
+    <PackageReference Include="System.Management" Version="10.0.2" />
+  </ItemGroup>
+
+</Project>

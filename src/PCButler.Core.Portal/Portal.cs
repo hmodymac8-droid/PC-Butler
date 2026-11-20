@@ -16,60 +16,6 @@ using System.Text.RegularExpressions;
 
 namespace PCButler.Core;
 
-/// <summary>A PC that was paired with this one. Its id is the fingerprint of its certificate, which is what "trusted" means.</summary>
-public sealed class PortalDevice
-{
-    [JsonPropertyName("id")] public string Id { get; set; } = "";
-    [JsonPropertyName("name")] public string Name { get; set; } = "";
-    /// <summary>Take what it sends without asking each time.</summary>
-    [JsonPropertyName("auto_accept")] public bool AutoAccept { get; set; }
-    /// <summary>Its internet address when last connected ("1.2.3.4:5000"), tried first the next time before looking it up.</summary>
-    [JsonPropertyName("address")] public string Address { get; set; } = "";
-    [JsonPropertyName("port")] public int Port { get; set; }
-}
-
-/// <summary>How Courier behaves, and the PCs it trusts.</summary>
-public sealed class PortalSettings
-{
-    /// <summary>Where received files go; "" = "PC Butler Courier" inside Downloads.</summary>
-    [JsonPropertyName("folder")] public string Folder { get; set; } = "";
-    /// <summary>The PCs this one was paired with: it trusts them, by their certificate.</summary>
-    [JsonPropertyName("devices")] public List<PortalDevice> Devices { get; set; } = [];
-    /// <summary>True once Courier was switched on here: from then on it starts with PC Butler (when AutoStart is on).</summary>
-    [JsonPropertyName("used")] public bool Used { get; set; }
-    /// <summary>Start Courier with PC Butler, so this PC can be reached, and stays connected to its PCs, without a click.</summary>
-    [JsonPropertyName("auto_start")] public bool AutoStart { get; set; } = true;
-    /// <summary>Show the small Courier window, for dropping files and watching transfers, while connected.</summary>
-    [JsonPropertyName("widget")] public bool Widget { get; set; } = true;
-    /// <summary>The list of PCs: the ones added by their ID and the ones paired with, kept to connect again later.</summary>
-    [JsonPropertyName("saved")] public List<PortalSaved> Saved { get; set; } = [];
-    /// <summary>What happens when a new PC asks to connect: "ask" (the user allows or refuses it) or "password".</summary>
-    [JsonPropertyName("incoming")] public string Incoming { get; set; } = Ask;
-    /// <summary>The password new PCs must give, as Portal.HashPassword made it; "" = none set.</summary>
-    [JsonPropertyName("password")] public string Password { get; set; } = "";
-    /// <summary>Share copied text with the connected PCs and phones: text they send lands on this clipboard, and (on a PC) what is copied here goes to them.</summary>
-    [JsonPropertyName("share_clipboard")] public bool ShareClipboard { get; set; } = true;
-
-    /// <summary>Before 1.22 a PC was the host or a client ("host", "client"); read once, to bring its settings over.</summary>
-    [JsonPropertyName("role")] public string Role { get; set; } = "";
-    /// <summary>Before 1.22: the host a client connected to.</summary>
-    [JsonPropertyName("host_number")] public string HostNumber { get; set; } = "";
-
-    public const string Ask = "ask", WithPassword = "password";
-}
-
-/// <summary>A PC on the list, by its ID, under the name the user gave it.</summary>
-public sealed class PortalSaved
-{
-    /// <summary>Its ID, the six digits.</summary>
-    [JsonPropertyName("number")] public string Number { get; set; } = "";
-    [JsonPropertyName("name")] public string Name { get; set; } = "";
-    /// <summary>Kept connected: looked for whenever Courier runs, and found again when the link drops, until Disconnect.</summary>
-    [JsonPropertyName("stay")] public bool Stay { get; set; }
-    /// <summary>Before 1.22: connected to when Courier started. Read once, it becomes Stay.</summary>
-    [JsonPropertyName("favorite")] public bool Favorite { get; set; }
-}
-
 /// <summary>Another PC running Courier, as this one sees it right now.</summary>
 public sealed class PortalPeer
 {
