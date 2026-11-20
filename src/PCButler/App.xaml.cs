@@ -136,6 +136,8 @@ public partial class App : Application
             Mode = AppMode.Agent;
         else if (arguments.Contains("--classic"))
             (Mode, ToolKey) = (AppMode.Tool, "home");
+        else if (arguments.Contains("--popup"))
+            (Mode, ToolKey) = (AppMode.Tool, Tools.Popup); // the quick search box and command palette
         else if (toolAt >= 0 && toolAt + 1 < arguments.Length && Tools.IsTool(arguments[toolAt + 1]))
             (Mode, ToolKey) = (AppMode.Tool, arguments[toolAt + 1]);
 
@@ -251,6 +253,13 @@ public partial class App : Application
 
     private void StartToolMode(string[] arguments)
     {
+        if (ToolKey == Tools.Popup)
+        {
+            StartPopupMode(arguments);
+            return;
+        }
+        if (ToolKey == "benchmark")
+            MirrorOverlay();
         var id = TaskbarIdentity.IdFor(ToolKey);
         TaskbarIdentity.ForProcess(id);
         // Anything this tool switches on or off reaches the background agent (or starts it).
@@ -310,6 +319,64 @@ public partial class App : Application
             ShowWhatsNew(shown, always: true);
         if (arguments.Contains("--auto-sort"))
             shown.SetAutoSort(true);
+        if (After("--tab") is { } tab && ToolKey == "settings")
+            shown.Settings.ShowTab(tab);
+        if (arguments.Contains("--scan") && ToolKey == "cleaner")
+            shown.Cleaner.ScanNow();
+        if (arguments.Contains("--check-updates") && ToolKey == "about")
+            shown.About.CheckUpdates();
+    }
+
+    // --- the quick search box and the command palette (Win+F, Alt+Space) ---
+
+    private DispatcherTimer? popupIdle;
+    private long popupUsed;
+
+    /// <summary>
+    /// A small process for the search box over whatever program is in front. It loads the saved
+    /// index when it starts, stays ready while it is used, and ends after ten idle minutes, so the
+    /// index is not held all day.
+    /// </summary>
+    private void StartPopupMode(string[] arguments)
+    {
+        _ = Search; // loads the saved index now, while the box comes up
+        OpenPopup(arguments);
+        popupIdle = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        popupIdle.Tick += (_, _) =>
+        {
+            if (searchPopup is { IsVisible: true })
+                popupUsed = Environment.TickCount64;
+            else if (Environment.TickCount64 - popupUsed > TimeSpan.FromMinutes(10).TotalMilliseconds)
+                ExitTool();
+        };
+        popupIdle.Start();
+    }
+
+    private void OpenPopup(string[] arguments)
+    {
+        popupUsed = Environment.TickCount64;
+        ShowSearchPopup(forCommands: arguments.Contains("palette"));
+    }
+
+    // --- the Benchmark tool shows the overlay the agent runs ---
+
+    /// <summary>Every second while the Benchmark tool is open: the agent's overlay readings, copied here.</summary>
+    private void MirrorOverlay()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        var asking = false;
+        timer.Tick += (_, _) =>
+        {
+            if (asking || exiting)
+                return;
+            asking = true;
+            Task.Run(() => AgentLink.Send("overlay-state", 800)).ContinueWith(task => Dispatcher.BeginInvoke(() =>
+            {
+                asking = false;
+                Overlay.Mirror(task.Result);
+            }));
+        };
+        timer.Start();
     }
 
     private DispatcherTimer? configTimer;
@@ -503,12 +570,36 @@ public partial class App : Application
     }
 
     /// <summary>One request from the board or a tool, over the agent's pipe (on the pipe's thread).</summary>
-    private string AgentCommand(string command)
+    private string AgentCommand(string command, string data)
     {
         switch (command)
         {
             case "ping":
                 return "agent";
+            case "hotkey":
+                Dispatcher.BeginInvoke(() => RunHotkey(data));
+                return "ok";
+            case "apply-hotkeys":
+                // The Settings tool asks for its shortcuts now, to show at once which could not be used.
+                return Dispatcher.Invoke(() =>
+                {
+                    var wanted = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(data) ?? [];
+                    var problems = Keys.Apply(wanted);
+                    applied["hotkeys"] = Snapshot(wanted);
+                    return System.Text.Json.JsonSerializer.Serialize(problems);
+                });
+            case "apply-clipboard":
+                return Dispatcher.Invoke(() =>
+                {
+                    var wanted = System.Text.Json.JsonSerializer.Deserialize<ClipboardSettings>(data) ?? new ClipboardSettings();
+                    var problem = Clips.Apply(wanted);
+                    applied["clipboard"] = Snapshot(wanted);
+                    return problem ?? "";
+                });
+            case "overlay-state":
+                return Dispatcher.Invoke(Overlay.State);
+            case "update":
+                return Background.Update?.Version ?? "";
             case "config-changed":
                 Dispatcher.BeginInvoke(QueueReapply);
                 return "ok";
@@ -607,6 +698,8 @@ public partial class App : Application
             {
                 if (Mode == AppMode.Board)
                     board?.Bring();
+                else if (Mode == AppMode.Tool && ToolKey == Tools.Popup)
+                    OpenPopup(ToolRequest.Take(ToolKey) ?? []);
                 else if (Mode == AppMode.Tool)
                 {
                     ShowMainWindow();
@@ -707,16 +800,27 @@ public partial class App : Application
     {
         if (exiting)
             return;
+        if (!RunsServices && action is "sort" or "boost" or "overlay" or "dropzone")
+        {
+            // These act on what the background agent runs (from the command palette): it does them.
+            Task.Run(() =>
+            {
+                if (AgentLink.Send("hotkey", 2000, action) is null && action != "sort")
+                    Dispatcher.BeginInvoke(() => Ui.Info(AppInfo.Name, Ui.T("PC Butler is not running in the background. Switch a background feature on in Settings first.")));
+            });
+            return;
+        }
         switch (action)
         {
             case "open":
-            case "palette":
-                // The board is the launcher now: type to find a tool there.
                 Tools.OpenBoard();
                 break;
+            case "palette":
             case "search":
+                // In a small process of its own that loads the saved index (it is not kept in the agent).
+                Tools.OpenPopup(palette: action == "palette");
+                break;
             case "searchpage":
-                // The index is not kept in the background: the Search tool loads it when it opens.
                 Tools.Open("search");
                 break;
             case "sort":
@@ -1468,6 +1572,13 @@ public partial class App : Application
     {
         if (exiting)
             return;
+        if (Mode == AppMode.Tool && ToolKey == Tools.Popup)
+        {
+            // "Quit PC Butler" in the command palette: the background agent too.
+            AgentLink.Send("exit", 1500);
+            ExitTool();
+            return;
+        }
         if (Mode == AppMode.Tool)
         {
             window?.Quit(); // its Closed ends the process (ExitTool)

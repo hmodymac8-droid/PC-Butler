@@ -42,7 +42,7 @@ public sealed class ClipboardManager : IDisposable
         ClipboardHistory.Apply(wanted);
         // In a tool's process the list is only shown: the background agent records copies and holds the shortcut.
         if (!App.Current.RunsServices)
-            return null;
+            return AgentLink.Send("apply-clipboard", 4000, System.Text.Json.JsonSerializer.Serialize(wanted)) is { Length: > 0 } problem ? problem : null;
         if (wanted.Enabled && !listening)
             listening = AddClipboardFormatListener(source.Handle);
         else if (!wanted.Enabled && listening)

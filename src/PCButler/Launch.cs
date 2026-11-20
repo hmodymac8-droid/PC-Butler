@@ -30,6 +30,12 @@ public static class Tools
         ("history", "", "History", "#d99a6c", ["history"]),
     ];
 
+    /// <summary>The quick search box and command palette: a process of its own with no window of its own (--popup).</summary>
+    public const string Popup = "popup";
+
+    /// <summary>Open the search box (or the command palette) over whatever program is in front.</summary>
+    public static void OpenPopup(bool palette) => Start(palette ? ["--popup", "palette"] : ["--popup"]);
+
     /// <summary>Not a window: the board's switch for the performance overlay (it runs in the background agent).</summary>
     public const string Overlay = "overlay";
 
@@ -181,7 +187,7 @@ public static class AgentNeeds
 
 /// <summary>
 /// The named pipe "PCButler.Agent": how the board and the tools talk to the background agent.
-/// One JSON line each way: {"cmd":"config-changed"} and the like, answered with {"ok":true,"reply":"…"}.
+/// One JSON line each way: {"cmd":"config-changed","data":"…"} and the like, answered with {"ok":true,"reply":"…"}.
 /// </summary>
 public static class AgentLink
 {
@@ -210,7 +216,7 @@ public static class AgentLink
     }
 
     /// <summary>Ask the agent something. Null when no agent answered in time.</summary>
-    public static string? Send(string command, int timeoutMs = 1500)
+    public static string? Send(string command, int timeoutMs = 1500, string data = "")
     {
         if (!Running)
             return null;
@@ -220,7 +226,7 @@ public static class AgentLink
             pipe.Connect(timeoutMs);
             using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
             using var reader = new StreamReader(pipe, leaveOpen: true);
-            writer.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["cmd"] = command }));
+            writer.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string> { ["cmd"] = command, ["data"] = data }));
             var task = reader.ReadLineAsync();
             if (!task.Wait(Math.Max(timeoutMs, 6000)))
                 return null;
@@ -250,7 +256,7 @@ public static class AgentLink
     }
 
     /// <summary>The agent's side: answer each connection with <paramref name="handle"/> (run off the window's thread).</summary>
-    public static void Serve(Func<string, string> handle, CancellationToken stop)
+    public static void Serve(Func<string, string, string> handle, CancellationToken stop)
     {
         var thread = new Thread(() =>
         {
@@ -264,7 +270,7 @@ public static class AgentLink
                     using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
                     var line = reader.ReadLine();
                     var request = line is null ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(line);
-                    var reply = request is not null && request.TryGetValue("cmd", out var command) ? handle(command) : "unknown";
+                    var reply = request is not null && request.TryGetValue("cmd", out var command) ? handle(command, request.GetValueOrDefault("data", "")) : "unknown";
                     writer.WriteLine(JsonSerializer.Serialize(new Dictionary<string, object> { ["ok"] = true, ["reply"] = reply }));
                 }
                 catch (OperationCanceledException)
