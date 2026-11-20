@@ -26,7 +26,7 @@ public sealed class SearchPage : Page
     private CancellationTokenSource? running;
     private bool changedWhileAway;
 
-    public SearchPage(MainWindow main) : base(main, "Search", "Every file and folder on your drives, found as you type.")
+    public SearchPage(ToolWindow main) : base(main, "Search", "Every file and folder on your drives, found as you type.")
     {
         AddAction("Search settings", () => main.Settings.ShowTab("search"));
         box = Ui.Field(hint: Ui.T("Search files and folders…  (space = and, | = or, ! = not, *.pdf, ext:jpg;png, folder:, path:)"));

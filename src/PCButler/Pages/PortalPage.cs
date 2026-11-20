@@ -54,7 +54,7 @@ public sealed class PortalPage : Page
 
     private PortalSettings Settings => Main.Config.Portal;
 
-    public PortalPage(MainWindow main) : base(main, "Courier", "Files between your PCs, across the internet.")
+    public PortalPage(ToolWindow main) : base(main, "Courier", "Files between your PCs, across the internet.")
     {
         startButton = AddAction("Start Courier", Toggle, accent: true);
         var page = new StackPanel();

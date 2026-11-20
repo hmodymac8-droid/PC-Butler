@@ -25,7 +25,7 @@ public sealed class CleanerPage : Page
     private CancellationTokenSource? cancel;
     private bool busy;
 
-    public CleanerPage(MainWindow main) : base(main, "Cleaner", "Clear the clutter. Make room for what’s next.")
+    public CleanerPage(ToolWindow main) : base(main, "Cleaner", "Clear the clutter. Make room for what’s next.")
     {
         scanButton = AddAction("Scan now", Scan, accent: true);
         stopButton = AddAction("Stop scan", () => cancel?.Cancel());

@@ -23,7 +23,7 @@ public sealed class HistoryPage : Page
     private readonly ListView list;
     private int page; // zero-based
 
-    public HistoryPage(MainWindow main) : base(main, "History", "Every change, all in one place.")
+    public HistoryPage(ToolWindow main) : base(main, "History", "Every change, all in one place.")
     {
         AddAction("Undo selected", UndoSelected, accent: true);
         AddAction("Clear history", ClearHistory);

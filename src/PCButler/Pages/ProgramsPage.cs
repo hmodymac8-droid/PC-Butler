@@ -24,7 +24,7 @@ public sealed class ProgramsPage : Page
     private List<InstalledProgram> programs = [];
     private bool loaded, busy;
 
-    public ProgramsPage(MainWindow main) : base(main, "Programs", "Everything installed, in one list.")
+    public ProgramsPage(ToolWindow main) : base(main, "Programs", "Everything installed, in one list.")
     {
         stats = AddStats(("Programs installed", ""), ("Space they use", ""), ("Updates available", ""));
         stats[2].Set("—", "", Ui.T("Press Check for updates"));

@@ -36,7 +36,7 @@ public sealed class InternetPage : Page
     private long lastNetAt;
     private int ticks;
 
-    public InternetPage(MainWindow main) : base(main, "Internet", "How fast is your connection, and what is using it?")
+    public InternetPage(ToolWindow main) : base(main, "Internet", "How fast is your connection, and what is using it?")
     {
         start = AddAction("Start test", Toggle, accent: true);
         stats = AddStats(("Download", ""), ("Upload", ""), ("Response time", ""));

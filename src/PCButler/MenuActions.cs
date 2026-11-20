@@ -70,7 +70,7 @@ public static class MenuActions
 
     /// <summary>
     /// The running program holds Courier's connections, so the paths are handed over to it:
-    /// its window opens on the Courier page with them ready to send (see MainWindow.TakeCourierInbox).
+    /// its window opens on the Courier page with them ready to send (see ToolWindow.TakeCourierInbox).
     /// </summary>
     private static void Share(List<string> paths)
     {

@@ -27,7 +27,7 @@ public partial class App : Application
 {
     private Mutex? instance;
     private EventWaitHandle? showSignal;
-    private MainWindow? window;
+    private ToolWindow? window;
     private BoardWindow? board;
     private ReportWindow? report;
     private bool exiting;
@@ -37,7 +37,7 @@ public partial class App : Application
     public AppMode Mode { get; private set; } = AppMode.Board;
     /// <summary>True only in the companion: the one WPF process that runs Courier, the overlay, the drop zone and clipboard sharing.</summary>
     public bool RunsServices => Mode == AppMode.Companion;
-    /// <summary>The tool this process shows (Mode is Tool); "home" for the classic window.</summary>
+    /// <summary>The tool this process shows (Mode is Tool).</summary>
     public string ToolKey { get; private set; } = "";
     /// <summary>Not started here (the agent runs it): only its update check, for Help &amp; about.</summary>
     public BackgroundService Background { get; } = new();
@@ -92,7 +92,7 @@ public partial class App : Application
     private bool firstStart;
     private DropZoneWindow? dropZone;
     /// <summary>The tool's window while it is open (null in the board and the companion).</summary>
-    public MainWindow? Workspace => window;
+    public ToolWindow? Workspace => window;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -147,8 +147,6 @@ public partial class App : Application
         var toolAt = Array.IndexOf(arguments, "--tool");
         if (arguments.Contains("--ui"))
             Mode = AppMode.Companion;
-        else if (arguments.Contains("--classic"))
-            (Mode, ToolKey) = (AppMode.Tool, "home");
         else if (arguments.Contains("--popup"))
             (Mode, ToolKey) = (AppMode.Tool, Tools.Popup); // the quick search box and command palette
         else if (toolAt >= 0 && toolAt + 1 < arguments.Length && Tools.IsTool(arguments[toolAt + 1]))
@@ -285,14 +283,14 @@ public partial class App : Application
         TaskbarIdentity.ForProcess(id);
         // Anything this tool switches on or off reaches the background agent (or starts it).
         ConfigStore.Saved += () => Dispatcher.BeginInvoke(QueueConfigChanged);
-        if (ToolKey is "benchmark" or "booster" or "home")
+        if (ToolKey is "benchmark" or "booster")
             Usage.Start(); // their live figures
-        window = new MainWindow(ToolKey == "home" ? null : ToolKey);
+        window = new ToolWindow(ToolKey);
         var opened = window;
         opened.SourceInitialized += (_, _) =>
         {
             var handle = new System.Windows.Interop.WindowInteropHelper(opened).Handle;
-            TaskbarIdentity.ForWindow(handle, id, ToolKey == "home" ? "--classic" : $"--tool {ToolKey}", opened.Title);
+            TaskbarIdentity.ForWindow(handle, id, $"--tool {ToolKey}", opened.Title);
         };
         opened.Closed += (_, _) =>
         {
@@ -307,14 +305,12 @@ public partial class App : Application
         {
             if (window is { } shown && IsOpen(shown))
             {
-                if (ToolKey is "vault" or "home")
+                if (ToolKey == "vault")
                     shown.TakeVaultInbox();
                 if (ToolKey == "portal" && courierReady)
                     shown.TakeCourierInbox();
             }
         }, DispatcherPriority.ApplicationIdle);
-        if (ToolKey == "home")
-            ShowWhatsNew(opened);
     }
 
     /// <summary>What a launch asked the tool to do: files for its list, a search, the What's new list.</summary>
@@ -450,10 +446,7 @@ public partial class App : Application
             }
             instance?.Dispose();
             instance = null;
-            if (ToolKey == "home")
-                System.Diagnostics.Process.Start(AppInfo.MainExe, "--classic")?.Dispose();
-            else
-                Tools.Open(ToolKey);
+            Tools.Open(ToolKey);
         }
         showSignal?.Set();
         Shutdown();
@@ -744,9 +737,9 @@ public partial class App : Application
             SystemCommands.RestoreWindow(window); // back to normal or maximized, as it was
         window.Show();
         window.Activate();
-        if (ToolKey is "vault" or "home")
+        if (ToolKey == "vault")
             window.TakeVaultInbox();
-        if ((ToolKey == "portal" && courierReady) || ToolKey == "home")
+        if (ToolKey == "portal" && courierReady)
             window.TakeCourierInbox();
     }
 
@@ -878,7 +871,7 @@ public partial class App : Application
     }
 
     /// <summary>Once after each update, when the window first opens: the list of what changed.</summary>
-    private void ShowWhatsNew(MainWindow owner, bool always = false)
+    private void ShowWhatsNew(ToolWindow owner, bool always = false)
     {
         var seen = ConfigStore.Load().LastSeenVersion;
         if (seen == AppInfo.Version && !always)

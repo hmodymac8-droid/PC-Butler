@@ -41,7 +41,7 @@ public sealed class VaultPage : Page
     /// <summary>A folder row's tag; file rows carry their VaultItem.</summary>
     private sealed record FolderTag(string Dir);
 
-    public VaultPage(MainWindow main) : base(main, "Vault", "Your private space. Under your control.")
+    public VaultPage(ToolWindow main) : base(main, "Vault", "Your private space. Under your control.")
     {
         Core.Vault.ClearOpenCopies(); // copies left behind if the program was closed abruptly
         idleTimer.Tick += (_, _) => LockWhenIdle();

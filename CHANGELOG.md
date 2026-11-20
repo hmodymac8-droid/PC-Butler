@@ -1,7 +1,12 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 1.26.0
+Each version is a `## 2.0.0
+
+- PC Butler 2.0: the move to small separate parts is complete. The board is how you open everything, every tool is its own window (with its own program file and taskbar button), the background part is its own small program, and the old all-in-one window with its sidebar and Home page is gone. Every tool is on the board; Settings and Help & about are on its header and footer.
+- Each tool's window now always opens at its own size in the middle of the screen.
+
+## 1.26.0
 
 - Under the hood, PC Butler's code is split into smaller libraries: one for settings and what all parts share, and one each for files, search, sensors, system tools and Courier, plus one for the look every window shares. The background part loads only the ones it needs (no search, no Courier). Nothing changes in how it works.
 

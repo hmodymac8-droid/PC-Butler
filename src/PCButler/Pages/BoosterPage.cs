@@ -25,7 +25,7 @@ public sealed class BoosterPage : Page
     private readonly TextBox autoApps;
     private string shownBoost = "?";
 
-    public BoosterPage(MainWindow main) : base(main, "Booster", "A lighter startup. A smoother day.")
+    public BoosterPage(ToolWindow main) : base(main, "Booster", "A lighter startup. A smoother day.")
     {
         stats = AddStats(("Memory in use", "\uE950"), ("Startup apps", "\uE7E8"), ("Power plan", "\uE945"));
         var tabs = new TabControl();
