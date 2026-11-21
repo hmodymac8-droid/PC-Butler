@@ -1,7 +1,9 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 2.0.2
+Each version is a heading that starts with `##`, followed by lines that start with `- `.
+
+## 2.0.2
 
 - Exit in the tray icon's menu (near the clock) now closes all of PC Butler: the board, every open tool window and the quick search box close with it. The same happens for Quit PC Butler in the command palette and before an update installs. A tool that does not close within a few seconds is ended.
 
