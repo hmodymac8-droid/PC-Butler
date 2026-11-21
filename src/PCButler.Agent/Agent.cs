@@ -416,7 +416,7 @@ internal sealed class Agent
         if (!AgentNeeds.Any(config))
         {
             Log.Info("Agent: every background feature is off now; closing");
-            Exit();
+            Leave(false); // the windows that are open (Settings, where they were switched off) stay
             return;
         }
         if (Changed("language", config.EffectiveLanguage()))
@@ -692,8 +692,12 @@ internal sealed class Agent
 
     // --- leaving ---
 
-    /// <summary>The tray's Exit (and the companion with it): stop everything and remove the icon.</summary>
-    public void Exit()
+    /// <summary>The tray's Exit (also Quit in the command palette, and before an update): stop everything,
+    /// close every PC Butler window and remove the icon.</summary>
+    public void Exit() => Leave(true);
+
+    /// <summary>Stop everything and remove the icon; closeWindows also closes the board and every tool.</summary>
+    private void Leave(bool closeWindows)
     {
         if (exiting)
             return;
@@ -711,6 +715,76 @@ internal sealed class Agent
         if (Link.Ui.Running)
             Link.Ui.Send("exit", 2000);
         tray.Dispose();
+        if (closeWindows)
+            CloseAllWindows();
         loop.Quit();
+    }
+
+    /// <summary>
+    /// Close every other PC Butler process of this copy in this session: the board, each tool's window,
+    /// the quick search box and the companion. Each is asked to close its window first; one still
+    /// running a few seconds later is ended.
+    /// </summary>
+    private static void CloseAllWindows()
+    {
+        var folder = Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        var self = Environment.ProcessId;
+        var session = Process.GetCurrentProcess().SessionId;
+        var open = new List<Process>();
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (process.Id == self || process.SessionId != session
+                    || !process.ProcessName.StartsWith("PCButler", StringComparison.OrdinalIgnoreCase)
+                    || process.ProcessName.Equals("PCButler.Agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    process.Dispose();
+                    continue;
+                }
+                var path = process.MainModule?.FileName;
+                if (path is null || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path))?.TrimEnd(Path.DirectorySeparatorChar), folder, StringComparison.OrdinalIgnoreCase))
+                {
+                    process.Dispose();
+                    continue;
+                }
+                open.Add(process);
+            }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                process.Dispose(); // gone already, or out of reach (started as administrator)
+            }
+        }
+        if (open.Count == 0)
+            return;
+        Log.Info($"Exit: closing {open.Count} PC Butler window(s)");
+        foreach (var process in open)
+        {
+            try
+            {
+                process.CloseMainWindow();
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+        var deadline = DateTime.UtcNow.AddSeconds(4);
+        foreach (var process in open)
+        {
+            try
+            {
+                var left = (int)Math.Max(0, (deadline - DateTime.UtcNow).TotalMilliseconds);
+                if (!process.WaitForExit(left))
+                    process.Kill();
+            }
+            catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+            {
+                Log.Warning($"Exit: could not close {process.ProcessName}: {error.Message}");
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
     }
 }

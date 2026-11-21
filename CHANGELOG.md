@@ -1,7 +1,11 @@
 # What's new in PC Butler
 
 This file is shown inside the program (Help & about, and once after each update).
-Each version is a `## 2.0.1
+Each version is a `## 2.0.2
+
+- Exit in the tray icon's menu (near the clock) now closes all of PC Butler: the board, every open tool window and the quick search box close with it. The same happens for Quit PC Butler in the command palette and before an update installs. A tool that does not close within a few seconds is ended.
+
+## 2.0.1
 
 - Every tool now opens maximized, filling its screen without covering the taskbar: Search, Sorter, Cleaner, Courier, Settings, History, Help & about and the rest, and also What's new and the report after an automatic sort. Opening a tool that is already open brings it back maximized. The board, the quick search box, the command palette, Courier's widget and questions, the clipboard list, the drop zone, the performance overlay and dialogs keep their own size.
 
