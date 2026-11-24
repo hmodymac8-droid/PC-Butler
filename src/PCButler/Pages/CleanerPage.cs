@@ -222,7 +222,7 @@ public sealed class CleanerPage : Page
                 sizes[path] = 0;
             }
         }
-        var roots = chosen.SelectMany(result => result.Folders).ToList();
+        var roots = chosen.ToList();
         SetBusy(true, determinate: true);
         var stopped = false;
         var (done, result) = await RunJob("Cleaning…", (token, report) =>

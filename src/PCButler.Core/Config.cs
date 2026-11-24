@@ -178,6 +178,8 @@ public sealed class Config
     /// <summary>Search indexing, switched off by an older Extreme tune-up, was switched back on (tried once).
     /// A new name: 1.22.35 to 1.22.37 set the old one without managing to.</summary>
     [JsonPropertyName("indexing_restored")] public bool IndexingBackRestored { get; set; }
+    /// <summary>Store apps whose empty folders an older Cleaner removed were registered again (tried once).</summary>
+    [JsonPropertyName("store_apps_repaired")] public bool StoreAppsRepaired { get; set; }
     /// <summary>The Internet page's tracker: count what goes over the network each day.</summary>
     [JsonPropertyName("track_internet")] public bool TrackInternet { get; set; } = true;
     /// <summary>The Internet page's "Which apps use it": the helper counts each app's traffic. Off until started there.</summary>

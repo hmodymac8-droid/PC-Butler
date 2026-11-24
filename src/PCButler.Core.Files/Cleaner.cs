@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
 // Copyright (c) 2026 hmodymac8-droid
+using System.Text.RegularExpressions;
+
 namespace PCButler.Core;
 
 /// <summary>One kind of junk the Cleaner page can remove.</summary>
@@ -10,6 +12,13 @@ public sealed record CleanerCategory(string Key, string Label, string Descriptio
     public bool Privacy { get; init; }
     /// <summary>How many folders deep to look below each root (0 = only the root itself).</summary>
     public int MaxDepth { get; init; } = int.MaxValue;
+    /// <summary>
+    /// Whether folders the clean-up emptied may be removed afterwards. Only for folders that are
+    /// junk through and through (temp, caches): never for settings folders such as AppData,
+    /// where programs and Store apps need their empty folders (Photos and Terminal stop opening
+    /// when the empty folders under AppData\Local\Packages go).
+    /// </summary>
+    public bool RemoveEmpty { get; init; } = true;
 }
 
 /// <summary>What a scan found for one category.</summary>
@@ -32,6 +41,15 @@ public static class Cleaner
     public const int MinAgeHours = 24;
     /// <summary>Never descend into these, wherever they turn up (this program's own data).</summary>
     private static readonly HashSet<string> SkipDirs = new(StringComparer.OrdinalIgnoreCase) { "pcbutler", "downloadssorter" };
+    /// <summary>
+    /// Never descend into these when looking for program logs: Store apps' private data
+    /// (Packages), and databases whose ".log" files are part of the data, not activity logs
+    /// (LevelDB in Electron apps and browsers, Windows' ESE databases).
+    /// </summary>
+    private static readonly HashSet<string> SkipLogDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Packages", "leveldb", "IndexedDB", "Local Storage", "Session Storage", "WebCache", "databases",
+    };
 
     private static string? Env(string name) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : null;
@@ -91,15 +109,15 @@ public static class Cleaner
             () => Existing(Under(Env("LOCALAPPDATA"), "CrashDumps"), Under(Env("LOCALAPPDATA"), @"Microsoft\Windows\WER"),
                            Under(Env("ProgramData"), @"Microsoft\Windows\WER"))),
         new("thumbnails", "Thumbnail cache", "Explorer rebuilds it as needed (files in use are skipped)",
-            () => Existing(Under(Env("LOCALAPPDATA"), @"Microsoft\Windows\Explorer"))),
+            () => Existing(Under(Env("LOCALAPPDATA"), @"Microsoft\Windows\Explorer"))) { RemoveEmpty = false },
         new("update_cache", "Windows Update downloads", "Already-installed update files (needs administrator rights)",
             () => Existing(Under(Env("SystemRoot"), @"SoftwareDistribution\Download")), Checked: false),
         // Privacy: traces of what was opened. Off until the user asks for them.
         new("recent_files", "Recent files list", "Windows' list of files you opened lately and the taskbar jump lists. "
             + "The files themselves are not touched",
-            () => Existing(Under(Env("APPDATA"), @"Microsoft\Windows\Recent")), Checked: false) { Privacy = true },
+            () => Existing(Under(Env("APPDATA"), @"Microsoft\Windows\Recent")), Checked: false) { Privacy = true, RemoveEmpty = false },
         new("program_logs", "Program log files", "Activity logs (.log) that programs leave in their settings folders",
-            () => Existing(Env("LOCALAPPDATA"), Env("APPDATA")), Checked: false) { Privacy = true, MaxDepth = 3 },
+            () => Existing(Env("LOCALAPPDATA"), Env("APPDATA")), Checked: false) { Privacy = true, MaxDepth = 3, RemoveEmpty = false },
     ];
 
     public static CleanerCategory ByKey(string key) => Categories.First(category => category.Key == key);
@@ -107,12 +125,23 @@ public static class Cleaner
     private static bool Wanted(CleanerCategory category, string path)
     {
         if (category.Key == "program_logs")
-            return Path.GetExtension(path).Equals(".log", StringComparison.OrdinalIgnoreCase);
+            return Path.GetExtension(path).Equals(".log", StringComparison.OrdinalIgnoreCase) && !IsDatabaseLog(path);
         if (category.Key != "thumbnails")
             return true;
         var name = Path.GetFileName(path);
         return name.StartsWith("thumbcache_", StringComparison.OrdinalIgnoreCase)
                || name.StartsWith("iconcache_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// ".log" files that hold data rather than activity: LevelDB's numbered logs (000003.log)
+    /// and the transaction logs of Windows' ESE databases (edb.log, V01.log, edb00012.log).
+    /// </summary>
+    private static bool IsDatabaseLog(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path);
+        return name.All(char.IsAsciiDigit)
+               || Regex.IsMatch(name, @"^(edb|[a-z]\d\d)(\d+|tmp|res\d+)?$", RegexOptions.IgnoreCase);
     }
 
     private static bool IsLink(string folder)
@@ -156,7 +185,8 @@ public static class Cleaner
                         files = Directory.GetFiles(folder);
                         if (depth < category.MaxDepth)
                             foreach (var sub in Directory.GetDirectories(folder))
-                                if (!SkipDirs.Contains(Path.GetFileName(sub)) && !IsLink(sub))
+                                if (!SkipDirs.Contains(Path.GetFileName(sub)) && !IsLink(sub)
+                                    && !(category.Key == "program_logs" && SkipLogDirs.Contains(Path.GetFileName(sub))))
                                     pending.Push((sub, depth + 1));
                     }
                     catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -188,10 +218,13 @@ public static class Cleaner
         return results;
     }
 
-    /// <summary>Remove folders the clean-up emptied, below (never including) each root.</summary>
-    public static void RemoveEmptyFolders(IEnumerable<string> roots)
+    /// <summary>
+    /// Remove folders the clean-up emptied, below (never including) each root, only for the
+    /// categories whose folders are pure junk (see CleanerCategory.RemoveEmpty).
+    /// </summary>
+    public static void RemoveEmptyFolders(IEnumerable<CleanerFound> found)
     {
-        foreach (var root in roots)
+        foreach (var root in found.Where(result => result.Category.RemoveEmpty).SelectMany(result => result.Folders))
         {
             if (Directory.Exists(root))
                 RemoveEmptyBelow(root, isRoot: true);
