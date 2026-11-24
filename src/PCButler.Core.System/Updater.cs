@@ -238,8 +238,8 @@ public sealed class BackgroundService
     }
 
     /// <summary>
-    /// Scheduled cleaning: the items ticked on the Cleaner page go to the Recycle Bin (never
-    /// deleted for good while nobody is watching) and are listed in History.
+    /// Scheduled cleaning: the items ticked on the Cleaner page are deleted for good
+    /// (they are caches and temp files; in the Recycle Bin they only filled it up) and listed in History.
     /// </summary>
     private void CleanPass(Config config)
     {
@@ -252,12 +252,12 @@ public sealed class BackgroundService
         var files = found.SelectMany(result => result.Files).ToList();
         if (files.Count == 0)
             return;
-        var (count, _) = Sorter.DeleteFiles(files);
+        var (count, _) = Sorter.DeleteFiles(files, permanent: true);
         Cleaner.RemoveEmptyFolders(found.SelectMany(result => result.Folders));
         Log.Info($"Scheduled cleaning: {count} file(s)");
         if (count > 0)
         {
-            Notify?.Invoke("Scheduled cleaning sent {0} file(s) to the Recycle Bin. They are listed in History.", [count]);
+            Notify?.Invoke("Scheduled cleaning deleted {0} junk file(s) for good. They are listed in History.", [count]);
             DataChanged?.Invoke();
         }
     }

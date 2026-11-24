@@ -205,12 +205,11 @@ public sealed class CleanerPage : Page
         var paths = chosen.SelectMany(result => result.Files).ToList();
         if (paths.Count == 0 || busy)
             return;
-        var how = DeleteHowDialog.Ask(Window.GetWindow(this)!, Ui.T(
-            "Clean {0} file(s) ({1})?\n\nFiles a program is using are skipped. Deleting for good frees the space now; "
-            + "the Recycle Bin holds on to it until it is emptied.", paths.Count, Ui.FormatSize(chosen.Sum(result => result.Size))));
-        if (how is null)
+        // Junk is deleted for good: caches and temp files in the Recycle Bin only filled it up and kept the space taken.
+        if (!Ui.Ask("Cleaner", Ui.T(
+                "Clean {0} file(s) ({1})?\n\nThey are deleted for good, not sent to the Recycle Bin, so the space is freed now. "
+                + "Files a program is using are skipped.", paths.Count, Ui.FormatSize(chosen.Sum(result => result.Size)))))
             return;
-        var permanent = how == "permanent";
         var sizes = new Dictionary<string, long>();
         foreach (var path in paths)
         {
@@ -228,7 +227,7 @@ public sealed class CleanerPage : Page
         var stopped = false;
         var (done, result) = await RunJob("Cleaning…", (token, report) =>
         {
-            var outcome = Sorter.DeleteFiles(paths, permanent, (number, count) =>
+            var outcome = Sorter.DeleteFiles(paths, permanent: true, (number, count) =>
                 report(Ui.T("Cleaning {0} of {1}…", number, count), (double)number / count), token);
             stopped = token.IsCancellationRequested;
             Cleaner.RemoveEmptyFolders(roots);
@@ -248,8 +247,7 @@ public sealed class CleanerPage : Page
         Main.RefreshPreview();
         // Built from whole sentences so each can be translated.
         var freed = Ui.FormatSize(gone.Sum(path => sizes.GetValueOrDefault(path)));
-        var message = permanent ? Ui.T("Cleaned {0} file(s), {1} deleted for good. They are listed in History.", count, freed)
-                                : Ui.T("Cleaned {0} file(s), {1} sent to the Recycle Bin. They are listed in History.", count, freed);
+        var message = Ui.T("Cleaned {0} file(s), {1} deleted for good. They are listed in History.", count, freed);
         if (stopped)
             message += " " + Ui.T("Stopped before the end.");
         if (errors.Count > 0)
