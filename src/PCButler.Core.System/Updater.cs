@@ -253,7 +253,7 @@ public sealed class BackgroundService
         if (files.Count == 0)
             return;
         var (count, _) = Sorter.DeleteFiles(files, permanent: true);
-        Cleaner.RemoveEmptyFolders(found.SelectMany(result => result.Folders));
+        Cleaner.RemoveEmptyFolders(found);
         Log.Info($"Scheduled cleaning: {count} file(s)");
         if (count > 0)
         {

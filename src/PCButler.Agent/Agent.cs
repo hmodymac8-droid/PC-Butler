@@ -74,6 +74,7 @@ internal sealed class Agent
         TrackInternet(config.TrackInternet);
         StartResume();
         RestoreIndexing();
+        RepairStoreApps();
         Remember(config);
         WatchConfig();
         Link.Agent.Serve(Command, stop.Token);
@@ -686,6 +687,78 @@ internal sealed class Agent
             {
                 // Tried once, whatever came of it: the permission prompt is not shown at every start.
                 loop.Post(() => ChangeConfig(config => config.IndexingBackRestored = true));
+            }
+        });
+    }
+
+    // --- Store apps an older Cleaner damaged ---
+
+    /// <summary>
+    /// Before 2.0.4, cleaning "Program log files" also removed every empty folder under AppData,
+    /// including the AC folder each Store app keeps in AppData\Local\Packages, and without it
+    /// Photos, Terminal, Notepad and others no longer open. Registering such an app again (as
+    /// Windows' own Reset does, but keeping its data) brings the folder back. Done once, quietly,
+    /// for the user's own Store apps only (not Windows' system ones).
+    /// </summary>
+    private void RepairStoreApps()
+    {
+        if (ConfigStore.Load().StoreAppsRepaired)
+            return;
+        var packages = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Packages");
+        List<string> damaged;
+        try
+        {
+            damaged = Directory.Exists(packages)
+                ? Directory.GetDirectories(packages).Where(folder => !Directory.Exists(Path.Combine(folder, "AC")))
+                           .Select(Path.GetFileName).OfType<string>().ToList()
+                : [];
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            damaged = [];
+        }
+        if (damaged.Count == 0)
+        {
+            ChangeConfig(config => config.StoreAppsRepaired = true);
+            return;
+        }
+        Log.Info($"Store apps missing their AC folder: {damaged.Count}; registering them again");
+        var names = string.Join(",", damaged.Select(name => "'" + name.Replace("'", "''") + "'"));
+        var script = "$names = @(" + names + "); "
+                     + "Get-AppxPackage | Where-Object { $names -contains $_.PackageFamilyName -and -not $_.IsFramework "
+                     + "-and $_.SignatureKind -ne 'System' -and $_.InstallLocation } | ForEach-Object { $p = $_; "
+                     + "try { Add-AppxPackage -DisableDevelopmentMode -Register (Join-Path $p.InstallLocation 'AppxManifest.xml') "
+                     + "-ErrorAction Stop; 'ok ' + $p.Name } catch { 'failed ' + $p.Name + ': ' + $_.Exception.Message } }";
+        Task.Run(async () =>
+        {
+            try
+            {
+                var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+                    "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand "
+                    + Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script)))
+                {
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                };
+                using var process = Process.Start(start);
+                if (process is null)
+                    return;
+                var output = process.StandardOutput.ReadToEndAsync();
+                _ = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync(new CancellationTokenSource(TimeSpan.FromMinutes(10)).Token);
+                var lines = (await output).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var line in lines)
+                    Log.Info($"Store app repair: {line}");
+                var fixedCount = lines.Count(line => line.StartsWith("ok ", StringComparison.Ordinal));
+                if (fixedCount > 0)
+                    loop.Post(() => Notify("Repaired {0} Store app(s), such as Photos and Terminal, that an older clean-up had stopped from opening.", fixedCount));
+            }
+            catch (Exception error) when (error is not OutOfMemoryException)
+            {
+                Log.Warning($"Store app repair: {error.Message}");
+            }
+            finally
+            {
+                loop.Post(() => ChangeConfig(config => config.StoreAppsRepaired = true));
             }
         });
     }

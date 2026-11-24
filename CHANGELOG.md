@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a heading that starts with `##`, followed by lines that start with `- `.
 
+## 2.0.4
+
+- Photos, Terminal, Notepad and other Store apps no longer stop opening after a clean-up. Cleaning "Program log files" also removed every empty folder under AppData, and Store apps cannot start without some of theirs (in AppData\Local\Packages). The Cleaner now removes emptied folders only inside temporary and cache folders, never in AppData, and leaves Store apps' data and databases' own .log files alone. Apps already damaged are repaired once, quietly, the first time this version starts: they are registered again with Windows, keeping their settings and data.
+
 ## 2.0.3
 
 - Cleaner no longer fills the Recycle Bin with junk: browser caches, temporary files, crash dumps and the rest are now deleted for good, both when you press Clean and in scheduled cleaning, so the space is freed at once. Before, scheduled cleaning (and Clean, unless you picked Delete for good) sent them to the Recycle Bin, where thousands of cache files such as Chrome's piled up. They are still listed in History. Your own files deleted elsewhere in PC Butler still go to the Recycle Bin.
