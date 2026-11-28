@@ -3,6 +3,12 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a heading that starts with `##`, followed by lines that start with `- `.
 
+## 2.0.5
+
+- Courier: Clear history now empties the Transfers list at once. Before, transfers that had finished since Courier started stayed on the screen (they were only gone after PC Butler was restarted), and when only those were on the list the button did nothing. Clear history also says so when there is nothing to clear.
+- Courier: finished transfers turn grey as soon as they finish, and in the history the time and "Done" are now in their own Time and Status columns.
+- Courier: a file that is still being sent or received is no longer offered for "Delete (to Recycle Bin)", and Cancel selected says what to select when no running transfer is chosen.
+
 ## 2.0.4
 
 - Photos, Terminal, Notepad and other Store apps no longer stop opening after a clean-up. Cleaning "Program log files" also removed every empty folder under AppData, and Store apps cannot start without some of theirs (in AppData\Local\Packages). The Cleaner now removes emptied folders only inside temporary and cache folders, never in AppData, and leaves Store apps' data and databases' own .log files alone. Apps already damaged are repaired once, quietly, the first time this version starts: they are registered again with Windows, keeping their settings and data.

@@ -560,6 +560,7 @@ public sealed class Row : INotifyPropertyChanged
     private bool isChecked;
     private string[] cells = [];
     private string name = "";
+    private bool dim;
 
     public string Name { get => name; set { name = value; Changed(nameof(Name)); } }
     public string[] Cells { get => cells; set { cells = value; Changed(nameof(Cells)); } }
@@ -568,7 +569,7 @@ public sealed class Row : INotifyPropertyChanged
     public string TileText { get; set; } = "";
     public double TileFontSize { get; set; } = 10.5;
     /// <summary>Shown in the muted colour (undone, switched off, a group heading).</summary>
-    public bool Dim { get; set; }
+    public bool Dim { get => dim; set { if (dim != value) { dim = value; Changed(nameof(Dim)); } } }
     public bool Checked { get => isChecked; set { if (isChecked != value) { isChecked = value; Changed(nameof(Checked)); CheckedChanged?.Invoke(this); } } }
     public Visibility CheckVisibility { get; set; } = Visibility.Visible;
     public Thickness Indent { get; set; } = new(16, 0, 0, 0);
