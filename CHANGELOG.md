@@ -3,6 +3,10 @@
 This file is shown inside the program (Help & about, and once after each update).
 Each version is a heading that starts with `##`, followed by lines that start with `- `.
 
+## 2.1.0
+
+- Search can now be instant: switch on "Make search instant" in Settings > Search. It installs a small read-only Windows service (one administrator prompt) that reads the NTFS file table, so a drive is indexed in seconds instead of minutes, and follows the change journal, so changes made while PC Butler was closed are caught at the next start. It serves only you and leaves out other users' folders. Without it, search walks the folders as before. Uninstalling PC Butler removes the service.
+
 ## 2.0.5
 
 - Courier: Clear history now empties the Transfers list at once. Before, transfers that had finished since Courier started stayed on the screen (they were only gone after PC Butler was restarted), and when only those were on the list the button did nothing. Clear history also says so when there is nothing to clear.

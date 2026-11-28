@@ -10,7 +10,8 @@ namespace PCButler.Core;
 public sealed class HelperMessage
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
-    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore", "rename_pc", "fps" or "net".</summary>
+    /// <summary>"stop_services", "start_services", "allow_portal", "tune_apply", "tune_restore", "rename_pc", "fps", "net",
+    /// "install_search_service" (services: the user's SID) or "remove_search_service".</summary>
     [JsonPropertyName("action")] public string Action { get; set; } = "";
     /// <summary>Asked: the services to act on. Answered: the ones it worked for.</summary>
     [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
@@ -25,7 +26,8 @@ public sealed class HelperMessage
 /// Any program can write that file, so the helper only accepts what is listed here: it
 /// can pause and resume three named Windows services, let Courier through the firewall
 /// for this program's own file, apply and put back the tweaks in TuneUp's catalogue, and
-/// give the PC a new name, and count the frames programs show. Nothing else.
+/// give the PC a new name, count the frames programs show, and install or remove the read-only
+/// search service (SearchServiceSetup) for the user whose PC Butler started it. Nothing else.
 /// </summary>
 public static class AdminHelper
 {
@@ -108,7 +110,8 @@ public static class AdminHelper
         {
             return;
         }
-        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc" or "fps" or "net"))
+        if (message is null || message.Action is not ("stop_services" or "start_services" or "allow_portal" or "tune_apply" or "tune_restore" or "rename_pc" or "fps" or "net"
+                                                      or "install_search_service" or "remove_search_service"))
             return;
         var services = message.Action is "stop_services" or "start_services";
         var stop = message.Action == "stop_services";
@@ -136,6 +139,12 @@ public static class AdminHelper
             NetMeter.Stop();
             done.Add("off");
         }
+        // The search service: only for the user running the main program that started this helper, whatever the request says.
+        if (message.Action == "install_search_service" && message.Services is [var sid]
+            && SearchServiceSetup.UserOf(LiveSlot.Owner) is { } owner && owner == sid && SearchServiceSetup.Install(sid))
+            done.Add("installed");
+        if (message.Action == "remove_search_service" && SearchServiceSetup.Remove())
+            done.Add("removed");
         // A name Windows would refuse is refused here already.
         if (message.Action == "rename_pc" && message.Services is [var name] && PcName.Valid(name) && rename(name))
             done.Add(name);

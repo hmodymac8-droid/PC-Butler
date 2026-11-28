@@ -16,4 +16,9 @@
     <PackageReference Include="System.Management" Version="10.0.2" />
   </ItemGroup>
 
+  <!-- build.ps1 passes the SHA-256 of the PCButlerSearch.exe it built; the helper installs only that file (SearchServiceSetup). -->
+  <ItemGroup Condition="'$(SearchServiceSha256)' != ''">
+    <AssemblyMetadata Include="SearchServiceSha256" Value="$(SearchServiceSha256)" />
+  </ItemGroup>
+
 </Project>

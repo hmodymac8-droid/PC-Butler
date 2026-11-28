@@ -169,9 +169,13 @@ public static class FolderScanSource
     }
 }
 
-public enum ChangeKind { Created, Deleted, Renamed, Changed, Lost }
+public enum ChangeKind { Created, Deleted, Renamed, Changed, Lost, Journal, ServiceLost }
 
-/// <summary>Something that happened under a watched folder. Lost: Windows dropped changes (too many at once), so the folder needs walking again.</summary>
+/// <summary>
+/// Something that happened under a watched folder. Lost: Windows dropped changes (too many at once), so the folder needs walking again.
+/// Journal: not a change but the search service's journal position for the drive Path, in OldPath, once the changes before it are applied.
+/// ServiceLost: the service stopped following the drive Path; OldPath "1" when it had been following it (changes may be missing).
+/// </summary>
 public readonly record struct FileChange(ChangeKind Kind, string Path, string? OldPath = null);
 
 /// <summary>Watches a drive or folder, and everything under it, for files that come, go, are renamed or change.</summary>

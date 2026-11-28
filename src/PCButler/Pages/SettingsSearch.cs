@@ -35,6 +35,8 @@ public sealed partial class SettingsPage
                 _ => Ui.T("{0:N0} files and folders, {1} of memory, {2} on disk. Last walked: {3}.", index.Live, Ui.FormatSize(index.Bytes),
                           Ui.FormatSize(engine.FileBytes), engine.ScannedAt == DateTime.MinValue ? Ui.T("never") : engine.ScannedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")),
             };
+            if (engine.State != SearchState.Off && engine.ServedDrives.Count > 0)
+                state.Text += " " + Ui.T("Instant on {0}.", string.Join(" ", engine.ServedDrives));
         }
         timer.Tick += (_, _) => ShowState();
         IsVisibleChanged += (_, _) => timer.IsEnabled = IsVisible;
@@ -43,6 +45,9 @@ public sealed partial class SettingsPage
         var enabled = Ui.Switch("", saved.Enabled);
         rows.Children.Add(Ui.SettingRow(Ui.T("File search"), Ui.T("Keeps an index of the names on your drives, so the Search page and the search box find files at once. "
                                                                   + "It lives in memory while PC Butler runs."), enabled));
+        rows.Children.Add(Ui.SettingRow(Ui.T("Make search instant"),
+                                        Ui.T("Installs a small read-only Windows service that reads the NTFS file table: a drive is indexed in seconds instead of minutes, "
+                                             + "and changes are caught even while PC Butler is closed. Needs administrator rights once."), InstantSwitch(ShowState)));
 
         // Drives: every fixed drive is ticked unless the user chose some.
         var drives = new WrapPanel();
@@ -125,6 +130,57 @@ public sealed partial class SettingsPage
             Child = new DockPanel { LastChildFill = false, Margin = new Thickness(24, 14, 24, 6), Children = { save.Dock(Dock.Right) } },
         });
         return new ScrollViewer { Content = rows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
+    }
+
+    /// <summary>
+    /// "Make search instant": installs or removes the search service through the administrator
+    /// helper, then starts search again so it uses the service (or walks without it).
+    /// </summary>
+    private CheckBox InstantSwitch(Action shown)
+    {
+        var busy = false;
+        CheckBox? toggle = null;
+        toggle = Ui.Switch("", SearchServiceSetup.Installed(), async on =>
+        {
+            if (busy)
+                return;
+            void PutBack()
+            {
+                busy = true;
+                toggle!.IsChecked = SearchServiceSetup.Installed();
+                busy = false;
+            }
+            if (on && !SearchServiceSetup.Bundled)
+            {
+                PutBack();
+                Ui.Warn("Search", Ui.T("This copy of PC Butler was built without the search service."));
+                return;
+            }
+            if (!await Admin.Ensure("Search", Ui.T(on ? "Making search instant installs a read-only Windows service, which needs administrator rights."
+                                                      : "Removing the search service needs administrator rights.")))
+            {
+                PutBack();
+                return;
+            }
+            toggle!.IsEnabled = false;
+            var sid = SearchServiceSetup.CurrentUser();
+            var done = await Task.Run(() => on ? AdminHelper.Send("install_search_service", [sid], timeoutSeconds: 90)
+                                               : AdminHelper.Send("remove_search_service", [], timeoutSeconds: 60));
+            toggle.IsEnabled = true;
+            PutBack();
+            // Search starts again, reading the drives through the service now, or walking them without it.
+            await Task.Run(() => App.Current.Search.Start(Main.Config.Search));
+            shown();
+            if (on && done is ["installed"])
+                Ui.Info("Search", Ui.T("Search is instant now. Your NTFS drives are read again in a few seconds; changes are followed from now on."));
+            else if (on)
+                Ui.Warn("Search", Ui.T("The search service could not be installed. Search keeps working by walking the folders."));
+            else if (done is ["removed"])
+                Ui.Info("Search", Ui.T("The search service is removed. Search walks the folders again."));
+            else
+                Ui.Warn("Search", Ui.T("The search service could not be removed."));
+        });
+        return toggle;
     }
 
     /// <summary>

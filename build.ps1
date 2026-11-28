@@ -4,6 +4,7 @@
 Build PCButlerSetup.exe, a standard Windows setup wizard.
 
 Needs:  the .NET 10 SDK
+        Rust (https://rustup.rs, the stable x86_64-pc-windows-msvc toolchain) for the search service
         Inno Setup 6 (https://jrsoftware.org/isinfo.php, or: winget install JRSoftware.InnoSetup)
 
     ./build.ps1 [-Work <folder>] [-Dotnet <path to dotnet.exe>] [-Test]
@@ -52,17 +53,46 @@ function Find-Iscc {
     throw "Inno Setup 6 was not found. Install it with:  winget install JRSoftware.InnoSetup"
 }
 
+function Find-Cargo {
+    $candidates = @((Get-Command cargo.exe -ErrorAction SilentlyContinue).Source,
+                    $(if ($env:CARGO_HOME) { Join-Path $env:CARGO_HOME "bin\cargo.exe" }),
+                    "$env:USERPROFILE\.cargo\bin\cargo.exe",
+                    "$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe")
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    throw "Rust (cargo) was not found. The search service, PCButlerSearch.exe, is written in Rust: install it from https://rustup.rs " +
+          "(the stable x86_64-pc-windows-msvc toolchain, which needs the Visual Studio C++ build tools), then run build.ps1 again."
+}
+
+# 0. The search service (src/PCButler.SearchService, Rust). Its SHA-256 goes into PC Butler, whose
+#    administrator helper installs only that exact file (SearchServiceSetup).
+$service = Join-Path $PSScriptRoot "src\PCButler.SearchService"
+$cargo = Find-Cargo
+$env:PATH = (Split-Path $cargo) + ";" + $env:PATH  # rustc beside cargo, when cargo is not on PATH
+Push-Location $service  # its .cargo\config.toml (static C runtime) is read from the current folder
+try {
+    & $cargo build --release --locked
+    if ($LASTEXITCODE) { throw "cargo build of the search service failed" }
+} finally {
+    Pop-Location
+}
+$serviceExe = Join-Path $service "target\release\PCButlerSearch.exe"
+$serviceHash = (Get-FileHash $serviceExe -Algorithm SHA256).Hash
+
 # 1. The program itself, with the .NET runtime included.
 $dist = Join-Path $Work "dist"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
 # ReadyToRun: the code is compiled here, not on the user's PC at every start, so the program and its window open sooner.
 & (Find-Dotnet) publish (Join-Path $PSScriptRoot "src\PCButler") -c Release -r win-x64 --self-contained `
-    -p:DebugType=none -p:PublishReadyToRun=true -o $dist
+    -p:DebugType=none -p:PublishReadyToRun=true -p:SearchServiceSha256=$serviceHash -o $dist
 if ($LASTEXITCODE) { throw "dotnet publish failed" }
 # The background agent, PCButler.Agent.exe (no WPF), beside it, sharing the same runtime.
 & (Find-Dotnet) publish (Join-Path $PSScriptRoot "src\PCButler.Agent") -c Release -r win-x64 --self-contained `
-    -p:DebugType=none -p:PublishReadyToRun=true -o $dist
+    -p:DebugType=none -p:PublishReadyToRun=true -p:SearchServiceSha256=$serviceHash -o $dist
 if ($LASTEXITCODE) { throw "dotnet publish of the agent failed" }
+# The service's program travels with PC Butler; the helper copies it to Program Files when the user switches it on.
+Copy-Item $serviceExe (Join-Path $dist "PCButlerSearch.exe")
 
 # Each tool has a program file of its own: a copy of PCButler.exe under the tool's name, which runs
 # the same PCButler.dll beside it (see Tools.ExeNames). Courier stays in PCButler.exe, which the firewall rule names.

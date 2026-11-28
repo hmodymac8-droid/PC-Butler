@@ -20,6 +20,11 @@ public sealed class SearchEngine : IDisposable
     private readonly ConcurrentQueue<FileChange> queue = new();
     private readonly AutoResetEvent wake = new(false);
     private readonly List<FolderWatcher> watchers = [];
+    private readonly List<ServiceFollower> followers = [];
+    // Drives the search service reads and follows (pump thread only), a copy for the walk's threads, and where each drive's journal was applied up to.
+    private readonly HashSet<string> served = new(StringComparer.OrdinalIgnoreCase);
+    private volatile string[] servedNow = [];
+    private readonly ConcurrentDictionary<string, JournalPosition> applied = new(StringComparer.OrdinalIgnoreCase);
     private readonly string file;
     private SearchSettings settings = new();
     private ScanRules rules = new(new SearchSettings { Exclude = [] });
@@ -42,6 +47,8 @@ public sealed class SearchEngine : IDisposable
     /// <summary>When the folders were last walked in full (UTC), MinValue if never.</summary>
     public DateTime ScannedAt => scannedAt;
     public SearchSettings Settings => settings;
+    /// <summary>The drives the search service reads (instant indexing), empty when it is not installed or not running.</summary>
+    public IReadOnlyList<string> ServedDrives => servedNow;
     /// <summary>The index file's size in bytes, 0 when there is none.</summary>
     public long FileBytes => File.Exists(file) ? new FileInfo(file).Length : 0;
 
@@ -98,6 +105,8 @@ public sealed class SearchEngine : IDisposable
         {
             var loaded = IndexStore.Load(file);
             var fingerprint = settings.Fingerprint();
+            FindServed();
+            var positions = new Dictionary<string, JournalPosition>(StringComparer.OrdinalIgnoreCase);
             if (loaded is { } saved && saved.Info.Fingerprint == fingerprint && saved.Index.Variants == settings.ArabicVariants)
             {
                 current = saved.Index;
@@ -106,14 +115,18 @@ public sealed class SearchEngine : IDisposable
                 if (current.Order is null)
                     BuildOrder();
                 Log.Info($"Search: loaded {current.Live:N0} entries");
+                positions = JournalStore.Load(file);
+                // A drive the service follows catches up from its saved journal position; without one, what changed meanwhile is unknown.
+                var unknown = served.Any(root => !positions.ContainsKey(root));
+                var allFollowed = !unknown && settings.Roots().All(served.Contains);
                 // Broken entries taken out at load leave their folders missing until they are walked again.
-                rescanWanted = current.Repaired > 0
-                               || (settings.RescanHours > 0 && DateTime.UtcNow - scannedAt > TimeSpan.FromHours(settings.RescanHours));
+                rescanWanted = current.Repaired > 0 || unknown
+                               || (settings.RescanHours > 0 && !allFollowed && DateTime.UtcNow - scannedAt > TimeSpan.FromHours(settings.RescanHours));
                 SetState(SearchState.Ready);
             }
             else
                 rescanWanted = true;
-            Watch();
+            Watch(positions);
             Changed?.Invoke();
             while (!stop.IsCancellationRequested)
             {
@@ -135,22 +148,63 @@ public sealed class SearchEngine : IDisposable
         }
     }
 
-    private void Watch()
+    /// <summary>Which of the drives to index the search service can read; none when it is not installed or not running.</summary>
+    private void FindServed()
+    {
+        served.Clear();
+        if (SearchService.Available())
+            foreach (var root in settings.Roots().Where(SearchService.Serves))
+                served.Add(root);
+        servedNow = [.. served];
+        if (served.Count > 0)
+            Log.Info($"Search: the search service reads {string.Join(", ", served)}");
+    }
+
+    private void Enqueue(FileChange change)
+    {
+        queue.Enqueue(change);
+        if (change.Kind != ChangeKind.Journal)
+            lastChange = DateTime.UtcNow;
+    }
+
+    private void Watch(IReadOnlyDictionary<string, JournalPosition> positions)
     {
         foreach (var root in settings.Roots())
         {
-            try
-            {
-                watchers.Add(new FolderWatcher(root, change =>
-                {
-                    queue.Enqueue(change);
-                    lastChange = DateTime.UtcNow;
-                }));
-            }
-            catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException or PlatformNotSupportedException)
-            {
-                Log.Warning($"Search: {root} cannot be watched for changes ({error.Message})");
-            }
+            if (served.Contains(root))
+                followers.Add(new ServiceFollower(root, positions.TryGetValue(root, out var position) ? position : null, Enqueue,
+                                                  (drive, following) => Enqueue(new FileChange(ChangeKind.ServiceLost, drive, following ? "1" : "0"))));
+            else
+                WatchFolder(root);
+        }
+    }
+
+    /// <summary>The service stopped following a drive: watch its folders the usual way, and walk it again if changes may have been missed.</summary>
+    private void LoseService(string root, bool missed)
+    {
+        if (!served.Remove(root))
+            return;
+        servedNow = [.. served];
+        applied.TryRemove(root, out _);
+        foreach (var follower in followers.Where(follower => follower.Root.Equals(root, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            follower.Dispose();
+            followers.Remove(follower);
+        }
+        WatchFolder(root);
+        if (missed)
+            rescanWanted = true;
+    }
+
+    private void WatchFolder(string root)
+    {
+        try
+        {
+            watchers.Add(new FolderWatcher(root, Enqueue));
+        }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            Log.Warning($"Search: {root} cannot be watched for changes ({error.Message})");
         }
     }
 
@@ -166,10 +220,11 @@ public sealed class SearchEngine : IDisposable
         var token = cancel.Token;
         var scanSettings = settings;
         var scanRules = rules;
-        new Thread(() => Scan(scanSettings, scanRules, token)) { IsBackground = true, Name = "PC Butler search walk", Priority = ThreadPriority.BelowNormal }.Start();
+        var scanServed = servedNow;
+        new Thread(() => Scan(scanSettings, scanRules, scanServed, token)) { IsBackground = true, Name = "PC Butler search walk", Priority = ThreadPriority.BelowNormal }.Start();
     }
 
-    private void Scan(SearchSettings scanSettings, ScanRules scanRules, CancellationToken cancel)
+    private void Scan(SearchSettings scanSettings, ScanRules scanRules, string[] scanServed, CancellationToken cancel)
     {
         var started = DateTime.UtcNow;
         try
@@ -180,17 +235,38 @@ public sealed class SearchEngine : IDisposable
             {
                 using var quiet = FolderScanSource.Background();
                 var part = new SearchIndex(scanSettings.IndexSize, scanSettings.IndexModified, scanSettings.ArabicVariants, 1 << 16);
+                void Found(int found)
+                {
+                    Interlocked.Add(ref scanned, found);
+                    StateChanged?.Invoke();
+                }
                 foreach (var root in group)
                 {
                     if (!Directory.Exists(root))
                         continue;
                     try
                     {
-                        FolderScanSource.Scan(part, root, scanRules, cancel, found =>
+                        // A whole NTFS drive the service reads: its file table in seconds. If the service fails, the drive is walked.
+                        if (scanServed.Contains(root, StringComparer.OrdinalIgnoreCase))
                         {
-                            Interlocked.Add(ref scanned, found);
-                            StateChanged?.Invoke();
-                        });
+                            try
+                            {
+                                var started = DateTime.UtcNow;
+                                var piece = new SearchIndex(scanSettings.IndexSize, scanSettings.IndexModified, scanSettings.ArabicVariants, 1 << 20);
+                                MftServiceSource.Scan(piece, root, scanRules, cancel, Found);
+                                Log.Info($"Search: the service read {root} ({piece.Live:N0} entries) in {(DateTime.UtcNow - started).TotalSeconds:0.0} s");
+                                if (part.Count == 0)
+                                    part = piece;
+                                else
+                                    part.Append(piece);
+                                continue;
+                            }
+                            catch (Exception error) when (error is IOException or InvalidOperationException or ArgumentOutOfRangeException)
+                            {
+                                Log.Warning($"Search: the service could not read {root} ({error.Message}); walking it instead");
+                            }
+                        }
+                        FolderScanSource.Scan(part, root, scanRules, cancel, Found);
                     }
                     catch (OperationCanceledException)
                     {
@@ -280,6 +356,14 @@ public sealed class SearchEngine : IDisposable
             }
             replay?.AddRange(batch);
         }
+        // After the changes before them are in: the journal positions to save, and drives the service let go of.
+        foreach (var change in batch)
+        {
+            if (change.Kind == ChangeKind.Journal && served.Contains(change.Path) && JournalPosition.Parse(change.OldPath) is { } position)
+                applied[change.Path] = position;
+            else if (change.Kind == ChangeKind.ServiceLost)
+                LoseService(change.Path, change.OldPath == "1");
+        }
         if (!queue.IsEmpty)
             wake.Set();
     }
@@ -353,7 +437,12 @@ public sealed class SearchEngine : IDisposable
         try
         {
             var generation = index.Generation;
+            // Taken before the index is written: changes after these positions are seen again at the next start, never skipped.
+            // An index waiting to be walked again keeps no positions, so the next start walks it.
+            var positions = rescanWanted ? new Dictionary<string, JournalPosition>()
+                                         : new Dictionary<string, JournalPosition>(applied, StringComparer.OrdinalIgnoreCase);
             IndexStore.Save(index, file, new IndexInfo(settings.Fingerprint(), DateTime.UtcNow, scannedAt));
+            JournalStore.Save(file, positions);
             savedGeneration = generation;
             lastSave = DateTime.UtcNow;
         }
@@ -454,11 +543,17 @@ public sealed class SearchEngine : IDisposable
         foreach (var watcher in watchers)
             watcher.Dispose();
         watchers.Clear();
+        foreach (var follower in followers)
+            follower.Dispose();
+        followers.Clear();
         while (queue.TryDequeue(out _))
         {
         }
         if (current.Generation != savedGeneration && state == SearchState.Ready)
             Save();
+        applied.Clear();
+        served.Clear();
+        servedNow = [];
         stopping.Dispose();
         stopping = null;
         pump = null;
