@@ -178,11 +178,24 @@ begin
 #endif
 end;
 
+procedure RemoveSearchService;
+var
+  ResultCode: Integer;
+begin
+#ifndef TestBuild
+  // "Make search instant" installs a Windows service (administrator rights); it goes with PC Butler.
+  // The program removes it with the same rights, so Windows asks for permission once more.
+  if RegKeyExists(HKEY_LOCAL_MACHINE, 'SYSTEM\CurrentControlSet\Services\PCButlerSearch') then
+    ShellExec('runas', ExpandConstant('{app}\{#AppExe}'), '--remove-search-service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+#endif
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
     CloseProgram;
+    RemoveSearchService;
 #ifndef TestBuild
     // The program may have added this itself ("Turn on automatic sorting").
     RegDeleteValue(HKEY_CURRENT_USER, '{#RunKey}', '{#RunValue}');

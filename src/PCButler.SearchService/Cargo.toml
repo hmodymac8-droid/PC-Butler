@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: LicenseRef-PCButler-Proprietary
+# Copyright (c) 2026 hmodymac8-droid
+#
+# PCButlerSearch.exe: PC Butler's optional search service. It runs as LocalSystem, reads the
+# NTFS file table ($MFT) and change journal of the fixed drives, and hands names, sizes and
+# dates to the installing user's PC Butler over a named pipe. It only reads; see README.md.
+[package]
+name = "pcbutler-search"
+version = "2.1.0"
+edition = "2021"
+publish = false
+license-file = "../../LICENSE"
+
+[[bin]]
+name = "PCButlerSearch"
+path = "src/main.rs"
+
+[dependencies]
+windows-service = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+debug = false

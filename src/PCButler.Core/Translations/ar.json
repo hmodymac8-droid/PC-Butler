@@ -2138,5 +2138,15 @@
  "Update to {0}": "حدّث إلى {0}",
  "Open again what was open before the restart": "افتح من جديد ما كان مفتوحًا قبل إعادة التشغيل",
  "There are no finished transfers to clear.": "لا توجد عمليات نقل منتهية لمسحها.",
- "Select a transfer that is still running first.": "حدّد أولًا عملية نقل لم تنتهِ بعد."
+ "Select a transfer that is still running first.": "حدّد أولًا عملية نقل لم تنتهِ بعد.",
+ "Make search instant": "اجعل البحث فوريًا",
+ "Installs a small read-only Windows service that reads the NTFS file table: a drive is indexed in seconds instead of minutes, and changes are caught even while PC Butler is closed. Needs administrator rights once.": "يثبّت خدمة ويندوز صغيرة للقراءة فقط تقرأ جدول ملفات NTFS: يُفهرَس القرص في ثوانٍ بدل دقائق، وتُلتقط التغييرات حتى وPC Butler مغلق. تحتاج صلاحيات المسؤول مرة واحدة.",
+ "Instant on {0}.": "فوري على {0}.",
+ "This copy of PC Butler was built without the search service.": "هذه النسخة من PC Butler بُنيت بدون خدمة البحث.",
+ "Making search instant installs a read-only Windows service, which needs administrator rights.": "جعل البحث فوريًا يثبّت خدمة ويندوز للقراءة فقط، وهذا يحتاج صلاحيات المسؤول.",
+ "Removing the search service needs administrator rights.": "إزالة خدمة البحث تحتاج صلاحيات المسؤول.",
+ "Search is instant now. Your NTFS drives are read again in a few seconds; changes are followed from now on.": "البحث فوري الآن. تُقرأ أقراص NTFS من جديد خلال ثوانٍ، وتُتابَع التغييرات من الآن فصاعدًا.",
+ "The search service could not be installed. Search keeps working by walking the folders.": "تعذّر تثبيت خدمة البحث. يبقى البحث يعمل بالمرور على المجلدات.",
+ "The search service is removed. Search walks the folders again.": "أُزيلت خدمة البحث. يعود البحث إلى المرور على المجلدات.",
+ "The search service could not be removed.": "تعذّرت إزالة خدمة البحث."
 }

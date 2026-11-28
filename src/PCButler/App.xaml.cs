@@ -108,6 +108,13 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        if (arguments.Length >= 1 && arguments[0] == "--remove-search-service")
+        {
+            // The uninstaller, with administrator rights: the search service goes with PC Butler.
+            SearchServiceSetup.Remove();
+            Shutdown();
+            return;
+        }
         if (arguments.Length >= 3 && arguments[0] == "--act")
         {
             // An item of File Explorer's "PC Butler" submenu. With several items selected, the
