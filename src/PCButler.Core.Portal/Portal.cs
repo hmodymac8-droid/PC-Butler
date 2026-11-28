@@ -312,6 +312,14 @@ public sealed partial class PortalNode
         }
     }
 
+    /// <summary>Take the finished transfers (done, failed, refused, cancelled) off the node's list, so they stop showing; the files stay where they are.</summary>
+    public void ClearFinished()
+    {
+        lock (gate)
+            transfers.RemoveAll(transfer => !transfer.Running);
+        Changed?.Invoke();
+    }
+
     /// <summary>Pairings that are still being settled.</summary>
     public IReadOnlyList<PortalPairing> Pairings
     {

@@ -696,7 +696,7 @@ public sealed class PortalPage : Page
                 transferRows.Add(new Row
                 {
                     Name = item.Name, Tag = item, Dim = true,
-                    Cells = [Ui.T(item.Incoming ? "From {0}" : "To {0}", item.Device), Ui.FormatSize(item.Size), "", Ui.T("Done") + "  ·  " + item.Time],
+                    Cells = [Ui.T(item.Incoming ? "From {0}" : "To {0}", item.Device), Ui.FormatSize(item.Size), "", item.Time, Ui.T("Done")],
                 });
             }
         }
@@ -851,8 +851,12 @@ public sealed class PortalPage : Page
                 }
                 menu.Items.Add(send);
             }
-            Gap();
-            Add("Delete (to Recycle Bin)", () => DeleteFile(row, path));
+            // A file still on its way (out or in) is not offered for deletion.
+            if (row.Tag is not PortalTransfer { Running: true })
+            {
+                Gap();
+                Add("Delete (to Recycle Bin)", () => DeleteFile(row, path));
+            }
         }
         if (row.Tag is PortalTransfer { Running: true } transfer)
         {
@@ -1000,17 +1004,42 @@ public sealed class PortalPage : Page
 
     private void CancelSelected()
     {
-        foreach (var row in Ui.Selected(transferList))
-            (row.Tag as PortalTransfer)?.Cancel();
+        var chosen = Ui.Selected(transferList).Select(row => row.Tag).OfType<PortalTransfer>().Where(transfer => transfer.Running).ToList();
+        if (chosen.Count == 0)
+        {
+            Ui.Info("Courier", Ui.T("Select a transfer that is still running first."));
+            return;
+        }
+        foreach (var transfer in chosen)
+            transfer.Cancel();
         ShowTransfers();
     }
 
+    /// <summary>
+    /// Empty the list of finished transfers: the saved log, and the ones that finished while
+    /// Courier has been running (the node keeps those until it stops, which is why the list
+    /// used to stay full until PC Butler was restarted).
+    /// </summary>
     private void ClearHistory()
     {
-        var count = Portal.History().Count;
-        if (count == 0 || !Ui.Ask("Clear history", Ui.T("Clear the list of {0} finished transfer(s)? The files themselves stay where they are.", count)))
+        var count = transferRows.Count(row => row.Tag is PortalLogEntry || row.Tag is PortalTransfer { Running: false });
+        if (count == 0)
+        {
+            Ui.Info("Courier", Ui.T("There are no finished transfers to clear."));
+            return;
+        }
+        if (!Ui.Ask("Clear history", Ui.T("Clear the list of {0} finished transfer(s)? The files themselves stay where they are.", count)))
             return;
         Portal.ClearHistory();
+        Courier.Node?.ClearFinished();
+        hidden.Clear();
+        located.Clear();
+        foreach (var row in transferRows.Where(row => row.Tag is PortalLogEntry || row.Tag is PortalTransfer { Running: false }).ToList())
+        {
+            transferRows.Remove(row);
+            if (row.Tag is PortalTransfer transfer)
+                shown.Remove(transfer);
+        }
         ShowTransfers();
     }
 
@@ -1061,6 +1090,7 @@ public sealed class PortalPage : Page
 
     public override void Closing()
     {
+        timer.Stop();
         Courier.StateChanged -= OnStateChanged;
         if (watched is not null)
             watched.Changed -= OnChanged;

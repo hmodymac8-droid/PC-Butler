@@ -2136,5 +2136,7 @@
  "Automatic Boost": "التسريع التلقائي",
  "PC Butler is not running in the background. Switch a background feature on in Settings first.": "PC Butler لا يعمل في الخلفية. شغّل ميزة من ميزات الخلفية في الإعدادات أولًا.",
  "Update to {0}": "حدّث إلى {0}",
- "Open again what was open before the restart": "افتح من جديد ما كان مفتوحًا قبل إعادة التشغيل"
+ "Open again what was open before the restart": "افتح من جديد ما كان مفتوحًا قبل إعادة التشغيل",
+ "There are no finished transfers to clear.": "لا توجد عمليات نقل منتهية لمسحها.",
+ "Select a transfer that is still running first.": "حدّد أولًا عملية نقل لم تنتهِ بعد."
 }
